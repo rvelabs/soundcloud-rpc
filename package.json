@@ -41,6 +41,10 @@
                     "!node_modules/**",
                     "!.wrangler/**"
                 ]
+            },
+            {
+                "from": "README.md",
+                "to": "soundcloud-relay/README.md"
             }
         ],
         "files": [
