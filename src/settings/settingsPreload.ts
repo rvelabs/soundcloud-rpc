@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-
 const SEND_CHANNELS = new Set([
     'apply-changes',
     'setting-changed',
@@ -9,8 +8,14 @@ const SEND_CHANNELS = new Set([
     'add-account',
     'logout-account',
 ]);
-
 const INVOKE_CHANNELS = new Set([
+    'network:setup-accounts',
+    'network:setup-deploy',
+    'network:setup-cancel',
+    'network:status',
+    'network:save',
+    'network:test',
+    'network:files',
     'apply-custom-theme',
     'get-current-custom-theme',
     'get-custom-themes',
@@ -18,6 +23,7 @@ const INVOKE_CHANNELS = new Set([
     'get-plugins-folder-path',
     'get-themes-folder-path',
     'get-translations',
+    'get-current-track',
     'open-external-url',
     'open-path',
     'refresh-custom-themes',
@@ -25,9 +31,14 @@ const INVOKE_CHANNELS = new Set([
     'set-plugin-enabled',
     'get-accounts',
 ]);
-
-const ON_CHANNELS = new Set(['presence-preview-update', 'theme-changed', 'update-translations', 'accounts-updated']);
-
+const ON_CHANNELS = new Set([
+    'settings-visibility',
+    'network:setup-progress',
+    'presence-preview-update',
+    'theme-changed',
+    'update-translations',
+    'accounts-updated',
+]);
 function isHttpsUrl(value: string): boolean {
     try {
         return new URL(value).protocol === 'https:';
@@ -35,7 +46,6 @@ function isHttpsUrl(value: string): boolean {
         return false;
     }
 }
-
 contextBridge.exposeInMainWorld('settingsAPI', {
     send: (channel: string, ...args: unknown[]) => {
         if (!SEND_CHANNELS.has(channel)) return;
@@ -49,7 +59,6 @@ contextBridge.exposeInMainWorld('settingsAPI', {
     },
     on: (channel: string, listener: (...args: unknown[]) => void) => {
         if (!ON_CHANNELS.has(channel) || typeof listener !== 'function') return;
-
         const wrapped = (_event: IpcRendererEvent, ...args: unknown[]) => listener(...args);
         ipcRenderer.on(channel, wrapped);
     },

@@ -1,108 +1,66 @@
-<div align="center">
+# SoundCloud
 
-<picture>
-      <img src="assets/icons/soundcloud.png" width="200" />
-</picture>
+Неофициальный настольный клиент SoundCloud для Windows. Форк [richardhbtz/soundcloud-rpc](https://github.com/richardhbtz/soundcloud-rpc) с персональными рекомендациями и импортом плейлистов.
 
-# soundcloud-rpc
+## Установка
 
-A **SoundCloud** Client with **Discord Rich Presence**, **Dark Mode**, **Last.fm** and **AdBlock** support
+Скачайте установщик `soundcloud-0.25.0-installer-win.exe` в [Releases](https://github.com/chechenecdbd-dot/soundcloud-rpc/releases/latest), установите и войдите в свой аккаунт SoundCloud. Существующие данные клиента сохраняются при обновлении. Установщик пока не подписан доверенным сертификатом издателя.
 
-Works on **Linux** (AppImage/deb), **Windows** and **macOS**
+## Возможности
 
-</div>
+- «Моя волна» на главной странице: собственный рекомендатель с учётом истории, реакций, жанра, настроения, темпа, звучания, занятия и языка.
+- Воспроизведение через штатный плеер SoundCloud: оригинальные громкость, перемотка, лайки и очередь.
+- Подготовка следующих рекомендаций во время воспроизведения; скрытие служебных переходов поиска.
+- Импорт публичных плейлистов Яндекс Музыки, Spotify и YouTube Music, проверка доступности, до 10 одновременных поисков и создание плейлиста из найденной части.
+- Дополнительное подключение через собственный Cloudflare Worker с мастером установки.
+- Discord Rich Presence, Last.fm, webhook, темы и локальные плагины исходного клиента.
 
-## ⚡️ Quick start
+Рекомендатель собственный: закрытый алгоритм Яндекс Музыки не копируется. Там, где каталог не сообщает BPM или характеристики, подбор опирается на метаданные и теги. Фильтры не гарантируют точную аудиоклассификацию.
 
-For the latest version of soundcloud-rpc, download the installer or executable file from the
-[latest release](https://github.com/richardhbtz/soundcloud-rpc/releases) page.
+## Подключение через Cloudflare
 
-> [!NOTE]
->
-> ### macOS Users
->
-> If you encounter a "Damaged App" popup after installation, run the following command in the terminal to resolve the
-> issue:
->
-> ```
-> xattr -dr com.apple.quarantine /Applications/soundcloud.app
-> ```
->
-> After running this command, the app should launch without any problem.
+См. [инструкцию Worker](cloudflare/soundcloud-relay/README.md). Панель клиента открывается клавишей **F1** или через значок приложения в трее → **Settings**. Раздел — **«Резервное подключение SoundCloud»**.
 
-## 🐧 Linux
+Используется ваш собственный Worker. Ограничения TCP и доступности Cloudflare сохраняются; это не универсальный VPN. API-токен создания Worker хранится только в памяти на время мастера, ключ подключения — локально с системным шифрованием. Не публикуйте токены, файлы конфигурации пользователя или `.dev.vars`.
 
-Grab the AppImage or deb from the [releases](https://github.com/richardhbtz/soundcloud-rpc/releases) page.
+## Разработка
 
-```
-chmod +x soundcloud-*-linux.AppImage
-./soundcloud-*-linux.AppImage
+Нужен Node.js 22 и Git. Используется npm и `package-lock.json`.
+
+```sh
+npm ci
+npm test
+npm run lint
+npx tsc --noEmit
+npm run dev
 ```
 
-The AppImage writes its own .desktop file + icon on first run, so the proper icon shows up in the taskbar/launcher from
-the second launch on (wayland compositors can't know the icon before that). Widevine (GO+ playback) works. Auto updates
-only work with the AppImage. Tray works out of the box on kde, gnome needs a systray extension.
+Сборка Windows:
 
-Or build it yourself:
-
-```
-npm install
-npm run build-linux-appimage   # or build-linux-deb
+```sh
+npm run build-win
 ```
 
-## ⚙️‍ Building
+Результат находится в `build/`. Иконка и имя EXE задаются в `package.json`; при ручной упаковке через `--prepackaged` ресурсы самого EXE должны быть подготовлены заранее.
 
-Before installing and running this app, you must have [Node.js](https://nodejs.org/) installed on your machine.
+Дополнительные проверки интерфейса запускаются установленным Windows Electron runtime с отдельным тестовым профилем:
 
-1. Clone this repository to your local machine
-2. Run `npm install` to install the required dependencies.
-3. Run `npm build` to build the application.
+```sh
+electron scripts/check-module-lifecycle.cjs
+electron scripts/check-wave-placement.cjs
+electron scripts/check-network-settings.cjs
+electron scripts/check-native-cover.cjs
+```
 
-## 📖 Usage
+Часть проверки размещения читает публичные страницы SoundCloud. Диагностические сценарии не требуют входа. Настоящие сервисы, длительное прослушивание и все варианты интерфейса сайта нельзя заменить модульными тестами.
 
-Press `F1` to open the application menu, which provides access to various settings and features.
+## Документация
 
-### Keyboard Shortcuts
+- [Моя волна](WAVE.md)
+- [Импорт плейлистов](PLAYLIST_IMPORT.md)
+- [Проверка модулей 0.24.0](MODULE_REVIEW_0240.md)
+- [Изменения 0.25.0](CHANGELOG.md)
 
-**Quick Reference:**
+## Авторы и лицензия
 
-- **F1** - Open Settings
-- **Ctrl/Cmd + R** - Refresh the current page
-- **Ctrl/Cmd + B** - Go back to the previous page
-- **Ctrl/Cmd + F** - Go forward to the next page
-- **Ctrl/Cmd + =** - Zoom in
-- **Ctrl/Cmd + -** - Zoom out
-- **Ctrl/Cmd + 0** - Reset zoom
-
-## 🖼️ Preview
-
-<div align="center">
-<picture>
-      <img src="assets/preview/soundcloud-preview-dark.png" />
-</picture>
-
-<picture>
-      <img src="assets/preview/soundcloud-preview-light.png" />
-</picture>
-</div>
-
-## 🛠️ Built With
-
-- [@xhayper/discord-rpc](https://www.npmjs.com/package/@xhayper/discord-rpc) - Discord Rich Presence integration
-- [Electron](https://www.electronjs.org/) - Framework for building cross-platform desktop applications
-- [electron-builder](https://www.electron.build/) - Tool for packaging and distributing Electron applications
-- [@ghostery/adblocker-electron](https://www.npmjs.com/package/@ghostery/adblocker-electron) - Ad blocking functionality
-- [electron-store](https://www.npmjs.com/package/electron-store) - Data persistence
-- [electron-updater](https://www.npmjs.com/package/electron-updater) - Auto-update functionality
-
-## 🤝 Contributing
-
-Contributions to this project are welcome. If you find a bug or would like to suggest a new feature, please open an
-issue on this repository.
-
-## 📜 License
-
-This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
-
-[repo_logo_img]: https://github.com/create-go-app/cli/assets/11155743/95024afc-5e3b-4d6f-8c9c-5daaa51d080d
-[repo_url]: https://github.com/richardhbtz/soundcloud-rpc
+Основа клиента — [Richard Habitzreuter и участники soundcloud-rpc](https://github.com/richardhbtz/soundcloud-rpc). Изменения этого форка — [chechenecdbd-dot](https://github.com/chechenecdbd-dot). Лицензия [MIT](LICENSE). SoundCloud и упомянутые сервисы принадлежат их владельцам; этот форк с ними не аффилирован.

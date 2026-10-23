@@ -3,14 +3,15 @@ import { resolve } from 'path';
 import { Script, createContext } from 'vm';
 import { describe, expect, it, vi } from 'vitest';
 import { parseMetadata } from '../utils/metadataParser';
-
 interface PlaybackSpeedPlugin {
     onEnable?: () => void;
     onDisable?: () => void;
     contentScript?: () => string;
 }
-
-function loadPlugin(): { source: string; plugin: PlaybackSpeedPlugin } {
+function loadPlugin(): {
+    source: string;
+    plugin: PlaybackSpeedPlugin;
+} {
     const source = readFileSync(resolve(process.cwd(), 'plugins/playback-speed.js'), 'utf8');
     const module = { exports: {} as PlaybackSpeedPlugin };
     const context = createContext({
@@ -22,16 +23,13 @@ function loadPlugin(): { source: string; plugin: PlaybackSpeedPlugin } {
             error: vi.fn(),
         },
     });
-
     new Script(source, { filename: 'playback-speed.js' }).runInContext(context);
     return { source, plugin: module.exports };
 }
-
 describe('Playback Speed plugin', () => {
     it('has valid metadata and lifecycle hooks', () => {
         const { source, plugin } = loadPlugin();
         const metadata = parseMetadata(source, 'js');
-
         expect(metadata.name).toBe('Playback Speed');
         expect(metadata.version).toBe('1.4.0');
         expect(metadata.license).toBe('MIT');
@@ -39,11 +37,9 @@ describe('Playback Speed plugin', () => {
         expect(plugin.onDisable).toBeTypeOf('function');
         expect(plugin.contentScript).toBeTypeOf('function');
     });
-
     it('produces syntactically valid page code with the expected controls', () => {
         const { plugin } = loadPlugin();
         const contentScript = plugin.contentScript?.();
-
         expect(contentScript).toContain('MIN_RATE = 0.5');
         expect(contentScript).toContain('MAX_RATE = 2');
         expect(contentScript).toContain('RATE_STEP = 0.05');

@@ -1,341 +1,95 @@
-export const audioMonitorScript = `
-(function() {
-  // Avoid duplicate injections
+export const audioMonitorScript = String.raw`
+(() => {
   if (window.__soundCloudMonitorActive) return;
   window.__soundCloudMonitorActive = true;
-  
-  console.debug('monitor script injected');
-  
-  // Track current playback state
-  let isCurrentlyPlaying = false;
-  let currentTrackTitle = '';
-  let currentTrackAuthor = '';
-  let currentTrackUrl = '';
-  let currentTrackElapsed = '';
-  let currentTrackDuration = '';
-  let isCurrentTrackLiked = false;
-  let elapsedObserver = null;
-  
-  function getTrackInfo() {
-    const playButton = document.querySelector('.playControls__play');
-    const isPlaying = playButton ? playButton.classList.contains('playing') : false;
-    
-    const authorEl = document.querySelector('.playbackSoundBadge__lightLink');
-    const artworkEl = document.querySelector('.playbackSoundBadge__avatar .image__lightOutline span');
-    const elapsedEl = document.querySelector('.playbackTimeline__timePassed span:last-child');
-    const durationEl = document.querySelector('.playbackTimeline__duration span:last-child');
-    const urlEl = document.querySelector('.playbackSoundBadge__titleLink');
-    const likeButtonEl = document.querySelector('.playbackSoundBadge__like');
-    
+  let disposed = false, reconcileTimer, notifyTimer, last, lastProgressAt = 0;
+  const bindings = new Map();
+  const seconds = value => (value || '').split(':').reduce((sum, part) => sum * 60 + (Number(part) || 0), 0);
+  const read = () => {
+    const play = document.querySelector('.playControls__play');
+    const title = document.querySelector('.playbackSoundBadge__titleLink');
+    const art = document.querySelector('.playbackSoundBadge__avatar .image__lightOutline span');
+    const like = document.querySelector('.playbackSoundBadge__like');
+    const maximum = Number(document.querySelector('.playbackTimeline__progressWrapper[aria-valuemax]')?.getAttribute('aria-valuemax'));
+    let duration = document.querySelector('.playbackTimeline__duration span:last-child')?.textContent.trim() || '';
+    if (Number.isFinite(maximum) && maximum > 0) {
+      const whole = Math.round(maximum);
+      duration = Math.floor(whole / 60) + ':' + String(whole % 60).padStart(2, '0');
+    } else if (duration.startsWith('-')) duration = '';
     return {
-      title: artworkEl ? artworkEl.getAttribute('aria-label') : '',
-      author: authorEl ? authorEl.textContent.trim() : '',
-      artwork: artworkEl ? artworkEl.style.backgroundImage.replace(/^url\\(['"]?|['"]?\\)$/g, '') : '',
-      elapsed: elapsedEl ? elapsedEl.textContent.trim() : '',
-      duration: durationEl ? durationEl.textContent.trim() : '',
-      isPlaying: isPlaying,
-      isLiked: likeButtonEl ? likeButtonEl.classList.contains('sc-button-selected') : false,
-      url: urlEl ? urlEl.href.split('?')[0] : ''
+      title: title?.getAttribute('title') || title?.textContent.trim() || art?.getAttribute('aria-label') || '',
+      author: document.querySelector('.playbackSoundBadge__lightLink')?.textContent.trim() || '',
+      artwork: art?.style.backgroundImage.replace(/^url\(['"]?|['"]?\)$/g, '') || '',
+      elapsed: document.querySelector('.playbackTimeline__timePassed span:last-child')?.textContent.trim() || '',
+      duration,
+      isPlaying: Boolean(play?.classList.contains('playing')),
+      isLiked: Boolean(like && (like.classList.contains('sc-button-selected') || like.getAttribute('aria-pressed') === 'true')),
+      url: title?.href.split(/[?#]/)[0] || '',
     };
-  }
-
-  function notifyPlaybackStateChange() {
-    const trackInfo = getTrackInfo();
-    const stateChanged = trackInfo.isPlaying !== isCurrentlyPlaying;
-    const trackChanged = 
-      trackInfo.title !== currentTrackTitle || 
-      trackInfo.author !== currentTrackAuthor ||
-      trackInfo.url !== currentTrackUrl;
-    const elapsedChanged = trackInfo.elapsed !== currentTrackElapsed;
-    const durationChanged = trackInfo.duration !== currentTrackDuration;
-    const likeChanged = trackInfo.isLiked !== isCurrentTrackLiked;
-    
-    if (stateChanged || trackChanged || elapsedChanged || likeChanged || !window.__initialStateSent) {
-      isCurrentlyPlaying = trackInfo.isPlaying;
-      currentTrackTitle = trackInfo.title;
-      currentTrackAuthor = trackInfo.author;
-      currentTrackUrl = trackInfo.url;
-      currentTrackElapsed = trackInfo.elapsed;
-      currentTrackDuration = trackInfo.duration;
-      isCurrentTrackLiked = trackInfo.isLiked;
-      window.__initialStateSent = true;
-      
-      window.soundcloudAPI.sendTrackUpdate(trackInfo, 'playback-state-change');
-      console.debug('Playbook state change:', trackInfo.isPlaying ? 'playing' : 'paused', trackInfo);
+  };
+  const notify = () => {
+    if (disposed) return;
+    const next = read();
+    const sameTrack = last && next.url === last.url;
+    const elapsed = seconds(next.elapsed), previous = seconds(last?.elapsed), duration = seconds(next.duration);
+    const changed = !last || ['title','author','artwork','url','duration','isPlaying','isLiked'].some(key => next[key] !== last[key]);
+    const jumped = sameTrack && Math.abs(elapsed - previous) > 3;
+    const nearEnd = duration > 0 && elapsed >= duration - 5 && next.elapsed !== last?.elapsed;
+    if (changed || jumped || nearEnd) {
+      window.soundcloudAPI.sendTrackUpdate(next, jumped ? 'seek-change' : 'playback-state-change');
+      lastProgressAt = Date.now();
+    } else if (next.isPlaying && Date.now() - lastProgressAt >= 5000) {
+      window.soundcloudAPI.sendTrackProgress?.(next);
+      lastProgressAt = Date.now();
     }
-  }
-  
-  // Monitor play button state changes directly
-  function setupPlaybackObserver() {
-    const playButton = document.querySelector('.playControls__play');
-    if (!playButton) return false;
-    
-    const observer = new MutationObserver(() => {
-      notifyPlaybackStateChange();
-    });
-    
-    observer.observe(playButton, { 
-      attributes: true,
-      attributeFilter: ['class'] // class changes indicate play/pause. can also do title and label
-    });
-    
-    return true;
-  }
-  
-  // Monitor playback controls for direct clicks
-  function monitorPlaybackControls() {
-    const playPauseButton = document.querySelector('.playControl');
-    if (playPauseButton && !playPauseButton.__monitored) {
-      playPauseButton.__monitored = true;
-      playPauseButton.addEventListener('click', () => {
-        console.debug('Play/pause button');
-        // Small delay to allow the class to update
-        setTimeout(notifyPlaybackStateChange, 50);
-      });
+    last = next;
+  };
+  const scheduleNotify = () => {
+    if (notifyTimer !== undefined || disposed) return;
+    notifyTimer = setTimeout(() => { notifyTimer = undefined; notify(); }, 30);
+  };
+  const selectors = [
+    '.playControls__play', '.playbackSoundBadge', '.playbackTimeline__timePassed',
+    '.playbackTimeline__duration', '.playbackTimeline__progressWrapper',
+  ];
+  const reconcile = () => {
+    if (disposed) return;
+    for (const selector of selectors) {
+      const element = document.querySelector(selector), old = bindings.get(selector);
+      if (old?.element === element) continue;
+      old?.observer.disconnect();
+      bindings.delete(selector);
+      if (!element) continue;
+      const observer = new MutationObserver(scheduleNotify);
+      observer.observe(element, { childList: true, subtree: true, characterData: true, attributes: true,
+        attributeFilter: ['class','title','aria-label','aria-pressed','aria-valuemax','href','style'] });
+      bindings.set(selector, { element, observer });
+      scheduleNotify();
     }
-    
-    // Monitor prev/next buttons too as they affect playback
-    const prevButton = document.querySelector('.skipControl__previous');
-    const nextButton = document.querySelector('.skipControl__next');
-    
-    if (prevButton && !prevButton.__monitored) {
-      prevButton.__monitored = true;
-      prevButton.addEventListener('click', () => {
-        console.debug('Previous track button clicked');
-        currentTrackTitle = '';
-        currentTrackAuthor = '';
-        currentTrackUrl = '';
-        // Wait a bit longer for track to change
-        setTimeout(notifyPlaybackStateChange, 300);
-      });
-    }
-    
-    if (nextButton && !nextButton.__monitored) {
-      nextButton.__monitored = true;
-      nextButton.addEventListener('click', () => {
-        console.debug('Next track button clicked');
-        currentTrackTitle = '';
-        currentTrackAuthor = '';
-        currentTrackUrl = '';
-        // Wait a bit longer for track to change
-        setTimeout(notifyPlaybackStateChange, 300);
-      });
-    }
-
-    // Monitor like button interaction to instantly trigger UI mirror
-    const likeButton = document.querySelector('.playbackSoundBadge__like');
-    if (likeButton && !likeButton.__monitored) {
-      likeButton.__monitored = true;
-      likeButton.addEventListener('click', () => {
-        console.debug('Like button clicked');
-        setTimeout(notifyPlaybackStateChange, 50);
-      });
-    }
-
-    monitorTimelineSeeking();
-    monitorWaveformSeeking();
-  }
-
-  function monitorWaveformSeeking() {
-    const waveformWrapper = document.querySelector('.waveform');
-    
-    if (waveformWrapper && !waveformWrapper.__waveformMonitored) {
-      waveformWrapper.__waveformMonitored = true;
-      
-      waveformWrapper.addEventListener('click', () => {
-        setTimeout(() => {
-          const trackInfo = getTrackInfo();
-          currentTrackElapsed = trackInfo.elapsed;
-          window.soundcloudAPI.sendTrackUpdate(trackInfo, 'waveform-seek');
-        }, 100);
-      });
-      console.debug('Waveform click monitoring attached');
-    }
-    
-    return !!waveformWrapper;
-  }
-
-  function monitorTimelineSeeking() {
-    const timelineElement = document.querySelector('.playbackTimeline.is-scrubbable.has-sound');
-    
-    if (timelineElement && !timelineElement.__seekMonitored) {
-      timelineElement.__seekMonitored = true;
-      
-      const timelineObserver = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-          if (mutation.attributeName === 'class') {
-            const isDragging = timelineElement.classList.contains('is-dragging');
-            
-            if (!isDragging && timelineElement.__wasDragging) {
-              // Dragging ended - update the presence with new position
-              console.debug('Seek completed - updating time position');
-              setTimeout(() => {
-                const trackInfo = getTrackInfo();
-                currentTrackElapsed = trackInfo.elapsed;
-                window.soundcloudAPI.sendTrackUpdate(trackInfo, 'timeline-seek');
-              }, 50);
-            }
-            
-            timelineElement.__wasDragging = isDragging;
-          }
-        }
-      });
-      
-      timelineObserver.observe(timelineElement, {
-        attributes: true,
-        attributeFilter: ['class']
-      });
-      console.debug('Timeline seek monitoring attached');
-    }
-    
-    return !!timelineElement;
-  }
-  
-  // Monitor elapsed time element for changes (catches loops)
-  function monitorElapsedTime() {
-    const elapsedElement = document.querySelector('.playbackTimeline__timePassed span:last-child');
-    
-    if (elapsedElement) {
-      if (elapsedObserver) {
-        elapsedObserver.disconnect();
-      }
-      
-      elapsedObserver = new MutationObserver(() => {
-        const trackInfo = getTrackInfo();
-        
-        // Only update if one of these have changed:
-        // 1. Track changed (title/author/url)
-        // 2. Play state changed
-        // 3. Elapsed time reset to start (loop detection)
-        // 4. Like state changed
-        const trackChanged = trackInfo.title !== currentTrackTitle ||
-                            trackInfo.author !== currentTrackAuthor ||
-                            trackInfo.url !== currentTrackUrl;
-        const playStateChanged = trackInfo.isPlaying !== isCurrentlyPlaying;
-        const likeChanged = trackInfo.isLiked !== isCurrentTrackLiked;
-        
-        // Check if it's near the start (0-3 seconds = loop)
-        const parseTimeToSeconds = (time) => {
-          if (!time) return 0;
-          const parts = time.split(':').map(p => parseInt(p) || 0);
-          let seconds = 0;
-          for (const part of parts) {
-            seconds = seconds * 60 + part;
-          }
-          return seconds;
-        };
-        const elapsedSeconds = parseTimeToSeconds(trackInfo.elapsed);
-        const isLoop = elapsedSeconds <= 3;
-        
-        if (trackChanged || playStateChanged || likeChanged || isLoop) {
-          notifyPlaybackStateChange();
-        }
-      });
-      
-      // Watch for text content changes
-      const parentEl = elapsedElement.parentElement;
-      if (parentEl) {
-        elapsedObserver.observe(parentEl, {
-          childList: true,
-          characterData: true,
-          subtree: true
-        });
-        console.debug('Monitoring elapsed time parent element');
-      } else {
-        elapsedObserver.observe(elapsedElement, {
-          childList: true,
-          characterData: true,
-          subtree: true
-        });
-        console.debug('Monitoring elapsed time element');
-      }
-      
-      return true;
-    }
-    return false;
-  }
-  
-  // Initial setup
-  function initialize() {
-    const playbackObserverSet = setupPlaybackObserver();
-    monitorPlaybackControls();
-    
-    window.__initialStateSent = false;
-    notifyPlaybackStateChange();
-    
-    // Watch for dynamically loaded elements
-    if (!playbackObserverSet) {
-      const documentObserver = new MutationObserver(() => {
-        if (!document.querySelector('.playControls__play')) return;
-        
-        if (setupPlaybackObserver()) {
-          monitorPlaybackControls();
-          documentObserver.disconnect();
-        }
-      });
-      
-      documentObserver.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-    }
-    
-    // Start monitoring elapsed time for loop detection
-    monitorElapsedTime();
-    
-    // Re-monitor elements if they get replaced/recreated
-    const bodyObserver = new MutationObserver(() => {
-      const elapsedEl = document.querySelector('.playbackTimeline__timePassed span:last-child');
-      if (elapsedEl && !elapsedObserver) {
-        monitorElapsedTime();
-      }
-      
-      const waveformEl = document.querySelector('.waveform');
-      if (waveformEl && !waveformEl.__waveformMonitored) {
-        monitorWaveformSeeking();
-      }
-      
-      const timelineEl = document.querySelector('.playbackTimeline.is-scrubbable.has-sound');
-      if (timelineEl && !timelineEl.__seekMonitored) {
-        monitorTimelineSeeking();
-      }
-      
-      const prevButton = document.querySelector('.skipControl__previous');
-      const nextButton = document.querySelector('.skipControl__next');
-      if ((prevButton && !prevButton.__monitored) || (nextButton && !nextButton.__monitored)) {
-        monitorPlaybackControls();
-      }
-      
-      const playPauseButton = document.querySelector('.playControl');
-      if (playPauseButton && !playPauseButton.__monitored) {
-        monitorPlaybackControls();
-      }
-
-      const likeButton = document.querySelector('.playbackSoundBadge__like');
-      if (likeButton && !likeButton.__monitored) {
-        monitorPlaybackControls();
-      }
-    });
-    
-    bodyObserver.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-  }
-  
-  // Cleanup on page unload
-  window.addEventListener('beforeunload', () => {
-    if (elapsedObserver) {
-      elapsedObserver.disconnect();
-      elapsedObserver = null;
-    }
+  };
+  const documentObserver = new MutationObserver(() => {
+    if (reconcileTimer !== undefined || disposed) return;
+    reconcileTimer = setTimeout(() => { reconcileTimer = undefined; reconcile(); }, 100);
   });
-  
-  // Start monitoring
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    initialize();
-  } else {
-    document.addEventListener('DOMContentLoaded', initialize);
-  }
+  const onSeek = event => {
+    if (event.target instanceof Element && event.target.closest('.playbackTimeline, .waveform')) scheduleNotify();
+  };
+  const initialize = () => {
+    if (disposed) return;
+    reconcile(); notify();
+    documentObserver.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('click', onSeek, true);
+    document.addEventListener('pointerup', onSeek, true);
+  };
+  window.addEventListener('beforeunload', () => {
+    disposed = true; clearTimeout(reconcileTimer); clearTimeout(notifyTimer);
+    documentObserver.disconnect();
+    for (const {observer} of bindings.values()) observer.disconnect();
+    bindings.clear();
+    document.removeEventListener('click', onSeek, true);
+    document.removeEventListener('pointerup', onSeek, true);
+  }, { once: true });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
+  else initialize();
 })();
 `;

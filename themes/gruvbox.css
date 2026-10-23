@@ -18,7 +18,6 @@ body {
 }
 
 .theme-dark {
-    /* === Core surfaces === */
     --surface-color: #282828 !important;
     --surface-rgb: 40, 40, 40 !important;
     --primary-color: #ebdbb2 !important;
@@ -33,8 +32,6 @@ body {
     --overlay-rgb: 255, 255, 255, 0.1 !important;
     --imageBorder-color: hsla(0, 0%, 100%, 0.05) !important;
     --imageBorder-rgb: 255, 255, 255, 0.05 !important;
-
-    /* === Accent usage === */
     --artist-color: #d3869b !important;
     --artist-rgb: 211, 134, 155 !important;
     --artist-pro-color: #fabd2f !important;
@@ -43,8 +40,6 @@ body {
     --artist-surface-rgb: 177, 98, 134 !important;
     --artist-pro-surface-color: #d79921 !important;
     --artist-pro-surface-rgb: 215, 153, 33 !important;
-
-    /* === Support colors === */
     --support-bg-color: #98971a !important;
     --support-bg-rgb: 152, 151, 26 !important;
     --support-text-color: #282828 !important;
@@ -53,12 +48,8 @@ body {
     --support-hover-bg-rgb: 184, 187, 38 !important;
     --support-hover-text-color: #282828 !important;
     --support-hover-text-rgb: 40, 40, 40 !important;
-
-    /* === Background layers === */
     --background-surface-color: #1d2021 !important;
     --background-highlight-color: #3c3836 !important;
-
-    /* === Fonts === */
     --font-sans-serif-family: 'Ubuntu Mono' !important;
     --font-monospace-family: 'Ubuntu Mono' !important;
     --font-light-color: #fbf1c7 !important;
@@ -68,21 +59,15 @@ body {
     --font-primary-color: #ebdbb2 !important;
     --font-secondary-color: #a89984 !important;
     --font-link-color: #83a598 !important;
-
-    /* === Buttons === */
     --button-light-background-color: #ebdbb2 !important;
     --button-light-font-color: #282828 !important;
     --button-dark-background-color: #282828 !important;
     --button-dark-font-color: #ebdbb2 !important;
     --button-special-background-color: #fe8019 !important;
     --button-special-font-color: #282828 !important;
-
-    /* Focus/active states */
     --button-focused-box-shadow: 0 0 0 2px #83a598 inset !important;
     --button-disabled-opacity: 0.4 !important;
     --button-active-opacity: 0.6 !important;
-
-    /* Primary buttons */
     --button-primary-background-color: #ebdbb2 !important;
     --button-primary-font-color: #282828 !important;
     --button-primary-hover-font-color: rgba(40, 40, 40, 0.7) !important;
@@ -92,35 +77,25 @@ body {
     --button-primary-selected-font-color: #ebdbb2 !important;
     --button-primary-selected-hover-font-color: hsla(40, 100%, 90%, 0.6) !important;
     --button-primary-selected-active-font-color: #ebdbb2 !important;
-
-    /* Secondary buttons */
     --button-secondary-background-color: #3c3836 !important;
     --button-secondary-font-color: #ebdbb2 !important;
     --button-secondary-hover-font-color: hsla(40, 100%, 90%, 0.6) !important;
     --button-secondary-selected-background-color: #3c3836 !important;
     --button-secondary-selected-font-color: #fe8019 !important;
     --button-secondary-selected-hover-font-color: rgba(254, 128, 25, 0.6) !important;
-
-    /* Tertiary buttons */
     --button-tertiary-background-color: #1d2021 !important;
     --button-tertiary-font-color: #ebdbb2 !important;
     --button-tertiary-selected-font-color: #fe8019 !important;
-
-    /* Links */
     --link-standard-color: #83a598 !important;
     --link-standard-focus-box-shadow: 0 0 0 2px #83a598 !important;
     --link-standard-hover-color: #83a598 !important;
     --link-primary-color: #ebdbb2 !important;
     --link-primary-focus-box-shadow: 0 0 0 2px #83a598 !important;
     --link-secondary-color: #a89984 !important;
-
-    /* Inputs */
     --input-default-background-color: #3c3836 !important;
     --input-default-font-color: #ebdbb2 !important;
     --input-placeholder-font-color: #a89984 !important;
     --input-focused-border-color: #b8bb26 !important;
-
-    /* Toggles */
     --toggle-focused-box-shadow: 0 0 0 2px #83a598 !important;
     --toggle-on-body-color: #fe8019 !important;
     --toggle-on-handle-color: #282828 !important;
@@ -141,34 +116,32 @@ body {
 }
 
 .header {
-    background: rgba(0, 0, 0, 0.1) !important; /* semi-transparent */
-    backdrop-filter: blur(10px) !important; /* applies blur to background */
+    background: rgba(0, 0, 0, 0.1) !important;
+    backdrop-filter: blur(10px) !important;
     -webkit-backdrop-filter: blur(10px) !important;
-    border-radius: 12px !important; /* optional: rounded edges */
+    border-radius: 12px !important;
 }
 
 .playControls__inner {
-    background: rgba(0, 0, 0, 0.1) !important; /* semi-transparent */
-    backdrop-filter: blur(10px) !important; /* applies blur to background */
+    background: rgba(0, 0, 0, 0.1) !important;
+    backdrop-filter: blur(10px) !important;
     -webkit-backdrop-filter: blur(10px) !important;
     border-radius: 12px !important;
 }
 
 .sc-button.sc-button-secondary,
 .sc-button.sc-button-secondary:visited {
-    background: rgb(60, 56, 54, 0.4) !important; /* semi-transparent background */
-    backdrop-filter: blur(8px); /* blur behind */
+    background: rgb(60, 56, 54, 0.4) !important;
+    backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    color: #fff !important; /* white text */
-    border: 2px solid rgba(255, 255, 255, 0.2); /* subtle border */
-    border-radius: 10px; /* rounded corners */
-    padding: 6px 18px; /* spacing */
+    color: #fff !important;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    padding: 6px 18px;
     transition:
         background 0.2s,
         transform 0.2s;
 }
-
-/* Hover effect */
 .sc-button.sc-button-secondary:hover {
     background: rgba(255, 255, 255, 0.15) !important;
     transform: scale(1.05);

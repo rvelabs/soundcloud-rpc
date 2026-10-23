@@ -1,10 +1,9 @@
-import { BrowserView, BrowserWindow, ipcMain } from 'electron';
+import { BrowserView, BrowserWindow, ipcMain, type IpcMainEvent } from 'electron';
 import { join } from 'path';
-
 let confirmPopupView: BrowserView | null = null;
+let cancelPending: (() => void) | undefined;
 const devMode = process.argv.includes('--dev');
 const isMac = process.platform === 'darwin';
-
 function escapeHtml(value: string): string {
     return value
         .replace(/&/g, '&amp;')
@@ -13,25 +12,21 @@ function escapeHtml(value: string): string {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
-
 function updateHomepageConfirmBounds(mainWindow: BrowserWindow): void {
     if (!mainWindow || !confirmPopupView) return;
     const { width, height } = mainWindow.getContentBounds();
     confirmPopupView.setBounds({ x: 0, y: 0, width, height });
 }
-
 export async function showHomepageConfirmDialog(mainWindow: BrowserWindow, url: string): Promise<boolean> {
     if (!mainWindow) return false;
-
+    cancelPending?.();
     if (confirmPopupView) {
         mainWindow.removeBrowserView(confirmPopupView);
-        (confirmPopupView as any).webContents.destroy();
+        if (!confirmPopupView.webContents.isDestroyed()) confirmPopupView.webContents.close();
         confirmPopupView = null;
     }
-
     const requestId = `homepage-confirm-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const safeUrl = escapeHtml(url);
-
     confirmPopupView = new BrowserView({
         webPreferences: {
             nodeIntegration: false,
@@ -46,11 +41,9 @@ export async function showHomepageConfirmDialog(mainWindow: BrowserWindow, url: 
             ...(isMac ? { spellcheck: false } : {}),
         },
     });
-
     mainWindow.addBrowserView(confirmPopupView);
     updateHomepageConfirmBounds(mainWindow);
     confirmPopupView.setAutoResize({ width: true, height: true });
-
     const html = `
         <style>
             @font-face {
@@ -179,27 +172,44 @@ export async function showHomepageConfirmDialog(mainWindow: BrowserWindow, url: 
             </script>
         </body>
     `;
-
-    await confirmPopupView.webContents.loadURL(`data:text/html,${encodeURIComponent(html)}`);
-    confirmPopupView.webContents.focus();
-
+    const view = confirmPopupView;
     return new Promise((resolve) => {
-        ipcMain.once('homepage-confirm-result', (_event, data: { requestId: string; result: boolean }) => {
-            if (data?.requestId !== requestId) {
-                resolve(false);
-                return;
-            }
-
-            if (confirmPopupView && mainWindow) {
-                mainWindow.removeBrowserView(confirmPopupView);
-                (confirmPopupView as any).webContents.destroy();
-                confirmPopupView = null;
-            }
-            resolve(!!data.result);
-        });
+        let settled = false;
+        const finish = (result: boolean) => {
+            if (settled) return;
+            settled = true;
+            ipcMain.removeListener('homepage-confirm-result', onResult);
+            mainWindow.removeListener('closed', cancel);
+            view.webContents.removeListener('destroyed', cancel);
+            if (cancelPending === cancel) cancelPending = undefined;
+            if (!mainWindow.isDestroyed()) mainWindow.removeBrowserView(view);
+            if (!view.webContents.isDestroyed()) view.webContents.close();
+            if (confirmPopupView === view) confirmPopupView = null;
+            resolve(result);
+        };
+        const cancel = () => finish(false);
+        const onResult = (
+            event: IpcMainEvent,
+            data: {
+                requestId?: string;
+                result?: boolean;
+            },
+        ) => {
+            if (event.sender !== view.webContents || data?.requestId !== requestId) return;
+            finish(data.result === true);
+        };
+        cancelPending = cancel;
+        ipcMain.on('homepage-confirm-result', onResult);
+        mainWindow.once('closed', cancel);
+        view.webContents.once('destroyed', cancel);
+        void view.webContents
+            .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+            .then(() => {
+                if (!settled && !view.webContents.isDestroyed()) view.webContents.focus();
+            })
+            .catch(cancel);
     });
 }
-
 export function updateDialogBounds(mainWindow: BrowserWindow): void {
     updateHomepageConfirmBounds(mainWindow);
 }

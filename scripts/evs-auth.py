@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-EVS Authentication helper for CI/CD environments.
-Reads credentials from environment variables and creates config file.
-"""
-
 import os
 import json
 import sys
@@ -16,29 +11,18 @@ def authenticate():
     if not username or not password:
         print("Error: EVS_USERNAME and EVS_PASSWORD environment variables must be set")
         sys.exit(1)
-    
-    # Config file location
     config_dir = Path.home() / '.config' / 'evs'
     config_file = config_dir / 'config.json'
-    
-    # Create directory if needed
     config_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Authenticating EVS account: {username}")
     
     try:
-        # Import EVS modules
         from castlabs_evs.auth import Auth
-        
-        # Create auth object with no_ask=True
         auth = Auth(no_ask=True)
-        
-        # Force refresh with credentials (this will authenticate and store tokens)
         auth._refresh_auth(username, password)
         
         print("EVS authentication successful!")
-        if auth._auth_access_token:
-            print(f"Access token acquired: {auth._auth_access_token[:20]}...")
         return True
         
     except Exception as e:

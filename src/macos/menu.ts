@@ -1,5 +1,4 @@
-import { Menu } from 'electron';
-
+import { Menu, shell } from 'electron';
 const template: Electron.MenuItemConstructorOptions[] = [
     {
         label: 'Edit',
@@ -25,13 +24,12 @@ const template: Electron.MenuItemConstructorOptions[] = [
             {
                 label: 'Learn More',
                 click() {
-                    require('electron').shell.openExternal('https://github.com/richardhbtz/soundcloud-rpc');
+                    void shell.openExternal('https://github.com/richardhbtz/soundcloud-rpc');
                 },
             },
         ],
     },
 ];
-
 export function setupDarwinMenu(): void {
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);

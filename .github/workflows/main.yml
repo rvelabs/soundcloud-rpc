@@ -1,64 +1,38 @@
-name: Build/release
-
-on: push
-
+name: Verify
+on:
+    push:
+        branches: [main]
+    pull_request:
+    workflow_dispatch:
+permissions:
+    contents: read
 jobs:
-    release:
-        runs-on: ${{ matrix.os }}
-        env:
-            EVS_USERNAME: ${{ secrets.EVS_USERNAME }}
-            EVS_PASSWORD: ${{ secrets.EVS_PASSWORD }}
-            # forks don't have the evs secrets, build unsigned there instead of dying
-            STRICT_VMP_SIGNING: ${{ secrets.EVS_USERNAME != '' }}
-
-        strategy:
-            matrix:
-                os: [macos-latest, windows-latest, ubuntu-latest]
-
+    verify:
+        runs-on: windows-latest
         steps:
-            - name: Check out Git repository
-              uses: actions/checkout@v4
-
-            - name: Install pnpm
-              uses: pnpm/action-setup@v4
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
               with:
-                  version: 10
-
-            - name: Install Node.js
-              uses: actions/setup-node@v4
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            - run: npx tsc --noEmit
+            - run: npm run lint
+            - run: npm test
+    package:
+        if: github.event_name == 'workflow_dispatch'
+        needs: verify
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
               with:
-                  node-version: 24
-                  cache: 'pnpm'
-
-            - name: Install Python
-              uses: actions/setup-python@v5
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            - run: npm run build-win
+            - uses: actions/upload-artifact@v4
               with:
-                  python-version: '3.11'
-
-            - name: Install EVS client
-              if: matrix.os != 'ubuntu-latest' && env.EVS_USERNAME != ''
-              run: python -m pip install castlabs_evs
-
-            - name: Authenticate EVS (non-interactive)
-              if: matrix.os != 'ubuntu-latest' && env.EVS_USERNAME != ''
-              run: python scripts/evs-auth.py
-
-            - name: Install dependencies
-              run: pnpm install
-
-            - name: Run tests
-              run: pnpm test
-
-            - name: Check code formatting with Prettier
-              run: pnpm prettier --check .
-
-            - name: Build/release Electron app
-              uses: actions-marketplace-validations/njzydark_action-electron-builder-pnpm@pnpm
-              with:
-                  github_token: ${{ secrets.github_token }}
-                  package_manager: 'pnpm'
-                  release: ${{ startsWith(github.ref, 'refs/tags/v') }}
-              env:
-                  EVS_USERNAME: ${{ env.EVS_USERNAME }}
-                  EVS_PASSWORD: ${{ env.EVS_PASSWORD }}
-                  STRICT_VMP_SIGNING: ${{ env.STRICT_VMP_SIGNING }}
+                  name: soundcloud-windows
+                  path: build/*installer-win.exe
+                  if-no-files-found: error

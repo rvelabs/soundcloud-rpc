@@ -7,7 +7,6 @@ export interface FileMetadata {
     homepage: string;
     [key: string]: string;
 }
-
 const DEFAULTS: FileMetadata = {
     name: '',
     author: 'Unknown',
@@ -16,7 +15,6 @@ const DEFAULTS: FileMetadata = {
     license: '',
     homepage: '',
 };
-
 function extractBlock(source: string, style: 'css' | 'js'): string | null {
     if (style === 'js') {
         const m = source.match(/^[\s\S]*?\/\*\*([\s\S]*?)\*\//);
@@ -25,7 +23,6 @@ function extractBlock(source: string, style: 'css' | 'js'): string | null {
     const m = source.match(/^[\s\S]*?\/\*([\s\S]*?)\*\//);
     return m ? m[1] : null;
 }
-
 function parseFields(block: string): Record<string, string> {
     const fields: Record<string, string> = {};
     const lines = block.split('\n');
@@ -38,7 +35,6 @@ function parseFields(block: string): Record<string, string> {
     }
     return fields;
 }
-
 export function parseMetadata(source: string, style: 'css' | 'js'): FileMetadata {
     const block = extractBlock(source, style);
     if (!block) return { ...DEFAULTS };

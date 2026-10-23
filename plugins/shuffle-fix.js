@@ -6,21 +6,15 @@
  * @license MIT
  * @homepage https://gist.github.com/iamnotbobby/604828ac84d9d1ec54eabb8d99d56c7b
  */
-
-// View the homepage for important information and known issues!
-
-const MAX_LIMIT = 250; // Maximum tracks to request per API call
-const BATCH_SIZE = 50; // Number of tracks to load per batch
-
+const MAX_LIMIT = 250;
+const BATCH_SIZE = 50;
 module.exports = {
     onEnable() {
         console.log('shuffle-fix enabled');
     },
-
     onDisable() {
         console.log('shuffle-fix disabled');
     },
-
     contentScript() {
         return `
 (function() {
@@ -33,7 +27,6 @@ module.exports = {
     function findWebpackRequire() {
         if (typeof window.webpackJsonp !== 'undefined') {
             let requireFunc = null;
-            // Do not remove module or exports even if unused, will break!
             window.webpackJsonp.push([[], {'_': function(module, exports, __webpack_require__) { requireFunc = __webpack_require__; }}, [['_']]]);
             return requireFunc;
         }
@@ -42,7 +35,6 @@ module.exports = {
                 const chunk = window[key];
                 if (Array.isArray(chunk)) {
                     let requireFunc = null;
-                    // Do not remove module or exports even if unused, will break!
                     chunk.push([['_'], {'_': function(module, exports, __webpack_require__) { requireFunc = __webpack_require__; }}, [['_']]]);
                     if (requireFunc) return requireFunc;
                 }

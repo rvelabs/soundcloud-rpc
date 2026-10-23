@@ -1,0 +1,4 @@
+name = "soundcloud-wave-relay"
+main = "worker.mjs"
+compatibility_date = "2026-10-22"
+workers_dev = true

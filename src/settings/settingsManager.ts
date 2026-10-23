@@ -1,11 +1,9 @@
-import { BrowserView, BrowserWindow } from 'electron';
-import type ElectronStore = require('electron-store');
+import { BrowserView, BrowserWindow, type WebContents } from 'electron';
+import type ElectronStore from 'electron-store';
 import { TranslationService } from '../services/translationService';
 import type { ThemeColors } from '../utils/colorExtractor';
 import { join } from 'path';
-
 const isMac = process.platform === 'darwin';
-
 export class SettingsManager {
     private view: BrowserView | null = null;
     private isVisible = false;
@@ -14,13 +12,10 @@ export class SettingsManager {
     private translationService: TranslationService;
     private devMode = process.argv.includes('--dev');
     private useMacOptimizations = process.platform === 'darwin';
-
     constructor(parentWindow: BrowserWindow, store: ElectronStore, translationService: TranslationService) {
         this.parentWindow = parentWindow;
         this.store = store;
         this.translationService = translationService;
-
-        // add resize listener
         this.parentWindow.on('resize', () => {
             if (this.isVisible) {
                 this.updateBounds();
@@ -30,7 +25,9 @@ export class SettingsManager {
             this.createView();
         }
     }
-
+    public owns(contents: WebContents): boolean {
+        return this.view?.webContents === contents;
+    }
     public toggle(): void {
         if (this.isVisible) {
             this.hide();
@@ -38,10 +35,8 @@ export class SettingsManager {
             this.show();
         }
     }
-
     private createView(): BrowserView {
         if (this.view) return this.view;
-
         this.view = new BrowserView({
             webPreferences: {
                 nodeIntegration: false,
@@ -56,15 +51,9 @@ export class SettingsManager {
                 ...(isMac ? { spellcheck: false } : {}),
             },
         });
-
-        // add view immediately but keep off-screen until shown
         this.parentWindow.addBrowserView(this.view);
         this.view.setBounds({ x: 0, y: -10000, width: 0, height: 0 });
-
-        // preload content
-        this.view.webContents.loadURL(`data:text/html,${encodeURIComponent(this.getHtml())}`);
-
-        // listen for hide message from panel
+        this.view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(this.getHtml())}`);
         this.view.webContents.on('console-message', (_, __, message) => {
             if (message === 'hidePanel') {
                 this.isVisible = false;
@@ -75,27 +64,23 @@ export class SettingsManager {
                 }
             }
         });
-
         return this.view;
     }
-
     private teardownView(): void {
         if (!this.view) return;
         try {
             this.parentWindow.removeBrowserView(this.view);
         } catch {}
         try {
-            (this.view.webContents as any).destroy();
+            if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
         } catch {}
         this.view = null;
     }
-
     private updateBounds(): void {
         if (!this.view) return;
         const bounds = this.parentWindow.getBounds();
         const width = Math.min(500, Math.floor(bounds.width * 0.4));
         const HEADER_HEIGHT = 32;
-
         this.view.setBounds({
             x: bounds.width - width,
             y: HEADER_HEIGHT,
@@ -103,7 +88,6 @@ export class SettingsManager {
             height: bounds.height - HEADER_HEIGHT,
         });
     }
-
     private getHtml(): string {
         const theme = this.store.get('theme', 'dark');
         return `
@@ -848,9 +832,7 @@ export class SettingsManager {
                 <div class="setting-item">
                     <span data-i18n="uiScale">${this.translationService.translate('uiScale')}</span>
                     <div class="input-with-unit">
-                        <input type="range" id="uiScale" min="0.5" max="2" step="0.05" value="${
-                            this.store.get('uiScale', 1) as number
-                        }">
+                        <input type="range" id="uiScale" min="0.5" max="2" step="0.05" value="${this.store.get('uiScale', 1) as number}">
                         <span class="unit-symbol" id="uiScaleValue">${Math.round((this.store.get('uiScale', 1) as number) * 100)}%</span>
                     </div>
                 </div>
@@ -947,16 +929,41 @@ export class SettingsManager {
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="input-group" id="proxyFields" style="display: ${
-                    this.store.get('proxyEnabled') ? 'block' : 'none'
-                }">
-                    <input type="text" class="textInput" id="proxyHost" placeholder="${this.translationService.translate('proxyHost')}" data-i18n-placeholder="proxyHost" value="${
-                        this.store.get('proxyHost') || ''
-                    }">
-                    <input type="text" class="textInput" id="proxyPort" placeholder="${this.translationService.translate('proxyPort')}" data-i18n-placeholder="proxyPort" value="${
-                        this.store.get('proxyPort') || ''
-                    }">
+                <div class="input-group" id="proxyFields" style="display: ${this.store.get('proxyEnabled') ? 'block' : 'none'}">
+                    <input type="text" class="textInput" id="proxyHost" placeholder="${this.translationService.translate('proxyHost')}" data-i18n-placeholder="proxyHost" value="${this.store.get('proxyHost') || ''}">
+                    <input type="text" class="textInput" id="proxyPort" placeholder="${this.translationService.translate('proxyPort')}" data-i18n-placeholder="proxyPort" value="${this.store.get('proxyPort') || ''}">
                 </div>
+            </div>
+
+            <div class="setting-group">
+                <h2>Резервное подключение SoundCloud</h2>
+                <div class="description">Ваш Cloudflare Worker. В автоматическом режиме подключаемся через него только после проверки недоступности SoundCloud. Подключение действует только в этом клиенте.</div>
+                <details id="cloudflareWizard" style="margin:14px 0">
+                    <summary style="cursor:pointer">Создать и настроить Worker автоматически</summary>
+                    <p class="description">Откройте Cloudflare, войдите в аккаунт и создайте API-токен с правами Account Settings: Read и Workers Scripts: Edit для своего аккаунта. Вставьте его сюда. Мастер создаст Worker и его ключ, затем сам сохранит HTTPS-адрес. Токен Cloudflare хранится только в памяти на время настройки.</p>
+                    <button class="button" id="cloudflareTokenPage">Открыть Cloudflare</button>
+                    <input class="textInput" type="password" autocomplete="new-password" id="cloudflareApiToken" aria-label="API-токен Cloudflare" placeholder="API-токен Cloudflare (не пароль)">
+                    <button class="button" id="cloudflareAccounts">Подключить аккаунт</button>
+                    <div id="cloudflareAccountFields" hidden>
+                        <select class="textInput" id="cloudflareAccount" aria-label="Аккаунт Cloudflare"></select>
+                        <p class="description">Создадим отдельный Worker со случайным именем в выбранном аккаунте. Если адрес workers.dev ещё не зарегистрирован, создадим его. Существующие Workers и адрес аккаунта сохраняются.</p>
+                        <button class="button" id="cloudflareDeploy">Создать Worker и подставить адрес</button>
+                        <button class="button" id="cloudflareSetupCancel">Забыть токен</button>
+                    </div>
+                    <p id="cloudflareSetupStatus" class="description" role="status"></p>
+                </details>
+                <p class="description">Или укажите адрес уже созданного Worker вручную:</p>
+                <select class="textInput" id="cloudflareMode">
+                    <option value="off" ${this.store.get('cloudflareMode', 'off') === 'off' ? 'selected' : ''}>Выключено</option>
+                    <option value="auto" ${this.store.get('cloudflareMode') === 'auto' ? 'selected' : ''}>Автоматически</option>
+                    <option value="always" ${this.store.get('cloudflareMode') === 'always' ? 'selected' : ''}>Всегда через Worker</option>
+                </select>
+                <input class="textInput" id="cloudflareEndpoint" placeholder="https://your-worker.workers.dev" value="${String(this.store.get('cloudflareEndpoint', '')).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)}">
+                <input class="textInput" id="cloudflareSecret" type="password" autocomplete="new-password" placeholder="${this.store.get('cloudflareSecretEncrypted') ? 'Ключ сохранён. Оставьте пустым, чтобы сохранить его.' : 'Ключ Worker (RELAY_TOKEN)'}">
+                <button id="cloudflareSave" class="button">Сохранить подключение</button>
+                <button id="cloudflareTest" class="button" title="Проверяет сохранённые настройки">Проверить Worker</button>
+                <button id="cloudflareFiles" class="button">Файлы Worker и инструкция</button>
+                <p id="cloudflareStatus" role="status" class="description">Для начала разверните Worker из комплекта исходников. Обычный прокси имеет приоритет.</p>
             </div>
 
             <div class="setting-group">
@@ -973,15 +980,9 @@ export class SettingsManager {
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="input-group" id="lastFmFields" style="display: ${
-                    this.store.get('lastFmEnabled') ? 'block' : 'none'
-                }">
-                    <input type="text" class="textInput" id="lastFmApiKey" placeholder="${this.translationService.translate('lastFmApiKey')}" data-i18n-placeholder="lastFmApiKey" value="${
-                        this.store.get('lastFmApiKey') || ''
-                    }">
-                    <input type="password" class="textInput" id="lastFmSecret" placeholder="${this.translationService.translate('lastFmApiSecret')}" data-i18n-placeholder="lastFmApiSecret" value="${
-                        this.store.get('lastFmSecret') || ''
-                    }">
+                <div class="input-group" id="lastFmFields" style="display: ${this.store.get('lastFmEnabled') ? 'block' : 'none'}">
+                    <input type="text" class="textInput" id="lastFmApiKey" placeholder="${this.translationService.translate('lastFmApiKey')}" data-i18n-placeholder="lastFmApiKey" value="${this.store.get('lastFmApiKey') || ''}">
+                    <input type="password" class="textInput" id="lastFmSecret" placeholder="${this.translationService.translate('lastFmApiSecret')}" data-i18n-placeholder="lastFmApiSecret" value="${this.store.get('lastFmSecret') || ''}">
                 </div>
                 <div class="description">
                     <a href="#" id="createLastFmApiKey" class="link" data-i18n="createApiKeyLastFm">${this.translationService.translate('createApiKeyLastFm')}</a>
@@ -1003,18 +1004,12 @@ export class SettingsManager {
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="input-group" id="webhookFields" style="display: ${
-                    this.store.get('webhookEnabled') ? 'block' : 'none'
-                }">
-                    <input type="url" class="textInput" id="webhookUrl" placeholder="${this.translationService.translate('webhookUrl')}" data-i18n-placeholder="webhookUrl" value="${
-                        this.store.get('webhookUrl') || ''
-                    }">
+                <div class="input-group" id="webhookFields" style="display: ${this.store.get('webhookEnabled') ? 'block' : 'none'}">
+                    <input type="url" class="textInput" id="webhookUrl" placeholder="${this.translationService.translate('webhookUrl')}" data-i18n-placeholder="webhookUrl" value="${this.store.get('webhookUrl') || ''}">
                     <div class="setting-item">
                         <span data-i18n="webhookTrigger">${this.translationService.translate('webhookTrigger')}</span>
                         <div class="input-with-unit">
-                            <input type="number" id="webhookTriggerPercentage" class="textInput" style="width: 80px;" min="0" max="100" step="1" value="${
-                                this.store.get('webhookTriggerPercentage') || 50
-                            }">
+                            <input type="number" id="webhookTriggerPercentage" class="textInput" style="width: 80px;" min="0" max="100" step="1" value="${this.store.get('webhookTriggerPercentage') || 50}">
                             <span class="unit-symbol">%</span>
                         </div>
                     </div>
@@ -1022,9 +1017,7 @@ export class SettingsManager {
                 <div class="description" data-i18n="webhookDescription">
                     ${this.translationService.translate('webhookDescription')}
                 </div>
-                <div class="webhook-example-container" id="webhookFields2" style="display: ${
-                    this.store.get('webhookEnabled') ? 'block' : 'none'
-                }">
+                <div class="webhook-example-container" id="webhookFields2" style="display: ${this.store.get('webhookEnabled') ? 'block' : 'none'}">
                     <div class="example-toggle" id="webhookExampleToggle">
                         <span class="example-toggle-text" data-i18n="showWebhookExample">${this.translationService.translate('showWebhookExample')}</span>
                         <svg class="example-toggle-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -1054,27 +1047,21 @@ export class SettingsManager {
                 <div class="setting-item">
                     <span data-i18n="enableRichPresence">${this.translationService.translate('enableRichPresence')}</span>
                     <label class="toggle">
-                        <input type="checkbox" id="discordRichPresence" ${
-                            this.store.get('discordRichPresence') ? 'checked' : ''
-                        }>
+                        <input type="checkbox" id="discordRichPresence" ${this.store.get('discordRichPresence') ? 'checked' : ''}>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="setting-item">
                     <span data-i18n="displayWhenPaused">${this.translationService.translate('displayWhenPaused')}</span>
                     <label class="toggle">
-                        <input type="checkbox" id="displayWhenIdling" ${
-                            this.store.get('displayWhenIdling') ? 'checked' : ''
-                        }>
+                        <input type="checkbox" id="displayWhenIdling" ${this.store.get('displayWhenIdling') ? 'checked' : ''}>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="setting-item">
                     <span data-i18n="displaySmallIcon">${this.translationService.translate('displaySmallIcon')}</span>
                     <label class="toggle">
-                        <input type="checkbox" id="displaySCSmallIcon" ${
-                            this.store.get('displaySCSmallIcon') ? 'checked' : ''
-                        }>
+                        <input type="checkbox" id="displaySCSmallIcon" ${this.store.get('displaySCSmallIcon') ? 'checked' : ''}>
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -1088,26 +1075,20 @@ export class SettingsManager {
                 <div class="setting-item">
                     <span data-i18n="useArtistInStatusLine">${this.translationService.translate('useArtistInStatusLine')}</span>
                     <label class="toggle">
-                        <input type="checkbox" id="useArtistInStatusLineToggle" ${
-                            (this.store.get('statusDisplayType') as number) === 1 ? 'checked' : ''
-                        }>
+                        <input type="checkbox" id="useArtistInStatusLineToggle" ${(this.store.get('statusDisplayType') as number) === 1 ? 'checked' : ''}>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="setting-item">
                     <span data-i18n="enableRichPresencePreview">${this.translationService.translate('enableRichPresencePreview')}</span>
                     <label class="toggle">
-                        <input type="checkbox" id="richPresencePreviewEnabled" ${
-                            this.store.get('richPresencePreviewEnabled', false) ? 'checked' : ''
-                        }>
+                        <input type="checkbox" id="richPresencePreviewEnabled" ${this.store.get('richPresencePreviewEnabled', false) ? 'checked' : ''}>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="description" data-i18n="richPresencePreviewDescription">${this.translationService.translate('richPresencePreviewDescription')}</div>
                 
-                <div class="preview-container" id="presencePreviewContainer" style="display: ${
-                    this.store.get('richPresencePreviewEnabled', false) ? 'block' : 'none'
-                }">
+                <div class="preview-container" id="presencePreviewContainer" style="display: ${this.store.get('richPresencePreviewEnabled', false) ? 'block' : 'none'}">
                     <div class="preview-panel">
                         <div class="preview-header-inline">
                             <span class="preview-title-inline" data-i18n="richPresencePreviewTitle">${this.translationService.translate('richPresencePreviewTitle')}</span>
@@ -1168,12 +1149,9 @@ export class SettingsManager {
             ${this.getJavaScript()}
         </script>
         <script>
-            // animation handling
             document.addEventListener('DOMContentLoaded', () => {
                 document.body.classList.remove('visible');
             });
-
-            // handle close button animation
             document.getElementById('close-settings').addEventListener('click', (e) => {
                 e.preventDefault();
                 document.body.classList.remove('visible');
@@ -1181,8 +1159,6 @@ export class SettingsManager {
                     ipcRenderer.send('toggle-settings');
                 }, 300);
             });
-
-            // listen for messages
             window.addEventListener('message', (event) => {
                 if (event.data === 'hidePanel') {
                     console.log('hidePanel');
@@ -1190,7 +1166,6 @@ export class SettingsManager {
             });
         </script>`;
     }
-
     private getJavaScript(): string {
         return `
             const ipcRenderer = {
@@ -1202,8 +1177,6 @@ export class SettingsManager {
                 openExternal: (url) => window.settingsAPI.openExternal(url),
                 openPath: (targetPath) => window.settingsAPI.openPath(targetPath),
             };
-
-            // data loading functions
             async function loadCustomThemes() {
                 try {
                     const themes = await ipcRenderer.invoke('get-custom-themes');
@@ -1326,15 +1299,11 @@ export class SettingsManager {
                     console.error('Failed to load accounts:', e); 
                 }
             }
-
-            // initilization
             document.addEventListener('DOMContentLoaded', () => {
                 loadCustomThemes();
                 loadPlugins();
                 loadAccounts();
             });
-
-            // account manager event listeners
             ipcRenderer.on('accounts-updated', loadAccounts);
 
             const accSelector = document.getElementById('accountSelector');
@@ -1357,8 +1326,6 @@ export class SettingsManager {
                     ipcRenderer.send('logout-account');
                 });
             }
-
-            // standard UI event listeners
             document.getElementById('customThemeSelector')?.addEventListener('change', async (e) => {
                 const themeName = e.target.value;
                 try {
@@ -1409,8 +1376,6 @@ export class SettingsManager {
                     console.error('Failed to refresh plugins:', error);
                 }
             });
-
-            // UI customization toggles
             document.getElementById('hidePromotions')?.addEventListener('change', (e) => {
                 ipcRenderer.send('setting-changed', { key: 'hidePromotions', value: e.target.checked });
             });
@@ -1423,6 +1388,43 @@ export class SettingsManager {
                 ipcRenderer.send('setting-changed', { key: 'hideArtistUpsells', value: e.target.checked });
             });
 
+            const setupStatus=document.getElementById('cloudflareSetupStatus');
+            const setupError=error=>String(error.message||error).replace(/^Error invoking remote method '[^']+': /,'');
+            const setupBusy=busy=>{for(const id of ['cloudflareAccounts','cloudflareDeploy','cloudflareSetupCancel','cloudflareSave','cloudflareTest','cloudflareApiToken','cloudflareEndpoint','cloudflareSecret','cloudflareMode'])document.getElementById(id).disabled=busy;document.getElementById('cloudflareAccount').disabled=busy;};
+            ipcRenderer.on('network:setup-progress',(_event,message)=>{setupStatus.textContent=String(message)});
+            document.getElementById('cloudflareTokenPage').addEventListener('click',()=>{void shell.openExternal('https://dash.cloudflare.com/profile/api-tokens')});
+            document.getElementById('cloudflareAccounts').addEventListener('click',async()=>{
+                setupBusy(true);setupStatus.textContent='Получаем аккаунты Cloudflare…';
+                const input=document.getElementById('cloudflareApiToken');
+                try{const token=input.value;input.value='';const accounts=await ipcRenderer.invoke('network:setup-accounts',token);
+                    const select=document.getElementById('cloudflareAccount');select.replaceChildren();
+                    for(const account of accounts){const option=document.createElement('option');option.value=account.id;option.textContent=account.name;select.append(option)}
+                    document.getElementById('cloudflareAccountFields').hidden=false;setupStatus.textContent='Выберите аккаунт и нажмите «Создать Worker». Токен будет забыт через 10 минут.';
+                }catch(error){document.getElementById('cloudflareAccountFields').hidden=true;setupStatus.textContent=setupError(error)}finally{setupBusy(false)}
+            });
+            document.getElementById('cloudflareSetupCancel').addEventListener('click',async()=>{
+                try{await ipcRenderer.invoke('network:setup-cancel');document.getElementById('cloudflareApiToken').value='';document.getElementById('cloudflareAccountFields').hidden=true;setupStatus.textContent='Токен удалён из памяти.';}catch(error){setupStatus.textContent=setupError(error)}
+            });
+            document.getElementById('cloudflareDeploy').addEventListener('click',async()=>{
+                setupBusy(true);setupStatus.textContent='Создаём Worker…';
+                try{const result=await ipcRenderer.invoke('network:setup-deploy',document.getElementById('cloudflareAccount').value);
+                    document.getElementById('cloudflareEndpoint').value=result.endpoint;document.getElementById('cloudflareMode').value='auto';
+                    const key=document.getElementById('cloudflareSecret');key.value='';key.placeholder='Ключ создан и сохранён автоматически';
+                    document.getElementById('cloudflareAccountFields').hidden=true;
+                    setupStatus.textContent='Готово: '+result.endpoint+'. '+(result.applied?'Автоматический режим настроен.':'Настройки сохранены. Перезапустите клиент для применения.');
+                    document.getElementById('cloudflareStatus').textContent='Адрес и ключ сохранены. Нажмите «Проверить Worker». Первое подключение может занять время, пока обновляется DNS.';
+                }catch(error){setupStatus.textContent=setupError(error)}finally{setupBusy(false)}
+            });
+            document.getElementById('cloudflareFiles')?.addEventListener('click',()=>{void ipcRenderer.invoke('network:files')});
+            for(const [id,channel] of [['cloudflareSave','network:save'],['cloudflareTest','network:test']]){
+                document.getElementById(id)?.addEventListener('click',async()=>{
+                    const button=document.getElementById(id),status=document.getElementById('cloudflareStatus');button.disabled=true;status.textContent='Проверяем подключение…';
+                    try{status.textContent=await ipcRenderer.invoke(channel,...(channel==='network:save'?[{mode:document.getElementById('cloudflareMode').value,endpoint:document.getElementById('cloudflareEndpoint').value,secret:document.getElementById('cloudflareSecret').value}]:[]));
+                        if(channel==='network:save')document.getElementById('cloudflareSecret').value='';
+                    }catch(error){status.textContent=String(error.message||error).replace(/^Error invoking remote method '[^']+': /,'')}
+                    finally{button.disabled=false}
+                });
+            }
             document.getElementById('proxyEnabled')?.addEventListener('change', (e) => {
                 const isEnabled = e.target.checked;
                 document.getElementById('proxyFields').style.display = isEnabled ? 'block' : 'none';
@@ -1527,6 +1529,7 @@ export class SettingsManager {
                     container.style.display = isEnabled ? 'block' : 'none';
                 }
                 ipcRenderer.send('setting-changed', { key: 'richPresencePreviewEnabled', value: isEnabled });
+                updatePreview(currentTrack);
             });
 
             document.getElementById('displayWhenIdling')?.addEventListener('change', (e) => {
@@ -1557,9 +1560,8 @@ export class SettingsManager {
             document.getElementById('applyChanges')?.addEventListener('click', () => {
                 ipcRenderer.send('apply-changes');
             });
-
-            // rich presence preview logic
             let currentTrack = null;
+            let panelVisible = false;
             let progressInterval = null;
 
             function parseTimeToMs(time) {
@@ -1714,6 +1716,9 @@ export class SettingsManager {
 
             function updatePreview(trackInfo) {
                 currentTrack = trackInfo;
+                if (!panelVisible || !document.getElementById('richPresencePreviewEnabled')?.checked) {
+                    clearInterval(progressInterval); return;
+                }
                 const activitySection = document.getElementById('activitySectionPreview');
                 const noActivity = document.getElementById('noActivityPreview');
 
@@ -1777,10 +1782,13 @@ export class SettingsManager {
                 updateProgress();
                 progressInterval = setInterval(updateProgress, 1000);
             }
-
-            // external event triggers
             ipcRenderer.on('presence-preview-update', (_, trackInfo) => {
                 updatePreview(trackInfo);
+            });
+            ipcRenderer.on('settings-visibility', (_, visible) => {
+                panelVisible = visible;
+                if (!visible) clearInterval(progressInterval);
+                else ipcRenderer.invoke('get-current-track').then(updatePreview).catch(() => {});
             });
 
             ipcRenderer.on('theme-changed', (_, isDark) => {
@@ -1821,7 +1829,6 @@ export class SettingsManager {
             });
         `;
     }
-
     private show(): void {
         const wasCreated = this.view === null;
         const view = this.createView();
@@ -1829,25 +1836,23 @@ export class SettingsManager {
         this.updateBounds();
         const applyShowState = () => {
             view.webContents.executeJavaScript(`
-                // force reflow to ensure animation works
                 document.body.style.opacity;
                 document.body.classList.add('visible');
             `);
-            // trigger translation updates when panel is shown
             view.webContents.send('update-translations');
             const isDark = this.store.get('theme', 'dark') === 'dark';
             view.webContents.send('theme-changed', isDark);
+            view.webContents.send('settings-visibility', true);
         };
-
         if (wasCreated) {
             view.webContents.once('did-finish-load', applyShowState);
         } else {
             applyShowState();
         }
     }
-
     private hide(): void {
         if (!this.view) return;
+        this.view.webContents.send('settings-visibility', false);
         this.view.webContents.executeJavaScript(`
             document.body.classList.remove('visible');
             setTimeout(() => {
@@ -1855,11 +1860,9 @@ export class SettingsManager {
             }, 300);
         `);
     }
-
     public setThemeColors(colors: ThemeColors | null): void {
         if (!this.view) return;
         if (!colors) {
-            // reset to default theme colors
             this.view.webContents.executeJavaScript(`
                 document.documentElement.style.removeProperty('--bg-primary');
                 document.documentElement.style.removeProperty('--bg-secondary');
@@ -1868,8 +1871,6 @@ export class SettingsManager {
             `);
             return;
         }
-
-        // apply custom theme colors
         this.view.webContents
             .executeJavaScript(
                 `
@@ -1881,14 +1882,16 @@ export class SettingsManager {
             )
             .catch(console.error);
     }
-
     public getView(): BrowserView | null {
         return this.view;
     }
-
     public updateTranslations(translationService: TranslationService): void {
         this.translationService = translationService;
         if (!this.view) return;
         this.view.webContents.send('update-translations');
+    }
+    public dispose(): void {
+        this.isVisible = false;
+        this.teardownView();
     }
 }

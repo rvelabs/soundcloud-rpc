@@ -1,9 +1,7 @@
-import { BrowserView, BrowserWindow, ipcMain } from 'electron';
+import { BrowserView, BrowserWindow, ipcMain, type IpcMainEvent } from 'electron';
 import type { ThemeColors } from '../utils/colorExtractor';
 import { join } from 'path';
-
 const isMac = process.platform === 'darwin';
-
 export class NotificationManager {
     private view: BrowserView | null = null;
     private queue: string[] = [];
@@ -12,11 +10,12 @@ export class NotificationManager {
     private themeColors: ThemeColors | null = null;
     private devMode = process.argv.includes('--dev');
     private useMacOptimizations = process.platform === 'darwin';
-
+    private cancelDone?: () => void;
+    private timer?: ReturnType<typeof setTimeout>;
     constructor(parentWindow: BrowserWindow) {
         this.parentWindow = parentWindow;
+        parentWindow.once('closed', () => this.dispose());
     }
-
     private ensureView(): BrowserView {
         if (this.view) return this.view;
         this.view = new BrowserView({
@@ -35,7 +34,6 @@ export class NotificationManager {
         });
         return this.view;
     }
-
     private teardownView(): void {
         if (!this.view) return;
         const view = this.view;
@@ -44,49 +42,43 @@ export class NotificationManager {
         } catch {}
         if (this.useMacOptimizations) {
             try {
-                (view.webContents as any).destroy();
+                if (!view.webContents.isDestroyed()) view.webContents.close();
             } catch {}
             this.view = null;
         }
     }
-
     public setThemeColors(colors: ThemeColors | null): void {
         this.themeColors = colors;
     }
-
     public show(message: string): void {
+        if (this.parentWindow.isDestroyed() || this.queue.includes(message)) return;
+        if (this.queue.length >= 30) this.queue.shift();
         this.queue.push(message);
         if (!this.isDisplaying) {
             this.displayNext();
         }
     }
-
     private displayNext(): void {
         if (this.queue.length === 0) {
             this.isDisplaying = false;
             this.teardownView();
             return;
         }
-
         this.isDisplaying = true;
         const message = this.queue.shift();
         const bounds = this.parentWindow.getBounds();
-        const width = 400; // increased from 300
-        const height = 70; // increased from 50
-
+        const width = 400;
+        const height = 70;
         const view = this.ensureView();
         this.parentWindow.addBrowserView(view);
         view.setBounds({
             x: Math.floor((bounds.width - width) / 2),
-            y: bounds.height - height - 100, // increased from 20 to move it up
+            y: bounds.height - height - 100,
             width,
             height,
         });
-
-        // Use theme colors if available
         const backgroundColor = this.themeColors?.surface || '#303030';
         const textColor = this.themeColors?.text || '#ffffff';
-
         const html = `
         <style>
             body {
@@ -128,7 +120,7 @@ export class NotificationManager {
             }
         </style>
         <body>
-            <div class="notification">${message}</div>
+            <div class="notification">${String(message).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
             <script>
                 setTimeout(() => document.body.style.opacity = '1', 100);
                 setTimeout(() => {
@@ -140,12 +132,32 @@ export class NotificationManager {
                 }, 4500);
             </script>
         </body>`;
-
-        // Set up one-time IPC listener for this notification
-        ipcMain.once('notification-done', () => {
-            setTimeout(() => this.displayNext(), 100);
-        });
-
-        view.webContents.loadURL(`data:text/html,${encodeURIComponent(html)}`);
+        const done = (event?: IpcMainEvent) => {
+            if (event && event.sender !== view.webContents) return;
+            this.cancelDone?.();
+            this.timer = setTimeout(() => {
+                if (!this.parentWindow.isDestroyed()) this.displayNext();
+            }, 100);
+        };
+        ipcMain.on('notification-done', done);
+        this.cancelDone = () => {
+            clearTimeout(this.timer);
+            ipcMain.removeListener('notification-done', done);
+            this.cancelDone = undefined;
+        };
+        this.timer = setTimeout(done, 6000);
+        void view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => done());
+    }
+    public dispose(): void {
+        this.cancelDone?.();
+        clearTimeout(this.timer);
+        this.queue = [];
+        this.isDisplaying = false;
+        const view = this.view;
+        this.view = null;
+        if (view) {
+            if (!this.parentWindow.isDestroyed()) this.parentWindow.removeBrowserView(view);
+            if (!view.webContents.isDestroyed()) view.webContents.close();
+        }
     }
 }

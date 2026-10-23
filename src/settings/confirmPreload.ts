@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron';
-
 contextBridge.exposeInMainWorld('homepageConfirmAPI', {
     submit: (requestId: string, result: boolean) => {
         if (typeof requestId !== 'string' || typeof result !== 'boolean') return;

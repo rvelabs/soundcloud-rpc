@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-
 const SEND_CHANNELS = new Set([
     'cancel-refresh',
     'close-window',
@@ -10,17 +9,15 @@ const SEND_CHANNELS = new Set([
     'refresh-page',
     'title-bar-double-click',
 ]);
-
 const INVOKE_CHANNELS = new Set(['get-navigation-controls-enabled', 'get-theme-colors', 'is-maximized']);
-
 const ON_CHANNELS = new Set([
+    'window-state-changed',
     'navigation-controls-toggle',
     'navigation-state-changed',
     'refresh-state-changed',
     'theme-changed',
     'theme-colors-changed',
 ]);
-
 contextBridge.exposeInMainWorld('headerAPI', {
     platform: process.platform,
     send: (channel: string, ...args: unknown[]) => {
@@ -35,7 +32,6 @@ contextBridge.exposeInMainWorld('headerAPI', {
     },
     on: (channel: string, listener: (...args: unknown[]) => void) => {
         if (!ON_CHANNELS.has(channel) || typeof listener !== 'function') return;
-
         const wrapped = (_event: IpcRendererEvent, ...args: unknown[]) => listener(...args);
         ipcRenderer.on(channel, wrapped);
     },

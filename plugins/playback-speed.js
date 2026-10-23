@@ -6,21 +6,17 @@
  * @license MIT
  * @homepage https://github.com/zxcloli666/SoundCloud-Desktop
  */
-
 const MIN_RATE = 0.5;
 const MAX_RATE = 2;
 const RATE_STEP = 0.05;
 const DEFAULT_RATE = 1;
-
 module.exports = {
     onEnable() {
         console.log('Playback Speed enabled');
     },
-
     onDisable() {
         console.log('Playback Speed disabled');
     },
-
     contentScript() {
         return `
 (function() {
