@@ -1174,3 +1174,22 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
 #codex-wave-inline .cw-insight {
     flex-wrap: wrap;
 }
+#codex-wave-inline .cw-diagnostics {
+    border-top: 1px solid #ffffff18;
+    margin-top: 28px;
+    padding-top: 20px;
+}
+#codex-wave-inline .cw-diagnostics button {
+    background: #292929;
+    color: #fff;
+    border: 1px solid #ffffff26;
+    border-radius: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+#codex-wave-inline .cw-diagnostics p,
+#codex-wave-inline .cw-diagnostics span {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #a0a0a0;
+}

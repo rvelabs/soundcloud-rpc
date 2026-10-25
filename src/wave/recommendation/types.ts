@@ -17,6 +17,8 @@ export interface Track {
     catalogChecked?: boolean;
     sourceRank?: number;
     queryHint?: string;
+    relatedTo?: string[];
+    source?: 'related' | 'personal';
 }
 export type FeedbackKind = 'like' | 'unlike' | 'dislike' | 'play' | 'skip' | 'complete';
 export interface Feedback {

@@ -13,6 +13,7 @@ import {
     shell,
     components,
     safeStorage,
+    clipboard,
     type IpcMainEvent,
     type IpcMainInvokeEvent,
 } from 'electron';
@@ -31,12 +32,7 @@ import { WebhookService } from './services/webhookService';
 import { ThemeService } from './services/themeService';
 import { ShortcutService } from './services/shortcutService';
 import { PluginService } from './services/pluginService';
-import {
-    discoverWaveCandidates,
-    discoverRelatedCandidates,
-    discoverPersonalHistory,
-    extractWaveLinks,
-} from './wave/nativeWave';
+import { discoverRelatedCandidates, discoverPersonalHistory, extractWaveLinks } from './wave/nativeWave';
 import { setTrackLiked } from './wave/nativeLike';
 import {
     WaveEngine,
@@ -47,6 +43,8 @@ import {
     type WaveControls,
 } from './wave/waveEngine';
 import { SoundCloudRecommender } from './wave/recommendation/soundcloudAdapter';
+import { RelatedDiscovery } from './wave/relatedDiscovery';
+import { ListeningEvidence } from './wave/listeningEvidence';
 import { PreparedQueue } from './wave/preparedQueue';
 import {
     addToNativeNextUp,
@@ -138,6 +136,7 @@ const waveHomeView = null as BrowserView | null;
 let waveDiscoveryView: BrowserView | null = null;
 let waveVisible = false;
 let onNativeWaveTrackUpdate: ((track: TrackInfo) => void) | null = null;
+const waveListening = new ListeningEvidence();
 let onWaveNextRequest: (() => void) | null = null;
 const waveTrace: {
     at: number;
@@ -614,6 +613,7 @@ async function init() {
         }),
     );
     waveEngine = new WaveEngine(store);
+    waveListening.reset();
     waveDiscoveryView = new BrowserView({
         webPreferences: {
             session: contentView.webContents.session,
@@ -622,11 +622,13 @@ async function init() {
             sandbox: true,
             webSecurity: true,
             backgroundThrottling: false,
+            images: false,
         },
     });
     waveDiscoveryView.setBounds({ x: 0, y: 0, width: 1000, height: 800 });
     waveDiscoveryView.webContents.setUserAgent(globalUserAgent);
     waveDiscoveryView.webContents.setAudioMuted(true);
+    waveDiscoveryView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     contentView.webContents.setUserAgent(globalUserAgent);
     translationService = new TranslationService();
     themeService = new ThemeService(store);
@@ -736,12 +738,12 @@ async function init() {
         waveControls.discovery === 'favorites'
             ? 'Не нашлось любимых треков с этими настройками. Ослабьте фильтры или добавьте лайки.'
             : waveControls.language && waveControls.language !== 'any'
-              ? 'Не нашлось треков с подтверждённой пометкой языка. Попробуйте другой жанр или язык.'
+              ? 'Не нашлось треков с подтверждённой пометкой языка. Попробуйте другой язык.'
               : ['happy', 'sad'].includes(waveControls.mood)
-                ? 'Не нашлось треков с явной пометкой выбранного настроения. Попробуйте изменить жанр или другие фильтры.'
+                ? 'Не нашлось треков с явной пометкой выбранного настроения. Попробуйте изменить фильтры.'
                 : waveControls.discovery === 'popular'
                   ? 'Не нашлось доступных популярных треков с этими настройками.'
-                  : 'SoundCloud пока не показал подходящих новых треков. Попробуйте изменить настройки.';
+                  : 'Добавьте несколько понравившихся треков в SoundCloud или включите любимую запись — волна найдёт похожую музыку. Если они уже есть, попробуйте ослабить фильтры.';
     let waveQueueEpoch = 0;
     let endCaptureQueueReady = false;
     const syncMediaEndCapture = () => {
@@ -795,22 +797,12 @@ async function init() {
         if (waveLikeView && !waveLikeView.webContents.isDestroyed())
             void waveLikeView.webContents.loadURL('about:blank').catch(() => {});
     };
-    const waveRecommender = new SoundCloudRecommender(store, currentAccountId, async (queries) => {
-        const found: WaveCandidate[] = [];
-        try {
-            const discovered = await discoverWaveCandidates(waveDiscoveryView!.webContents, queries);
-            for (const track of discovered) if (!found.some((old) => old.url === track.url)) found.push(track);
-        } catch (error) {
-            console.debug('Wave search unavailable:', error);
-        }
-        if (found.length < 6 && waveCurrent) {
-            try {
-                found.push(...(await discoverRelatedCandidates(waveDiscoveryView!.webContents, waveCurrent)));
-            } catch (error) {
-                console.debug('Wave related tracks unavailable:', error);
-            }
-        }
-        return found;
+    const relatedDiscovery = new RelatedDiscovery((url) =>
+        discoverRelatedCandidates(waveDiscoveryView!.webContents, url),
+    );
+    const waveRecommender = new SoundCloudRecommender(store, currentAccountId, async (seeds) => {
+        const generation = waveGeneration;
+        return relatedDiscovery.discover(seeds, () => waveVisible && generation === waveGeneration);
     });
     let waveMetadataWarmupStarted = false;
     contentView.webContents.on('did-finish-load', () => {
@@ -842,7 +834,7 @@ async function init() {
             void contentView.webContents
                 .executeJavaScript(`(${extractWaveLinks.toString()})()`, true)
                 .then(async (tracks: WaveCandidate[]) => {
-                    waveRecommender.addCandidates(tracks);
+                    waveRecommender.addCandidates(tracks.map((track) => ({ ...track, source: 'personal' })));
                     if (waveMetadataWarmupStarted) return;
                     waveMetadataWarmupStarted = true;
                     const ranked = waveRecommender.rank(8);
@@ -853,9 +845,11 @@ async function init() {
     });
     const recordCurrent = (kind: 'skip' | 'complete' | 'play') => {
         if (!waveCurrentCandidate || waveCurrentRecorded) return;
-        const elapsed = lastTrackInfo.url === waveCurrent ? parseTime(lastTrackInfo.elapsed) : 0;
         const duration = lastTrackInfo.url === waveCurrent ? parseTime(lastTrackInfo.duration) : 0;
-        const fraction = kind === 'complete' ? 1 : duration ? Math.min(1, elapsed / duration) : 0;
+        const fraction = waveListening.fraction(
+            waveCurrentCandidate.url,
+            duration || waveCurrentCandidate.durationSeconds || 0,
+        );
         const features: SoundFeatures | undefined = audioSamples
             ? {
                   energy: audioTotals.energy / audioSamples,
@@ -863,7 +857,12 @@ async function init() {
                   brightness: audioTotals.brightness / audioSamples,
               }
             : undefined;
-        waveRecommender.record(waveCurrentCandidate, kind, fraction, features);
+        waveRecommender.record(
+            waveCurrentCandidate,
+            kind === 'complete' && fraction < 0.7 ? 'play' : kind,
+            fraction,
+            features,
+        );
         waveCurrentRecorded = true;
     };
     const setControls = (input: Partial<WaveControls>) => {
@@ -877,7 +876,7 @@ async function init() {
             waveControls.activity = input.activity!;
         if (['any', 'ru', 'foreign', 'instrumental'].includes(String(input.language)))
             waveControls.language = input.language!;
-        if (typeof input.genre === 'string') waveControls.genre = input.genre.trim().slice(0, 40);
+        waveControls.genre = '';
         waveRecommender.setControls(waveControls);
         if (JSON.stringify(waveControls) !== previous) {
             waveQueueEpoch++;
@@ -916,6 +915,7 @@ async function init() {
                         .rank(20)
                         .filter(
                             (item) =>
+                                (waveControls.discovery === 'favorites' || item.source === 'related') &&
                                 item.url !== waveCurrent &&
                                 item.url !== lastTrackInfo.url &&
                                 !waveFuture.some((future) => future.url === item.url) &&
@@ -1068,6 +1068,7 @@ async function init() {
                     if (waveHistory.length > 100) waveHistory.shift();
                 }
                 waveCurrentCandidate = chosen;
+                waveRecommender.setAnchor(chosen);
                 waveReachedEnd = false;
                 waveCurrentRecorded = false;
                 audioSamples = 0;
@@ -1084,36 +1085,7 @@ async function init() {
                 );
                 void fillNativeQueue().catch((error) => console.debug('Wave prefetch unavailable:', error));
                 void prepareUpcoming()
-                    .then(async () => {
-                        if (waveHistoryLoaded || generation !== waveGeneration || !waveVisible) return;
-                        waveHistoryLoaded = true;
-                        const previousSearch = waveSearchTail;
-                        let release!: () => void;
-                        waveSearchTail = new Promise<void>((resolve) => {
-                            release = resolve;
-                        });
-                        await previousSearch;
-                        try {
-                            if (generation !== waveGeneration || !waveVisible) {
-                                waveHistoryLoaded = false;
-                                return;
-                            }
-                            const personal = await discoverPersonalHistory(waveDiscoveryView!.webContents);
-                            if (generation !== waveGeneration || !waveVisible) {
-                                waveHistoryLoaded = false;
-                                return;
-                            }
-                            waveEngine.ingestLikes(personal.likes);
-                            waveRecommender.seedLikes(personal.likes);
-                            waveRecommender.seedRecent(personal.recent);
-                            sendInline('stats', waveEngine.stats());
-                        } catch (error) {
-                            waveHistoryLoaded = false;
-                            console.debug('Wave history unavailable:', error);
-                        } finally {
-                            release();
-                        }
-                    })
+                    .then(loadWaveTaste)
                     .catch((error) => console.debug('Wave prefetch unavailable:', error));
             } catch (error) {
                 if (generation !== waveGeneration || !waveVisible) return;
@@ -1206,36 +1178,45 @@ async function init() {
             if (nativeQueueTask === task) nativeQueueTask = null;
         }
     };
-    const loadWaveTaste = async () => {
+    let waveTasteTask: Promise<void> | undefined;
+    const loadWaveTaste = async (): Promise<void> => {
+        if (waveTasteTask) return waveTasteTask;
         if (waveHistoryLoaded || !waveDiscoveryView) return;
-        waveHistoryLoaded = true;
         const previousSearch = waveSearchTail;
         let release!: () => void;
         waveSearchTail = new Promise<void>((resolve) => {
             release = resolve;
         });
-        await previousSearch;
+        const task = (async () => {
+            await previousSearch;
+            try {
+                if (!waveDiscoveryView || waveDiscoveryView.webContents.isDestroyed()) return;
+                const personal = await discoverPersonalHistory(waveDiscoveryView.webContents);
+                waveEngine.ingestLikes(personal.likes);
+                waveRecommender.seedLikes(personal.likes);
+                waveRecommender.seedRecent(personal.recent);
+                waveHistoryLoaded = personal.likes.length > 0 || personal.recent.length > 0;
+                sendInline('stats', waveEngine.stats());
+            } catch (error) {
+                console.debug('Wave taste history unavailable:', error);
+            } finally {
+                release();
+            }
+        })();
+        waveTasteTask = task;
         try {
-            if (!waveVisible) {
-                waveHistoryLoaded = false;
-                return;
-            }
-            const personal = await discoverPersonalHistory(waveDiscoveryView.webContents);
-            if (!waveVisible) {
-                waveHistoryLoaded = false;
-                return;
-            }
-            waveEngine.ingestLikes(personal.likes);
-            waveRecommender.seedLikes(personal.likes);
-            waveRecommender.seedRecent(personal.recent);
-            sendInline('stats', waveEngine.stats());
-        } catch (error) {
-            waveHistoryLoaded = false;
-            console.debug('Wave taste history unavailable:', error);
+            await task;
         } finally {
-            release();
+            if (waveTasteTask === task) waveTasteTask = undefined;
         }
     };
+    let tasteWarmup: ReturnType<typeof setTimeout> | undefined;
+    contentView.webContents.once('did-finish-load', () => {
+        tasteWarmup = setTimeout(() => {
+            void loadWaveTaste();
+        }, 1800);
+    });
+    mainWindow.once('closed', () => clearTimeout(tasteWarmup));
     onNativeWaveTrackUpdate = (track) => {
         if (!waveVisible) return;
         sendInline('track', track);
@@ -1314,6 +1295,7 @@ async function init() {
         }
         waveCurrent = track.url;
         waveCurrentCandidate = nativeQueued.find((item) => item.url === track.url) || null;
+        waveRecommender.setAnchor(waveCurrentCandidate || undefined);
         waveCurrentRecorded = false;
         audioSamples = 0;
         audioTotals.energy = 0;
@@ -1355,6 +1337,7 @@ async function init() {
         }
         recordCurrent('play');
         waveRecommender.clearCandidates();
+        waveRecommender.setAnchor(undefined);
         waveFuture.length = 0;
         wavePrepared.clear();
         if (!likeTask) releaseLikePage();
@@ -1372,8 +1355,15 @@ async function init() {
         waveStarting = true;
         sendInline('state', 'loading');
         try {
+            if (lastTrackInfo.url)
+                waveRecommender.setAnchor({
+                    url: lastTrackInfo.url,
+                    title: lastTrackInfo.title,
+                    artist: lastTrackInfo.author,
+                    sourceRank: 0,
+                });
             if (!lastTrackInfo.isPlaying || !lastTrackInfo.url) {
-                if (!waveRecommender.feedbackCount() || waveControls.discovery === 'favorites') await loadWaveTaste();
+                await loadWaveTaste();
                 await prepareUpcoming();
                 let first: WaveCandidate | undefined;
                 let playError: unknown;
@@ -1404,6 +1394,7 @@ async function init() {
                 }
                 if (!first) throw playError || new Error(noSelectionMessage());
                 waveCurrentCandidate = first;
+                waveRecommender.setAnchor(first);
                 waveReachedEnd = false;
                 waveCurrentRecorded = false;
                 waveRecommender.reserve(first);
@@ -1417,6 +1408,7 @@ async function init() {
                     sourceRank: 0,
                     durationSeconds: parseTime(lastTrackInfo.duration),
                 };
+                waveRecommender.setAnchor(waveCurrentCandidate);
                 waveCurrentRecorded = false;
                 waveRecommender.reserve(waveCurrentCandidate);
                 sendInline('candidate', waveCurrentCandidate);
@@ -1450,6 +1442,23 @@ async function init() {
             waveStarting = false;
         }
     };
+    const waveDiagnostics = () => ({
+        version: app.getVersion(),
+        source: 'related-tracks',
+        controls: { ...waveControls },
+        discovery: relatedDiscovery.diagnostics(),
+        recommendation: waveRecommender.diagnostics(),
+        prepared: wavePrepared.length,
+        upcoming: waveFuture.map((item) => item.url),
+        nativeQueued: nativeQueued.map((item) => item.url),
+        choosing: Boolean(waveNextTask),
+        filling: Boolean(nativeQueueTask),
+    });
+    ipcMain.handle('wave-inline:copy-diagnostics', (event) => {
+        if (!isTrustedSoundCloudSender(event)) throw new Error('Недоверенная страница.');
+        clipboard.writeText(JSON.stringify(waveDiagnostics(), null, 2));
+        return true;
+    });
     ipcMain.handle('wave-inline:ready', (event) => {
         if (!isTrustedSoundCloudSender(event)) return null;
         return {
@@ -1459,14 +1468,7 @@ async function init() {
             track: waveVisible ? lastTrackInfo : null,
             stats: waveEngine.stats(),
             candidate: waveCurrentCandidate,
-            diagnostics: {
-                recommendation: waveRecommender.diagnostics(),
-                prepared: wavePrepared.length,
-                upcoming: waveFuture.map((item) => item.url),
-                nativeQueued: nativeQueued.map((item) => item.url),
-                choosing: Boolean(waveNextTask),
-                filling: Boolean(nativeQueueTask),
-            },
+            diagnostics: waveDiagnostics(),
             queueReady: nativeQueueAvailable && nativeQueued.length > 0,
             like: waveCurrentCandidate ? likeState(waveCurrentCandidate.url) : null,
             visible: mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
@@ -2725,6 +2727,7 @@ function setupAudioHandler() {
         const update = validateTrackUpdatePayload({ data, reason: 'playback-state-change' });
         if (!update || update.data.url !== lastTrackInfo.url) return;
         lastTrackInfo = { ...lastTrackInfo, elapsed: update.data.elapsed, duration: update.data.duration };
+        waveListening.observe(lastTrackInfo.url || '', parseTime(lastTrackInfo.elapsed), lastTrackInfo.isPlaying);
     });
     ipcMain.on('soundcloud:track-update', (event, payload: unknown) => {
         if (!isTrustedSoundCloudSender(event)) {
@@ -2740,6 +2743,7 @@ function setupAudioHandler() {
         if (devMode) {
             console.debug(`Track update received: ${reason}`);
         }
+        waveListening.observe(result.url || '', parseTime(result.elapsed), result.isPlaying);
         onNativeWaveTrackUpdate?.(result);
         lastTrackInfo = result;
         if (waveEngine) {

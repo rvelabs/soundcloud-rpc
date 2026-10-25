@@ -45,14 +45,6 @@
             <div class="cw-option"><span>По характеру</span><div role="group"><button data-setting="discovery" data-value="favorites">Любимое</button><button data-setting="discovery" data-value="new">Незнакомое</button><button data-setting="discovery" data-value="popular">Популярное</button><button data-setting="discovery" data-value="balanced">Баланс</button></div></div>
             <div class="cw-option"><span>Под занятие</span><div role="group"><button data-setting="activity" data-value="any">Любое</button><button data-setting="activity" data-value="wake">Просыпаюсь</button><button data-setting="activity" data-value="commute">В дороге</button><button data-setting="activity" data-value="focus">Работаю</button><button data-setting="activity" data-value="relax">Отдых</button><button data-setting="activity" data-value="workout">Тренируюсь</button><button data-setting="activity" data-value="sleep">Засыпаю</button></div></div>
             <div class="cw-option"><span>По языку</span><div role="group"><button data-setting="language" data-value="any">Любой</button><button data-setting="language" data-value="ru">Русский</button><button data-setting="language" data-value="foreign">Иностранный</button><button data-setting="language" data-value="instrumental">Без слов</button></div></div>
-            <label class="cw-genre">Жанр <span class="cw-genre-fields"><select aria-label="Выбрать жанр">
-              <option value="">Любой жанр</option><option>ambient</option><option>breakcore</option>
-              <option>drum and bass</option><option>dubstep</option><option>electronic</option>
-              <option>hardstyle</option><option>hip-hop</option><option>house</option>
-              <option>indie</option><option>jazz</option><option>jungle</option><option>lofi</option>
-              <option>metal</option><option>phonk</option><option>pop</option><option>rap</option>
-              <option>rock</option><option>shoegaze</option><option>techno</option><option>trance</option>
-            </select><input type="text" maxlength="40" placeholder="Или свой жанр" aria-label="Вписать свой жанр"></span></label>
           </div>
         </div>
       </div>
@@ -86,9 +78,8 @@
     const groups = ['activity', 'discovery', 'mood', 'language'].map(group);
     const advanced = document.createElement('details');
     advanced.className = 'cw-advanced';
-    advanced.innerHTML =
-        '<summary>Дополнительно: звучание, темп и жанр</summary><div class="cw-advanced-content"></div>';
-    advanced.lastElementChild.append(group('tone'), group('tempo'), options.querySelector('.cw-genre'));
+    advanced.innerHTML = '<summary>Дополнительно: звучание и темп</summary><div class="cw-advanced-content"></div>';
+    advanced.lastElementChild.append(group('tone'), group('tempo'));
     options.replaceChildren(...groups, advanced);
     settingsDialog.append(options);
     const languageHint = document.createElement('p');
@@ -125,6 +116,11 @@
         }
     };
     renderExclusions([]);
+    const diagnostics = document.createElement('div');
+    diagnostics.className = 'cw-diagnostics';
+    diagnostics.innerHTML =
+        '<button type="button" data-command="copy-diagnostics">Скопировать диагностику</button><p>Версия, настройки, очередь и источники рекомендаций. В отчёте есть публичные ссылки треков; вход и токены не включаются.</p><span role="status"></span>';
+    settingsDialog.append(diagnostics);
     root.append(settingsDialog);
     const presetSummary = document.createElement('p');
     presetSummary.className = 'cw-preset-summary';
@@ -327,8 +323,7 @@
             )
             .map((button) => button.textContent.trim());
         presetSummary.textContent =
-            [...selectedLabels, controls.genre].filter(Boolean).join(' · ') ||
-            'По вашему вкусу · все настройки открыты';
+            selectedLabels.filter(Boolean).join(' · ') || 'По вашему вкусу · все настройки открыты';
         languageHint.hidden = !controls.language || controls.language === 'any';
         characterHint.textContent =
             controls.discovery === 'favorites'
@@ -341,9 +336,6 @@
             const selected = controls[button.dataset.setting] === button.dataset.value;
             button.setAttribute('aria-pressed', String(selected));
         });
-        const selected = [...$('.cw-genre select').options].find((option) => option.value === controls.genre);
-        $('.cw-genre select').value = selected ? controls.genre : '';
-        $('.cw-genre input').value = selected ? '' : controls.genre || '';
     };
     const renderLike = () => {
         const button = $('.cw-like');
@@ -405,6 +397,22 @@
             return;
         }
         const command = button.dataset.command;
+        if (command === 'copy-diagnostics') {
+            if (!api.copyDiagnostics) return;
+            button.disabled = true;
+            void api
+                .copyDiagnostics()
+                .then(() => {
+                    diagnostics.querySelector('span').textContent = 'Отчёт скопирован';
+                })
+                .catch(() => {
+                    diagnostics.querySelector('span').textContent = 'Не удалось скопировать отчёт';
+                })
+                .finally(() => {
+                    button.disabled = false;
+                });
+            return;
+        }
         if (command === 'settings-open') {
             if (!settingsDialog.open) settingsDialog.showModal();
             return;
@@ -650,21 +658,6 @@
                 ? [item.genre, 'BPM из метаданных: ' + item.bpm].filter(Boolean).join(' · ')
                 : [item?.genre, 'Темп без подтверждённого BPM оценивается по тегам'].filter(Boolean).join(' · ');
     };
-    const applyGenre = (genre) => {
-        controls.genre = genre.trim();
-        api.controls(controls);
-        $('.cw-status').textContent = active
-            ? 'Подберём следующие треки с этим жанром'
-            : 'Жанр применится при запуске волны';
-    };
-    $('.cw-genre select').addEventListener('change', (event) => {
-        $('.cw-genre input').value = '';
-        applyGenre(event.target.value);
-    });
-    $('.cw-genre input').addEventListener('change', (event) => {
-        $('.cw-genre select').value = '';
-        applyGenre(event.target.value);
-    });
     $('.cw-timeline input').addEventListener('pointerdown', () => {
         internalSeek = true;
     });

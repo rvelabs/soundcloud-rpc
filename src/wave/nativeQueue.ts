@@ -115,16 +115,23 @@ async function locateTrack(
     title?: string,
     sourceQuery?: string,
     maxQueries = 3,
+    beforeNavigation: () => Promise<void> = async () => {},
+    isActive = () => true,
 ): Promise<void> {
     if (await cardAvailable(contents, target)) return;
+    if (!isActive()) throw new NativeActionCanceledError();
+    await beforeNavigation();
     const queries = [
         ...new Set(
-            [sourceQuery, title, target.split('/').pop()?.replace(/[-_]/g, ' ')]
+            [title, sourceQuery, target.split('/').pop()?.replace(/[-_]/g, ' ')]
                 .filter((value): value is string => Boolean(value?.trim()))
                 .map((value) => value.trim()),
         ),
     ];
-    for (const query of queries.slice(0, maxQueries)) if (await searchInPage(contents, query, target)) return;
+    for (const query of queries.slice(0, maxQueries)) {
+        if (!isActive()) throw new NativeActionCanceledError();
+        if (await searchInPage(contents, query, target)) return;
+    }
     throw new NativeTrackNotFoundError();
 }
 async function queueOnCurrentPage(contents: WebContents, target: string): Promise<boolean> {
@@ -231,7 +238,7 @@ async function performNativeCard(
         `document.querySelector('.headerSearch__input')?.value || ''`,
         true,
     )) as string;
-    const uncover = await beginNativePageCover(contents);
+    let uncover = async () => {};
     let fullNavigation = false;
     const preventReload = (event: Electron.Event) => {
         fullNavigation = true;
@@ -239,7 +246,17 @@ async function performNativeCard(
     };
     contents.on('will-navigate', preventReload);
     try {
-        await locateTrack(contents, target, title, sourceQuery, maxQueries);
+        await locateTrack(
+            contents,
+            target,
+            title,
+            sourceQuery,
+            maxQueries,
+            async () => {
+                uncover = await beginNativePageCover(contents);
+            },
+            isActive,
+        );
         if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
         if (fullNavigation) throw new Error('SoundCloud попытался перезагрузить плеер.');
         await action(target);

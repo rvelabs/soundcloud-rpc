@@ -38,7 +38,7 @@ const stateScript = `(() => {
         rect:r?{top:r.getBoundingClientRect().top,bottom:r.getBoundingClientRect().bottom,height:r.getBoundingClientRect().height}:null,
         firstModuleTop:document.querySelector('.l-main .mixedSelectionModule')?.getBoundingClientRect().top,
         importButton:!!r?.querySelector('.cw-import-open'),before:r?.nextElementSibling?.id||'',
-        genre:r?.querySelector('.cw-genre input')?.value,sidebarTop:side?.getBoundingClientRect().top};
+        mood:r?.querySelector('[data-setting=\"mood\"][aria-pressed=\"true\"]')?.dataset.value,sidebarTop:side?.getBoundingClientRect().top};
 })()`;
 async function createWindow(body, route = '/discover') {
     fixture = html(body);
@@ -154,12 +154,12 @@ app.whenReady()
             const win = await createWindow(layout());
             try {
                 await win.webContents.executeJavaScript(
-                    `window.__qaRoot=document.getElementById('codex-wave-inline');if(window.__qaRoot)window.__qaRoot.querySelector('.cw-genre input').value='shoegaze';document.querySelector('#content').innerHTML=${JSON.stringify(layout())}`,
+                    `window.__qaRoot=document.getElementById('codex-wave-inline');if(window.__qaRoot)window.__qaRoot.querySelector('[data-setting=\"mood\"][data-value=\"calm\"]').click();document.querySelector('#content').innerHTML=${JSON.stringify(layout())}`,
                 );
                 await pause(650);
                 const s = await win.webContents.executeJavaScript(stateScript);
                 visible(s);
-                assert.equal(s.genre, 'shoegaze');
+                assert.equal(s.mood, 'calm');
                 assert.equal(
                     await win.webContents.executeJavaScript(
                         `window.__qaRoot===document.getElementById('codex-wave-inline')`,

@@ -13,6 +13,8 @@ export interface WaveCandidate {
     bpmConfidence?: number;
     liked?: boolean;
     sourceQuery?: string;
+    relatedTo?: string[];
+    source?: 'related' | 'personal';
     metadataChecked?: boolean;
     catalogCheckedAt?: number;
     playability?: 'available' | 'blocked' | 'preview' | 'protected' | 'unknown';

@@ -1,7 +1,7 @@
 {
     "name": "soundcloud-rpc",
-    "version": "0.25.0",
-    "description": "🎵 A SoundCloud Client with Discord Rich Presence, Dark Mode, Last.fm and AdBlock support",
+    "version": "0.26.0",
+    "description": "SoundCloud desktop client with personalized radio, playlist import, Discord Rich Presence and Last.fm",
     "author": {
         "name": "Richard Habitzreuter",
         "email": "richardhabitzreuter@icloud.com"
@@ -22,7 +22,7 @@
         "build-linux-appimage": "tsc && npm run copy-header && electron-builder -l appimage"
     },
     "main": "./tsc/main.js",
-    "repository": "https://github.com/chechenecdbd-dot/soundcloud-rpc",
+    "repository": "https://github.com/rvelabs/soundcloud-rpc",
     "build": {
         "appId": "dev.codex.soundcloud-wave",
         "productName": "SoundCloud",

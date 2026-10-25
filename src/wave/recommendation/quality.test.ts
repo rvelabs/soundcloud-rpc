@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildProfile, discoveryQueries, recommend, RecommendationSession } from './index';
+import { buildProfile, discoverySeeds, recommend, RecommendationSession } from './index';
 import type { Controls, Feedback, Track } from './types';
 import { SoundCloudRecommender } from './soundcloudAdapter';
 import type ElectronStore from 'electron-store';
@@ -15,6 +15,14 @@ const track = (id: string, genre = 'ambient', extra: Partial<Track> = {}): Track
 });
 const vote = (track: Track, kind: Feedback['kind'], at = now): Feedback => ({ track, kind, at, listenedFraction: 1 });
 describe('recommendation quality regressions', () => {
+    it('does not let a conflicting duplicate hide a version with matching confirmed tempo', () => {
+        const same = { artist: 'Same artist', title: 'Same recording', genre: 'ambient' };
+        const fast = { ...same, id: 'first', features: { bpm: 170, bpmConfidence: 0.9 } };
+        const slow = { ...same, id: 'second', features: { bpm: 85, bpmConfidence: 0.9 } };
+        expect(
+            recommend([fast, slow], [], { ...settings, tempo: 'slow' }, { now }).map((item) => item.track.id),
+        ).toEqual(['second']);
+    });
     it('removing a heart is neutral and toggling it repeatedly does not poison the profile', () => {
         const seed = track('seed');
         const events = [vote(seed, 'like'), vote(seed, 'unlike')];
@@ -33,17 +41,11 @@ describe('recommendation quality regressions', () => {
         expect(profile.negativeSeeds).toHaveLength(0);
         expect(profile.tokens.get('ambient')).toBe(6);
     });
-    it('preserves compound genres and puts requested mood, tempo and activity in the first search', () => {
+    it('keeps compound genre metadata on seed recordings without constructing a search query', () => {
         const profile = buildProfile([vote(track('seed', 'drum and bass'), 'like')], now);
-        const queries = discoveryQueries(profile, {
-            ...settings,
-            mood: 'energetic',
-            tempo: 'fast',
-            activity: 'workout',
-        });
-        expect(queries[0]).toContain('drum and bass');
-        expect(queries[0]).toContain('energetic fast');
-        expect(queries[0]).toContain('workout');
+        expect(
+            discoverySeeds(profile, { ...settings, mood: 'energetic', tempo: 'fast', activity: 'workout' })[0].genre,
+        ).toBe('drum and bass');
         const pool = [track('dnb', 'DnB'), track('house', 'house')];
         expect(recommend(pool, [], { ...settings, genre: 'drum and bass' }, { now }).map((x) => x.track.id)).toEqual([
             'dnb',
@@ -88,7 +90,7 @@ describe('recommendation quality regressions', () => {
     it('reranks an already reserved buffer after feedback without allowing a repeated finished track', () => {
         const quiet = track('quiet', 'ambient'),
             dance = track('dance', 'house');
-        const session = new RecommendationSession({ search: async () => [] }, () => now);
+        const session = new RecommendationSession({ related: async () => [] }, () => now);
         session.addCandidates([quiet, dance]);
         session.reserve(quiet.id);
         session.reserve(dance.id);
@@ -106,7 +108,7 @@ describe('recommendation quality regressions', () => {
                     resolve = done;
                 }),
         );
-        const session = new RecommendationSession({ search }, () => now);
+        const session = new RecommendationSession({ related: search }, () => now);
         const empty = session.profile();
         const first = session.refresh(),
             second = session.refresh();
@@ -146,14 +148,15 @@ describe('recommendation quality regressions', () => {
         );
     });
 });
-it('rotates a single chosen genre instead of refetching the same first page forever', () => {
-    const profile = buildProfile([], now);
-    const selected = { ...settings, genre: 'ambient', mood: 'calm' as const };
-    const first = discoveryQueries(profile, selected, 0).slice(0, 3),
-        second = discoveryQueries(profile, selected, 1).slice(0, 3);
-    expect(new Set(first).size).toBe(3);
+it('rotates distinct seed recordings instead of the same genre search', () => {
+    const profile = buildProfile(
+        Array.from({ length: 6 }, (_, i) => vote(track('seed' + i), 'like')),
+        now,
+    );
+    const first = discoverySeeds(profile, settings, 0),
+        second = discoverySeeds(profile, settings, 1);
+    expect(first).toHaveLength(3);
     expect(second).not.toEqual(first);
-    expect(second.every((query) => query.includes('ambient') && query.includes('chill'))).toBe(true);
 });
 it('an explicit dislike outweighs old repeat listening', () => {
     const seed = track('seed');

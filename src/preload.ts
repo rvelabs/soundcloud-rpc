@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('soundcloudAPI', {
 });
 contextBridge.exposeInMainWorld('waveInline', {
     ready: () => ipcRenderer.invoke('wave-inline:ready'),
+    copyDiagnostics: () => ipcRenderer.invoke('wave-inline:copy-diagnostics'),
     start: () => ipcRenderer.invoke('wave-inline:start'),
     control: (command: string, value?: unknown) => ipcRenderer.send('wave-inline:control', command, value),
     like: (url: string, desired: boolean) => ipcRenderer.invoke('wave-inline:like', url, desired),

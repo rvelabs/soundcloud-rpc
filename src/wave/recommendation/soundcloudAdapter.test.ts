@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type ElectronStore from 'electron-store';
 import { SoundCloudRecommender, toTrack } from './soundcloudAdapter';
 import type { WaveCandidate } from '../waveEngine';
+import type { Track } from './types';
 const item = (url: string, artist: string, genre: string, bpm?: number): WaveCandidate => ({
     url,
     title: url,
@@ -58,9 +59,9 @@ describe('SoundCloud recommendation adapter', () => {
         recommender.addCandidates([candidate]);
         expect(recommender.rank().map((track) => track.url)).toEqual(['fresh']);
     });
-    it('starts a new account without saved likes or history and accepts its genre choice', async () => {
+    it('ignores a legacy genre selection instead of carrying it into new discovery', async () => {
         const { store } = memoryStore();
-        const queries: string[][] = [];
+        const queries: Track[][] = [];
         const fresh = item('https://soundcloud.com/fresh/track', 'Fresh artist', 'shoegaze');
         const recommender = new SoundCloudRecommender(store, 'brand-new-account', async (value) => {
             queries.push(value);
@@ -76,7 +77,7 @@ describe('SoundCloud recommendation adapter', () => {
         });
         expect(recommender.feedbackCount()).toBe(0);
         expect((await recommender.refresh()).map((candidate) => candidate.url)).toContain(fresh.url);
-        expect(queries.flat().some((query) => query.includes('shoegaze'))).toBe(true);
+        expect(queries.flat().some((query) => query.id.includes('shoegaze'))).toBe(false);
     });
     it('migrates existing likes and plays without replaying those tracks', async () => {
         const liked = item('liked', 'A', 'shoegaze');

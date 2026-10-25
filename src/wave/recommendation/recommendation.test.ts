@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildProfile, discoveryQueries, recommend, RecommendationSession } from './index';
+import { buildProfile, discoverySeeds, recommend, RecommendationSession } from './index';
 import type { Controls, Feedback, Track } from './index';
 const now = Date.UTC(2026, 9, 17);
 const controls: Controls = { mood: 'any', tempo: 'any', tone: 'any', genre: '', discovery: 'balanced' };
@@ -91,11 +91,11 @@ describe('standalone recommendation modules', () => {
         );
         expect(result[0].track.artist).toBe('B');
     });
-    it('uses genre and style queries without searching artist names', () => {
+    it('uses a liked recording as discovery seed without turning metadata into search words', () => {
         const seed = track('favorite', 'Specific Artist', 'dream pop');
-        const queries = discoveryQueries(buildProfile([event(seed, 'like')], now), controls);
-        expect(queries.join(' ')).toContain('dream');
-        expect(queries.join(' ')).not.toContain('Specific Artist');
+        expect(discoverySeeds(buildProfile([event(seed, 'like')], now), controls)).toEqual([
+            expect.objectContaining({ id: seed.id, artist: seed.artist }),
+        ]);
     });
     it('changes the selection when the listener asks for a specific genre', () => {
         const candidates = [track('rock', 'A', 'rock'), track('ambient', 'B', 'ambient')];
@@ -125,16 +125,10 @@ describe('standalone recommendation modules', () => {
         expect(recommend(catalog, [], controls, { now, activity: 'relax' }, 1)[0].track.id).toBe('rest');
         expect(recommend(catalog, [], controls, { now, activity: 'workout' }, 1)[0].track.id).toBe('gym');
     });
-    it('sends the chosen genre and situation to catalog search', () => {
-        const query = discoveryQueries(buildProfile([], now), {
-            ...controls,
-            genre: 'shoegaze',
-            activity: 'focus',
-            tone: 'bright',
-        });
-        expect(query.some((item) => item.includes('shoegaze'))).toBe(true);
-        expect(query.some((item) => item.includes('instrumental focus'))).toBe(true);
-        expect(query.join(' ')).not.toContain('electronic');
+    it('does not invent a seed from a requested genre or activity', () => {
+        expect(discoverySeeds(buildProfile([], now), { ...controls, genre: 'shoegaze', activity: 'focus' })).toEqual(
+            [],
+        );
     });
     it('uses a matching search phrase when SoundCloud omits genre metadata', () => {
         const found = { ...track('result', 'A', ''), queryHint: 'shoegaze chill' };
@@ -154,7 +148,7 @@ describe('standalone recommendation modules', () => {
     });
     it('re-ranks immediately after controls change and does not repeat reserved tracks', async () => {
         const catalog = [track('slow', 'A', 'ambient', 80, 0.1), track('fast', 'B', 'techno', 160, 0.9)];
-        const session = new RecommendationSession({ search: async () => catalog }, () => now);
+        const session = new RecommendationSession({ related: async () => catalog }, () => now);
         session.addCandidates(catalog);
         session.setControls({ tempo: 'slow', mood: 'calm' });
         expect((await session.next())?.track.id).toBe('slow');

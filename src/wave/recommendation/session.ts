@@ -1,12 +1,12 @@
 import { effectiveMood } from './preferences';
 import { buildProfile, normalize } from './profile';
 import type { TasteProfile } from './profile';
-import { discoveryQueries } from './discovery';
+import { discoverySeeds } from './discovery';
 import { recommend } from './ranker';
 import { defaultControls } from './types';
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
 export interface CandidateProvider {
-    search(queries: string[]): Promise<Track[]>;
+    related(seeds: Track[]): Promise<Track[]>;
 }
 export class RecommendationSession {
     private events: Feedback[] = [];
@@ -30,6 +30,10 @@ export class RecommendationSession {
     };
     private refreshTask?: Promise<Recommendation[]>;
     private candidateEpoch = 0;
+    private anchor?: Track;
+    setAnchor(track?: Track): void {
+        this.anchor = track;
+    }
     profile(): TasteProfile {
         const minute = Math.floor(this.now() / 60000);
         if (!this.profileCache || this.profileCache.minute !== minute)
@@ -146,12 +150,19 @@ export class RecommendationSession {
     private async refreshOnce(): Promise<Recommendation[]> {
         const epoch = this.candidateEpoch;
         const mood = effectiveMood(this.controls, this.context());
-        const queries = discoveryQueries(
-            this.profile(),
-            { ...this.controls, mood, activity: this.activity },
-            this.rotation++,
+        const controls = { ...this.controls, mood, activity: this.activity };
+        const rotation = this.rotation++;
+        const found = await this.provider.related(
+            discoverySeeds(
+                {
+                    ...this.profile(),
+                    positiveSeeds: this.profile().positiveSeeds.filter((track) => this.allowed(track)),
+                },
+                controls,
+                rotation,
+                this.anchor && this.allowed(this.anchor) ? this.anchor : undefined,
+            ),
         );
-        const found = await this.provider.search(queries);
         if (epoch !== this.candidateEpoch) return [];
         this.addCandidates(found);
         return this.rank();

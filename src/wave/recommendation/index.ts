@@ -1,5 +1,5 @@
 export { buildProfile, feedbackWeight, measuredBpm, tokensOf } from './profile';
-export { discoveryQueries } from './discovery';
+export { discoverySeeds } from './discovery';
 export { recommend, tempoMatches } from './ranker';
 export { RecommendationSession } from './session';
 export type { CandidateProvider } from './session';

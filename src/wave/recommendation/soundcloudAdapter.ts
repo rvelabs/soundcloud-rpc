@@ -4,7 +4,7 @@ import { RecommendationSession } from './session';
 import { buildProfile, normalize } from './profile';
 import type { Controls, Feedback, FeedbackKind, SoundFeatures, Track } from './types';
 type Store = Pick<ElectronStore, 'get' | 'set'>;
-type Search = (queries: string[]) => Promise<WaveCandidate[]>;
+type Discovery = (seeds: Track[]) => Promise<WaveCandidate[]>;
 const kinds = new Set<FeedbackKind>(['like', 'unlike', 'dislike', 'play', 'skip', 'complete']);
 export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Track {
     return {
@@ -18,6 +18,8 @@ export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Tra
         playbackCount: candidate.playbackCount,
         catalogChecked: Boolean(candidate.catalogCheckedAt && Date.now() - candidate.catalogCheckedAt < 30 * 60000),
         queryHint: candidate.sourceQuery,
+        relatedTo: candidate.relatedTo,
+        source: candidate.source,
         features: {
             ...features,
             bpm: candidate.bpm || features?.bpm,
@@ -64,19 +66,19 @@ export class SoundCloudRecommender {
     constructor(
         private store: Store,
         accountId: string,
-        search: Search,
+        discover: Discovery,
         private now: () => number = Date.now,
     ) {
         this.key = `waveFeedbackV1_${accountId}`;
-        this.cacheKey = `waveCandidatesV1_${accountId}`;
+        this.cacheKey = `waveCandidatesV2_${accountId}`;
         const saved = store.get(this.key);
         this.feedbackEvents = Array.isArray(saved) ? saved.filter(validFeedback).slice(-5000) : [];
         if (!Array.isArray(saved)) this.migrateLegacy(accountId);
         this.session = new RecommendationSession(
             {
-                search: async (queries) => {
+                related: async (seeds) => {
                     const epoch = this.candidateEpoch;
-                    const found = await search(queries);
+                    const found = await discover(seeds);
                     if (epoch !== this.candidateEpoch) return [];
                     this.addCandidates(found);
                     return found.flatMap((candidate) => {
@@ -167,7 +169,7 @@ export class SoundCloudRecommender {
             mood: value.mood,
             tone: value.tone,
             tempo: value.tempo,
-            genre: value.genre,
+            genre: '',
             discovery: value.discovery || 'balanced',
             language: value.language || 'any',
         };
@@ -178,6 +180,9 @@ export class SoundCloudRecommender {
         this.candidateEpoch++;
         this.candidates.clear();
         this.session.clearCandidates();
+    }
+    setAnchor(candidate?: WaveCandidate): void {
+        this.session.setAnchor(candidate ? toTrack(candidate) : undefined);
     }
     addCandidates(tracks: WaveCandidate[], persist = true): void {
         if (persist) this.seedLikes(tracks.filter((track) => track.liked === true));

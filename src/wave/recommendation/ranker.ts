@@ -95,6 +95,14 @@ function scoreTrack(
     const affinityFactor =
         controls.discovery === 'new' ? 0.35 : ['familiar', 'favorites'].includes(controls.discovery) ? 1.15 : 1;
     let score = affinity * affinityFactor + seedSimilarity * familiarFactor - negativeSimilarity * 2.2;
+    if (track.source === 'related' && track.relatedTo?.length) {
+        const references = track.relatedTo.filter((id) => profile.positiveSeeds.some((seed) => seed.id === id));
+        score += 2.2 + Math.min(2, references.length) * 0.9;
+        reasons.push(
+            references.length ? 'похожие треки к понравившимся записям' : 'похожие треки к музыке текущей сессии',
+        );
+        if (references.length > 1) reasons.push('рекомендуется к нескольким вашим трекам');
+    }
     if (affinity > 0.5) reasons.push('совпадение жанра и тегов с историей');
     if (negativeSimilarity > 0.5) reasons.push('похож на пропущенное');
     if (!seedSimilarity && controls.discovery === 'new') {
@@ -197,16 +205,9 @@ export function recommend(
         const reserved = unique.get(id);
         if (reserved) blockedRecordings.add(recordingKey(reserved));
     }
-    const recordingSeen = new Set<string>();
     const unseen = [...unique.values()].filter((track) => {
         const key = recordingKey(track);
-        if (
-            profile.dislikedIds.has(track.id) ||
-            recentIds.has(track.id) ||
-            blockedRecordings.has(key) ||
-            recordingSeen.has(key)
-        )
-            return false;
+        if (profile.dislikedIds.has(track.id) || recentIds.has(track.id) || blockedRecordings.has(key)) return false;
         if (favoriteMode && !favorites.has(track.id)) return false;
         if (
             controls.discovery !== 'familiar' &&
@@ -214,7 +215,6 @@ export function recommend(
             (profile.heardIds.has(track.id) || profile.likedIds.has(track.id) || knownRecordings.has(key))
         )
             return false;
-        recordingSeen.add(key);
         return true;
     });
     const requestedGenre = normalize(controls.genre || '');
@@ -248,7 +248,14 @@ export function recommend(
             ? [...left].filter((token) => right.has(token)).length / Math.sqrt(left.size * right.size)
             : 0;
     };
-    const scored = pool.map((track) => scoreTrack(track, profile, controls, context, compare));
+    const recordings = new Map<string, Recommendation>();
+    for (const track of pool) {
+        const item = scoreTrack(track, profile, controls, context, compare);
+        const key = recordingKey(track);
+        const previous = recordings.get(key);
+        if (!previous || item.score > previous.score) recordings.set(key, item);
+    }
+    const scored = [...recordings.values()];
     const chosen: Recommendation[] = [];
     const usedArtists = new Set((context.recentArtists || []).slice(0, 2).map(normalize));
     while (scored.length && chosen.length < limit) {

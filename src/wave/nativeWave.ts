@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron';
 import type { WaveCandidate } from './waveEngine';
+import { trackPath } from './nativeQueue';
 const root = 'https://soundcloud.com';
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export function extractWaveLinks(): WaveCandidate[] {
@@ -69,6 +70,11 @@ export function extractWaveLinks(): WaveCandidate[] {
 async function scan(view: WebContents, scrolls = 1, target = 12): Promise<WaveCandidate[]> {
     await wait(250);
     let result = (await view.executeJavaScript(`(${extractWaveLinks.toString()})()`, true)) as WaveCandidate[];
+    for (let attempt = 0; !result.length && attempt < 20; attempt++) {
+        if (view.isDestroyed()) return [];
+        await wait(100);
+        result = (await view.executeJavaScript(`(${extractWaveLinks.toString()})()`, true)) as WaveCandidate[];
+    }
     for (let i = 0; i < scrolls && result.length < target; i++) {
         await view.executeJavaScript('window.scrollTo(0, document.body.scrollHeight)', true);
         await wait(300);
@@ -77,13 +83,29 @@ async function scan(view: WebContents, scrolls = 1, target = 12): Promise<WaveCa
     }
     return result;
 }
+async function loadDiscoveryPage(view: WebContents, url: string): Promise<void> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+        await Promise.race([
+            view.loadURL(url),
+            new Promise<never>((_, reject) => {
+                timeout = setTimeout(() => {
+                    if (!view.isDestroyed()) view.stop();
+                    reject(new Error('SoundCloud не ответил на фоновый запрос.'));
+                }, 10000);
+            }),
+        ]);
+    } finally {
+        clearTimeout(timeout);
+    }
+}
 export async function discoverPersonalHistory(view: WebContents): Promise<{
     likes: WaveCandidate[];
     recent: WaveCandidate[];
 }> {
     const read = async (route: string): Promise<WaveCandidate[]> => {
         try {
-            await view.loadURL(`${root}${route}`);
+            await loadDiscoveryPage(view, `${root}${route}`);
             if (new URL(view.getURL()).pathname !== route) return [];
             return await scan(view, 2, 40);
         } catch {
@@ -92,27 +114,10 @@ export async function discoverPersonalHistory(view: WebContents): Promise<{
     };
     return { likes: await read('/you/likes'), recent: await read('/you/history') };
 }
-export async function discoverSearchCandidates(view: WebContents, queries: string[]): Promise<WaveCandidate[]> {
-    const result: WaveCandidate[] = [];
-    for (const query of [...new Set(queries.map((value) => value.trim().slice(0, 120)).filter(Boolean))].slice(0, 3)) {
-        await view.loadURL(`${root}/search/sounds?q=${encodeURIComponent(query)}`);
-        for (const track of await scan(view))
-            if (!result.some((old) => old.url === track.url))
-                result.push({ ...track, sourceRank: result.length, sourceQuery: query });
-    }
-    return result;
-}
-export async function discoverWaveCandidates(view: WebContents, queries: string[] = []): Promise<WaveCandidate[]> {
-    const result = await discoverSearchCandidates(view, queries);
-    if (result.length >= 24) return result;
-    await view.loadURL(`${root}/discover`);
-    for (const track of await scan(view))
-        if (!result.some((old) => old.url === track.url)) result.push({ ...track, sourceRank: result.length });
-    return result;
-}
 export async function discoverRelatedCandidates(view: WebContents, trackUrl: string): Promise<WaveCandidate[]> {
-    const url = new URL(trackUrl);
-    if (url.origin !== root || url.pathname.split('/').filter(Boolean).length !== 2) return [];
-    await view.loadURL(`${root}${url.pathname.replace(/\/$/, '')}/recommended`);
-    return (await scan(view)).filter((track) => track.url !== `${root}${url.pathname}`);
+    const path = trackPath(trackUrl);
+    if (!path) return [];
+    await loadDiscoveryPage(view, `${root}${path}/recommended`);
+    if (new URL(view.getURL()).pathname.replace(/\/$/, '') !== `${path}/recommended`) return [];
+    return (await scan(view, 2, 24)).filter((track) => trackPath(track.url) !== path);
 }

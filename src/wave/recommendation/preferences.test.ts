@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { recommend, RecommendationSession, discoveryQueries, buildProfile } from './index';
+import { recommend, RecommendationSession, discoverySeeds, buildProfile } from './index';
 import { languageEvidence } from './preferences';
 import type { Controls, Track, Feedback } from './types';
 const now = Date.UTC(2026, 9, 22);
@@ -54,7 +54,7 @@ describe('reference settings semantics', () => {
         );
     });
     it('allows unknown language for inspection but rejects it before putting a track in the buffer', () => {
-        const session = new RecommendationSession({ search: async () => [] }, () => now);
+        const session = new RecommendationSession({ related: async () => [] }, () => now);
         session.setControls({ language: 'ru' });
         session.addCandidates([track('unknown')]);
         expect(session.rank()).toHaveLength(1);
@@ -84,7 +84,7 @@ describe('reference settings semantics', () => {
     });
     it('keeps a favorite-only stream going without replaying the immediately previous recording', async () => {
         const tracks = [track('one'), track('two'), track('three')];
-        const session = new RecommendationSession({ search: async () => tracks }, () => now);
+        const session = new RecommendationSession({ related: async () => tracks }, () => now);
         session.loadFeedback(tracks.map((item) => react(item, 'like')));
         session.addCandidates(tracks);
         session.setControls({ discovery: 'favorites' });
@@ -130,9 +130,10 @@ it('does not repeatedly inspect already checked candidates with unknown requeste
     for (const chosen of [{ language: 'ru' as const }, { mood: 'happy' as const }, { discovery: 'popular' as const }])
         expect(recommend([checked], [], { ...defaults, ...chosen }, { now, allowUnverified: true })).toHaveLength(0);
 });
-it('searches the explicit emotional request before long-term styles when no genre is pinned', () => {
-    const profile = buildProfile([react(track('seed', { genre: 'hardstyle' }), 'like')], now);
-    const queries = discoveryQueries(profile, { ...defaults, mood: 'happy', discovery: 'popular' });
-    expect(queries[0]).toBe('happy uplifting popular');
-    expect(queries.some((query) => query.includes('hardstyle'))).toBe(true);
+it('prefers a contextually matching favorite as seed without inventing happy tracks', () => {
+    const profile = buildProfile(
+        [react(track('sad', { tags: ['sad'] }), 'like'), react(track('happy', { tags: ['happy'] }), 'like')],
+        now,
+    );
+    expect(discoverySeeds(profile, { ...defaults, mood: 'happy' })[0].id).toBe('happy');
 });
