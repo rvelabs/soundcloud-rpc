@@ -1,0 +1,29 @@
+name: Ошибка / Bug report
+description: Сообщить о проблеме в клиенте SoundCloud
+body:
+    - type: input
+      id: version
+      attributes:
+          label: Версия клиента и Windows
+          placeholder: SoundCloud 0.26.0, Windows 11
+      validations:
+          required: true
+    - type: textarea
+      id: steps
+      attributes:
+          label: Как повторить
+          description: Что нажали, что ожидали и что произошло. Укажите, работает ли это в обычном SoundCloud.
+      validations:
+          required: true
+    - type: textarea
+      id: diagnostics
+      attributes:
+          label: Диагностика Моей волны
+          description:
+              Настроить → Скопировать диагностику. Проверьте публичные ссылки на треки перед отправкой; не публикуйте
+              cookies, токены и настройки аккаунта.
+          render: json
+    - type: textarea
+      id: extra
+      attributes:
+          label: Скриншоты и дополнительная информация

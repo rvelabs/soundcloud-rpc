@@ -1,8 +1,15 @@
-# SoundCloud
+# SoundCloud Desktop — Моя волна и импорт плейлистов
 
 Неофициальный настольный клиент SoundCloud для Windows. Форк
 [richardhbtz/soundcloud-rpc](https://github.com/richardhbtz/soundcloud-rpc) с персональными рекомендациями и импортом
 плейлистов.
+
+**SoundCloud desktop client for Windows.** Personalized radio from related tracks, playlist import from Spotify, YouTube
+Music and Yandex Music, Discord Rich Presence and Last.fm. Free and open source.
+
+[Страница проекта](https://rvelabs.github.io/soundcloud-rpc/) ·
+[Скачать](https://github.com/rvelabs/soundcloud-rpc/releases/latest) ·
+[Сообщить об ошибке](https://github.com/rvelabs/soundcloud-rpc/issues/new/choose)
 
 ## Содержание
 

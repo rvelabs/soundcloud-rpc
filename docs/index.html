@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>SoundCloud Desktop для Windows — Моя волна и импорт плейлистов | rvelabs</title>
+        <meta
+            name="description"
+            content="Неофициальный клиент SoundCloud для Windows: Моя волна по понравившимся трекам, импорт плейлистов Spotify, Яндекс Музыки и YouTube. Открытый код от rvelabs."
+        />
+        <meta name="robots" content="index,follow" />
+        <link rel="canonical" href="https://rvelabs.github.io/soundcloud-rpc/" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="SoundCloud Desktop — музыка по вашему вкусу" />
+        <meta
+            property="og:description"
+            content="Персональная волна, импорт плейлистов и привычный плеер SoundCloud. Бесплатный клиент для Windows с открытым кодом."
+        />
+        <meta property="og:url" content="https://rvelabs.github.io/soundcloud-rpc/" />
+        <meta name="theme-color" content="#ff5500" />
+        <script type="application/ld+json">
+            {
+                "@context": "https://schema.org",
+                "@type": "SoftwareApplication",
+                "name": "SoundCloud Desktop by rvelabs",
+                "operatingSystem": "Windows 10, Windows 11",
+                "applicationCategory": "MultimediaApplication",
+                "url": "https://rvelabs.github.io/soundcloud-rpc/",
+                "downloadUrl": "https://github.com/rvelabs/soundcloud-rpc/releases/latest",
+                "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+                "author": { "@type": "Person", "name": "rvelabs", "url": "https://github.com/rvelabs" },
+                "description": "Unofficial open-source SoundCloud desktop client with personalized radio, playlist import and Discord Rich Presence."
+            }
+        </script>
+        <style>
+            :root {
+                color-scheme: dark;
+                --orange: #ff5500;
+                --muted: #aaa;
+                --border: #ffffff18;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html {
+                scroll-behavior: smooth;
+            }
+            body {
+                margin: 0;
+                background: #111;
+                color: #f5f5f5;
+                font:
+                    16px/1.65 system-ui,
+                    -apple-system,
+                    'Segoe UI',
+                    sans-serif;
+            }
+            a {
+                color: inherit;
+                text-underline-offset: 4px;
+            }
+            a:hover {
+                color: #ff8b50;
+            }
+            a:focus-visible,
+            summary:focus-visible {
+                outline: 3px solid #ff8b50;
+                outline-offset: 5px;
+            }
+            header,
+            main,
+            footer {
+                max-width: 1120px;
+                margin: auto;
+                padding: 0 28px;
+            }
+            nav {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 26px 0;
+                border-bottom: 1px solid var(--border);
+                gap: 20px;
+            }
+            .brand {
+                font-size: 18px;
+                font-weight: 750;
+                text-decoration: none;
+            }
+            .brand i {
+                color: var(--orange);
+                font-style: normal;
+            }
+            nav > div {
+                display: flex;
+                gap: 24px;
+                font-size: 14px;
+            }
+            .hero {
+                position: relative;
+                padding: 100px 0 90px;
+                overflow: hidden;
+            }
+            .hero:before {
+                content: '';
+                position: absolute;
+                z-index: -1;
+                width: 650px;
+                height: 520px;
+                right: -200px;
+                top: -70px;
+                background:
+                    radial-gradient(ellipse at 35% 50%, #782c7799, transparent 60%),
+                    radial-gradient(ellipse at 70% 65%, #bf531566, transparent 60%);
+                filter: blur(45px);
+            }
+            .eyebrow {
+                color: #ff9965;
+                text-transform: uppercase;
+                font-size: 12px;
+                letter-spacing: 0.17em;
+                font-weight: 700;
+            }
+            h1 {
+                font-size: clamp(42px, 6vw, 72px);
+                line-height: 1.07;
+                letter-spacing: -0.045em;
+                max-width: 800px;
+                margin: 22px 0;
+            }
+            h1 span {
+                color: var(--orange);
+            }
+            .lead {
+                max-width: 630px;
+                color: #bbb;
+                font-size: 19px;
+            }
+            .actions {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                margin: 30px 0 15px;
+            }
+            .button {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                background: var(--orange);
+                border: 1px solid var(--orange);
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-weight: 650;
+                text-decoration: none;
+                color: white;
+            }
+            .button:hover {
+                color: white;
+                background: #e74d00;
+            }
+            .button.secondary {
+                background: #ffffff08;
+                border-color: #ffffff30;
+            }
+            .note {
+                font-size: 13px;
+                color: var(--muted);
+            }
+            section {
+                padding: 42px 0;
+            }
+            h2 {
+                font-size: 30px;
+                letter-spacing: -0.03em;
+                margin: 0 0 22px;
+            }
+            h3 {
+                font-size: 19px;
+                margin: 0 0 10px;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 18px;
+            }
+            .card {
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                padding: 25px;
+                background: #1a1a1a;
+            }
+            .card .index {
+                color: #ff9965;
+                display: block;
+                margin-bottom: 20px;
+                font-size: 13px;
+            }
+            .card p {
+                margin-bottom: 0;
+                color: var(--muted);
+                font-size: 15px;
+            }
+            .flow {
+                padding: 28px;
+                border-left: 3px solid var(--orange);
+                background: #1a1a1a;
+                border-radius: 0 12px 12px 0;
+            }
+            .flow p {
+                margin: 0;
+                color: #bbb;
+            }
+            .flow strong {
+                color: white;
+            }
+            details {
+                border-bottom: 1px solid var(--border);
+                padding: 18px 0;
+            }
+            summary {
+                cursor: pointer;
+                font-weight: 650;
+            }
+            details p {
+                color: var(--muted);
+                max-width: 850px;
+            }
+            .english {
+                padding: 28px;
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                color: #bbb;
+            }
+            .english h2 {
+                font-size: 24px;
+                color: white;
+            }
+            .english p {
+                margin-bottom: 0;
+            }
+            footer {
+                padding-top: 36px;
+                padding-bottom: 35px;
+                color: var(--muted);
+                font-size: 13px;
+            }
+            footer > div {
+                border-top: 1px solid var(--border);
+                padding-top: 25px;
+                display: flex;
+                justify-content: space-between;
+                gap: 20px;
+            }
+            footer a {
+                color: #ddd;
+            }
+            @media (max-width: 720px) {
+                .grid {
+                    grid-template-columns: 1fr;
+                }
+                .hero {
+                    padding: 60px 0 45px;
+                }
+                header,
+                main,
+                footer {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                }
+                nav > div {
+                    gap: 14px;
+                }
+                .lead {
+                    font-size: 17px;
+                }
+                footer > div {
+                    flex-direction: column;
+                }
+                .card {
+                    padding: 22px;
+                }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                html {
+                    scroll-behavior: auto;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <nav aria-label="Основная навигация">
+                <a class="brand" href="./"><i>●</i> SoundCloud <small>by rvelabs</small></a>
+                <div>
+                    <a href="#features">Возможности</a><a href="https://github.com/rvelabs/soundcloud-rpc">GitHub ↗</a>
+                </div>
+            </nav>
+        </header>
+        <main>
+            <section class="hero" aria-labelledby="title">
+                <div class="eyebrow">Windows · Open source · Бесплатно</div>
+                <h1 id="title">Ваш SoundCloud.<br /><span>Ваша музыка.</span></h1>
+                <p class="lead">
+                    Знакомый плеер, персональная «Моя волна» и плейлисты из других сервисов. Всё в одном настольном
+                    клиенте.
+                </p>
+                <div class="actions">
+                    <a class="button" href="https://github.com/rvelabs/soundcloud-rpc/releases/latest"
+                        >Скачать для Windows ↗</a
+                    ><a class="button secondary" href="https://github.com/rvelabs/soundcloud-rpc#readme"
+                        >Документация</a
+                    >
+                </div>
+                <p class="note">Неофициальный клиент. Нужен аккаунт SoundCloud. Поддержка Windows x64.</p>
+            </section>
+            <section id="features" aria-labelledby="features-title">
+                <h2 id="features-title">Больше любимой музыки</h2>
+                <div class="grid">
+                    <article class="card">
+                        <span class="index">01 / ПЕРСОНАЛЬНЫЙ ПОТОК</span>
+                        <h3>Моя волна</h3>
+                        <p>
+                            Похожие треки к вашим любимым записям, реакции на прослушивание и разнообразие исполнителей.
+                            Настроение, занятие и язык — в отдельной панели.
+                        </p>
+                    </article>
+                    <article class="card">
+                        <span class="index">02 / ВАША КОЛЛЕКЦИЯ</span>
+                        <h3>Импорт плейлистов</h3>
+                        <p>
+                            Вставьте ссылку Яндекс Музыки, Spotify или YouTube Music. Проверьте совпадения и создайте
+                            плейлист SoundCloud даже из найденной части.
+                        </p>
+                    </article>
+                    <article class="card">
+                        <span class="index">03 / ПРИВЫЧНОЕ УПРАВЛЕНИЕ</span>
+                        <h3>Штатный плеер</h3>
+                        <p>
+                            Громкость, перемотка, очередь и лайки SoundCloud. Discord Rich Presence, Last.fm, темы и
+                            плагины дополняют клиент.
+                        </p>
+                    </article>
+                </div>
+            </section>
+            <section aria-labelledby="radio-title">
+                <h2 id="radio-title">Как подбирается музыка</h2>
+                <div class="flow">
+                    <p>
+                        <strong
+                            >Понравившиеся записи → похожие треки SoundCloud → персональное ранжирование →
+                            подготовленная очередь.</strong
+                        ><br />Подбор начинается с конкретной музыки. Текстовый поиск по названию жанра не используется
+                        для получения рекомендаций. Недавние повторы и исключённые исполнители отсекаются локально.
+                    </p>
+                </div>
+            </section>
+            <section aria-labelledby="faq-title">
+                <h2 id="faq-title">Перед установкой</h2>
+                <details>
+                    <summary>Это официальное приложение SoundCloud?</summary>
+                    <p>
+                        Нет. Это открытый форк
+                        <a href="https://github.com/richardhbtz/soundcloud-rpc">soundcloud-rpc</a>. SoundCloud и другие
+                        упомянутые сервисы принадлежат их владельцам; проект с ними не аффилирован.
+                    </p>
+                </details>
+                <details>
+                    <summary>Это тот же алгоритм, что у Яндекс Музыки?</summary>
+                    <p>
+                        Нет. Закрытая модель Яндекса не копируется. Здесь используются похожие записи SoundCloud и
+                        собственное ранжирование. Для нового аккаунта добавьте несколько лайков или включите любимый
+                        трек. Неполные метаданные ограничивают точность настроения, языка и темпа.
+                    </p>
+                </details>
+                <details>
+                    <summary>Перенесутся все треки моего плейлиста?</summary>
+                    <p>
+                        Клиент ищет соответствующие записи в SoundCloud и не копирует аудиофайлы. Совпадения, версии и
+                        доступность зависят от каталога, региона и аккаунта. Spotify и YouTube могут отдавать неполный
+                        список; найденную часть можно сохранить отдельно.
+                    </p>
+                </details>
+                <details>
+                    <summary>Почему Windows предупреждает об издателе?</summary>
+                    <p>
+                        Установщик пока не имеет доверенной цифровой подписи. Исходники и контрольная сумма SHA-256
+                        доступны в GitHub Releases. Режим тестовой подписи Windows не требуется.
+                    </p>
+                </details>
+                <details>
+                    <summary>Как сообщить об ошибке?</summary>
+                    <p>
+                        Откройте «Моя волна» → «Настроить» → «Скопировать диагностику» и
+                        <a href="https://github.com/rvelabs/soundcloud-rpc/issues/new/choose">создайте issue</a>. Перед
+                        публикацией проверьте отчёт: он включает публичные ссылки на треки. Cookies и токены туда не
+                        включаются.
+                    </p>
+                </details>
+            </section>
+            <section lang="en" class="english">
+                <h2>SoundCloud desktop client for Windows</h2>
+                <p>
+                    An unofficial, free, open-source SoundCloud player with personalized radio, playlist import from
+                    Spotify, YouTube Music and Yandex Music, Discord Rich Presence and Last.fm. Built on soundcloud-rpc.
+                    Recommendations use related tracks and local feedback; this is not the proprietary Yandex Music
+                    algorithm.
+                    <a href="https://github.com/rvelabs/soundcloud-rpc">Explore the source and releases on GitHub.</a>
+                </p>
+            </section>
+        </main>
+        <footer>
+            <div>
+                <span>SoundCloud Desktop · rvelabs · MIT</span
+                ><span
+                    ><a href="https://github.com/rvelabs/soundcloud-rpc">Исходный код</a> ·
+                    <a href="https://github.com/rvelabs/soundcloud-rpc/issues">Обратная связь</a></span
+                >
+            </div>
+        </footer>
+    </body>
+</html>
