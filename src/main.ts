@@ -715,6 +715,7 @@ async function init() {
         importScanController?.abort();
         for (const view of importSearchViews) closeImportView(view);
         if (importView) closeImportView(importView);
+        disposeWaveViews();
     });
     const importProgress = (
         phase: string,
@@ -1216,7 +1217,7 @@ async function init() {
             void loadWaveTaste();
         }, 1800);
     });
-    mainWindow.once('closed', () => {
+    const disposeWaveViews = () => {
         clearTimeout(tasteWarmup);
         waveVisible = false;
         waveGeneration++;
@@ -1225,7 +1226,7 @@ async function init() {
         onNativeWaveTrackUpdate = null;
         for (const view of [waveDiscoveryView, waveLikeView])
             if (view && !view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
-    });
+    };
     onNativeWaveTrackUpdate = (track) => {
         if (!waveVisible) return;
         sendInline('track', track);
