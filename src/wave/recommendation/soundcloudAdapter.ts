@@ -96,6 +96,22 @@ export class SoundCloudRecommender {
             : [];
         this.session.setExcludedArtists(this.excludedArtists);
         this.session.loadFeedback(this.feedbackEvents);
+        this.restoreFavorites();
+        const cached = store.get(this.cacheKey) as
+            | {
+                  at?: number;
+                  tracks?: WaveCandidate[];
+              }
+            | undefined;
+        if (
+            cached &&
+            typeof cached.at === 'number' &&
+            this.now() - cached.at < 7 * 86400000 &&
+            Array.isArray(cached.tracks)
+        )
+            this.addCandidates(cached.tracks, false);
+    }
+    private restoreFavorites(): void {
         this.addCandidates(
             buildProfile(this.feedbackEvents, this.now()).positiveSeeds.map((track) => ({
                 url: track.id,
@@ -111,19 +127,6 @@ export class SoundCloudRecommender {
             })),
             false,
         );
-        const cached = store.get(this.cacheKey) as
-            | {
-                  at?: number;
-                  tracks?: WaveCandidate[];
-              }
-            | undefined;
-        if (
-            cached &&
-            typeof cached.at === 'number' &&
-            this.now() - cached.at < 7 * 86400000 &&
-            Array.isArray(cached.tracks)
-        )
-            this.addCandidates(cached.tracks, false);
     }
     private migrateLegacy(accountId: string): void {
         const history = this.store.get(`waveHistory_${accountId}`);
@@ -180,6 +183,7 @@ export class SoundCloudRecommender {
         this.candidateEpoch++;
         this.candidates.clear();
         this.session.clearCandidates();
+        this.restoreFavorites();
     }
     setAnchor(candidate?: WaveCandidate): void {
         this.session.setAnchor(candidate ? toTrack(candidate) : undefined);
