@@ -1216,7 +1216,16 @@ async function init() {
             void loadWaveTaste();
         }, 1800);
     });
-    mainWindow.once('closed', () => clearTimeout(tasteWarmup));
+    mainWindow.once('closed', () => {
+        clearTimeout(tasteWarmup);
+        waveVisible = false;
+        waveGeneration++;
+        waveQueueEpoch++;
+        wavePrepared.clear();
+        onNativeWaveTrackUpdate = null;
+        for (const view of [waveDiscoveryView, waveLikeView])
+            if (view && !view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
+    });
     onNativeWaveTrackUpdate = (track) => {
         if (!waveVisible) return;
         sendInline('track', track);
