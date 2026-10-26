@@ -962,6 +962,7 @@ export class SettingsManager {
                 <input class="textInput" id="cloudflareSecret" type="password" autocomplete="new-password" placeholder="${this.store.get('cloudflareSecretEncrypted') ? 'Ключ сохранён. Оставьте пустым, чтобы сохранить его.' : 'Ключ Worker (RELAY_TOKEN)'}">
                 <button id="cloudflareSave" class="button">Сохранить подключение</button>
                 <button id="cloudflareTest" class="button" title="Проверяет сохранённые настройки">Проверить Worker</button>
+                <button id="cloudflareCopyDiagnostics" class="button">Скопировать диагностику подключения</button>
                 <button id="cloudflareFiles" class="button">Файлы Worker и инструкция</button>
                 <p id="cloudflareStatus" role="status" class="description">Для начала разверните Worker из комплекта исходников. Обычный прокси имеет приоритет.</p>
             </div>
@@ -1411,12 +1412,12 @@ export class SettingsManager {
                     document.getElementById('cloudflareEndpoint').value=result.endpoint;document.getElementById('cloudflareMode').value='auto';
                     const key=document.getElementById('cloudflareSecret');key.value='';key.placeholder='Ключ создан и сохранён автоматически';
                     document.getElementById('cloudflareAccountFields').hidden=true;
-                    setupStatus.textContent='Готово: '+result.endpoint+'. '+(result.applied?'Автоматический режим настроен.':'Настройки сохранены. Перезапустите клиент для применения.');
+                    setupStatus.textContent='Готово: '+result.endpoint+'. '+(result.applied?'Автоматический режим настроен.':'Настройки сохранены. Обычный прокси имеет приоритет; выключите его для использования Worker.');
                     document.getElementById('cloudflareStatus').textContent='Адрес и ключ сохранены. Нажмите «Проверить Worker». Первое подключение может занять время, пока обновляется DNS.';
                 }catch(error){setupStatus.textContent=setupError(error)}finally{setupBusy(false)}
             });
             document.getElementById('cloudflareFiles')?.addEventListener('click',()=>{void ipcRenderer.invoke('network:files')});
-            for(const [id,channel] of [['cloudflareSave','network:save'],['cloudflareTest','network:test']]){
+            for(const [id,channel] of [['cloudflareSave','network:save'],['cloudflareTest','network:test'],['cloudflareCopyDiagnostics','network:copy-diagnostics']]){
                 document.getElementById(id)?.addEventListener('click',async()=>{
                     const button=document.getElementById(id),status=document.getElementById('cloudflareStatus');button.disabled=true;status.textContent='Проверяем подключение…';
                     try{status.textContent=await ipcRenderer.invoke(channel,...(channel==='network:save'?[{mode:document.getElementById('cloudflareMode').value,endpoint:document.getElementById('cloudflareEndpoint').value,secret:document.getElementById('cloudflareSecret').value}]:[]));

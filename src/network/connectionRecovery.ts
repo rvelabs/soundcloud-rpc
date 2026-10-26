@@ -3,6 +3,7 @@ import type ElectronStore from 'electron-store';
 import { CloudflareGateway } from './cloudflareGateway';
 import { workerEndpoint } from './relayTargets';
 import { RecoveryPolicy } from './recoveryPolicy';
+import { probeSoundCloud, describeRelayDiagnostic, type RelayDiagnostic } from './relayDiagnostics';
 const pac = (port: number) =>
     'data:application/x-ns-proxy-autoconfig;base64,' +
     Buffer.from(
@@ -19,6 +20,9 @@ export class ConnectionRecovery {
     private status = 'Резервное подключение выключено';
     private policy?: RecoveryPolicy;
     private generation = 0;
+    private relayTestTask?: Promise<boolean>;
+    private relayProbeAbort?: AbortController;
+    private diagnostic?: RelayDiagnostic;
     constructor(
         private contents: WebContents,
         private store: ElectronStore,
@@ -47,6 +51,7 @@ export class ConnectionRecovery {
         );
         contents.once('destroyed', () => {
             this.generation++;
+            this.relayProbeAbort?.abort();
             clearTimeout(this.timer);
             this.gateway.close();
             networkSession.webRequest.onErrorOccurred(null);
@@ -54,6 +59,12 @@ export class ConnectionRecovery {
     }
     getStatus(): string {
         return this.status;
+    }
+    getDiagnostics(): RelayDiagnostic | null {
+        return this.diagnostic ? structuredClone(this.diagnostic) : null;
+    }
+    getTestMessage(): string {
+        return describeRelayDiagnostic(this.diagnostic);
     }
     private secret(): string {
         const saved = this.store.get('cloudflareSecretEncrypted');
@@ -94,6 +105,8 @@ export class ConnectionRecovery {
     async configure(): Promise<void> {
         const wasRouted = this.routed;
         this.generation++;
+        this.relayProbeAbort?.abort();
+        this.relayTestTask = undefined;
         clearTimeout(this.timer);
         this.gateway.close();
         this.port = 0;
@@ -153,7 +166,7 @@ export class ConnectionRecovery {
                 this.routed = true;
                 this.status = 'SoundCloud подключён через Cloudflare';
             } else {
-                this.status = 'Worker недоступен. Проверьте адрес и ключ. Сохранено обычное подключение.';
+                this.status = this.getTestMessage();
                 this.notify(this.status);
             }
         } else {
@@ -175,7 +188,7 @@ export class ConnectionRecovery {
             const result = await this.policy.recover();
             if (this.contents.isDestroyed() || generation !== this.generation) return;
             if (result === 'unavailable') {
-                this.status = 'Обычное подключение и Worker недоступны. Автоперезагрузки остановлены.';
+                this.status = this.getTestMessage() + ' Автоперезагрузки остановлены.';
                 this.notify(this.status);
             }
             if (result === 'direct') this.status = 'Обычное подключение работает';
@@ -186,48 +199,82 @@ export class ConnectionRecovery {
             this.notify(this.status);
         }
     }
-    async testRelay(): Promise<boolean> {
-        const generation = this.generation;
-        if (!this.port) {
-            const task =
-                this.gatewayTask || this.gateway.start(String(this.store.get('cloudflareEndpoint', '')), this.secret());
-            this.gatewayTask = task;
-            try {
-                const port = await task;
-                if (generation !== this.generation) return false;
-                this.port = port;
-            } finally {
-                if (this.gatewayTask === task) this.gatewayTask = undefined;
-            }
-        }
-        if (generation !== this.generation) return false;
-        const probeSession = session.fromPartition('wave-connection-relay');
-        await probeSession.setProxy({ mode: 'pac_script', pacScript: pac(this.port) });
-        return this.probe(probeSession);
+    testRelay(): Promise<boolean> {
+        if (this.relayTestTask) return this.relayTestTask;
+        const task = this.runRelayTest();
+        this.relayTestTask = task;
+        void task
+            .finally(() => {
+                if (this.relayTestTask === task) this.relayTestTask = undefined;
+            })
+            .catch(() => {});
+        return task;
     }
-    private async probe(target: Session): Promise<boolean> {
-        target.setUserAgent(this.contents.getUserAgent());
-        const controller = new AbortController(),
-            timer = setTimeout(() => controller.abort(), 6000);
+    private async runRelayTest(): Promise<boolean> {
+        const generation = this.generation;
+        const began = Date.now();
+        const report: RelayDiagnostic = {
+            checkedAt: new Date().toISOString(),
+            endpointHost: '',
+            success: false,
+            elapsedMs: 0,
+            stages: [],
+            tunnels: [],
+        };
+        this.diagnostic = report;
+        const cursor = this.gateway.getDiagnosticCursor?.() ?? 0;
+        this.relayProbeAbort = new AbortController();
+        const endpoint = String(this.store.get('cloudflareEndpoint', ''));
         try {
-            const response = await target.fetch('https://soundcloud.com/discover', {
-                signal: controller.signal,
-                credentials: 'omit',
-                cache: 'no-store',
-            });
-            if (!response.ok) return false;
-            const html = await response.text();
-            if (!html.includes('sndcdn.com') || !html.includes('<script')) return false;
-            const api = await target.fetch('https://api-v2.soundcloud.com/', {
-                signal: controller.signal,
-                credentials: 'omit',
-                cache: 'no-store',
-            });
-            return [200, 401, 404].includes(api.status);
+            if (!endpoint) {
+                report.setupFailure = 'missing-endpoint';
+                return false;
+            }
+            try {
+                report.endpointHost = new URL(workerEndpoint(endpoint)).hostname;
+            } catch {
+                report.setupFailure = 'invalid-endpoint';
+                return false;
+            }
+            const secret = this.secret();
+            if (!/^[a-zA-Z0-9_-]{32,256}$/.test(secret)) {
+                report.setupFailure = 'missing-key';
+                return false;
+            }
+            if (!this.port) {
+                const task = this.gatewayTask || this.gateway.start(endpoint, secret);
+                this.gatewayTask = task;
+                try {
+                    const port = await task;
+                    if (generation !== this.generation) return false;
+                    this.port = port;
+                } finally {
+                    if (this.gatewayTask === task) this.gatewayTask = undefined;
+                }
+            }
+            if (generation !== this.generation) return false;
+            const probeSession = session.fromPartition('wave-connection-relay');
+            await probeSession.setProxy({ mode: 'pac_script', pacScript: pac(this.port) });
+            await probeSession.closeAllConnections();
+            report.success = await this.probe(probeSession, report);
+            if (generation !== this.generation) report.success = false;
+            return report.success;
         } catch {
+            report.setupFailure = 'gateway';
             return false;
         } finally {
-            clearTimeout(timer);
+            report.elapsedMs = Date.now() - began;
+            report.tunnels = this.gateway.getDiagnostics?.(cursor) ?? [];
         }
+    }
+    private async probe(target: Session, report?: RelayDiagnostic): Promise<boolean> {
+        if (this.contents.isDestroyed()) return false;
+        target.setUserAgent(this.contents.getUserAgent());
+        const stages = await probeSoundCloud(target.fetch.bind(target) as typeof fetch, {
+            timeoutMs: report ? 15000 : 6000,
+            signal: report ? this.relayProbeAbort?.signal : undefined,
+        });
+        if (report) report.stages = stages;
+        return stages.length === 2 && stages.every((stage) => stage.outcome === 'ok');
     }
 }

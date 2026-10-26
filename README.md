@@ -45,6 +45,11 @@ For manual deployment, open the Worker folder from settings: run `npx wrangler@4
 `npx wrangler@4 secret put RELAY_TOKEN`. Enter the Worker URL and the same randomly generated secret in the client.
 Cloudflare TCP restrictions apply; this is not a system VPN or a guarantee of access in every region.
 
+If the check fails, use **F1 → Проверить Worker → Скопировать диагностику подключения**. The report separates Worker
+authentication, connection and SoundCloud response errors without including keys or cookies. Cloudflare itself must be
+reachable from your network;
+[ISP restrictions can also affect Workers](https://developers.cloudflare.com/support/troubleshooting/general-troubleshooting/service-disruption/).
+
 ## Development
 
 Node.js 22 and npm:

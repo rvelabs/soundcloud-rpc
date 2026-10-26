@@ -15,6 +15,7 @@ const INVOKE_CHANNELS = new Set([
     'network:status',
     'network:save',
     'network:test',
+    'network:copy-diagnostics',
     'network:files',
     'apply-custom-theme',
     'get-current-custom-theme',

@@ -9,6 +9,33 @@ import { CloudflareGateway } from './cloudflareGateway';
 import { bridgeSocket, createRelayHandler } from '../../cloudflare/soundcloud-relay/protocol.mjs';
 const token = 'a'.repeat(48);
 describe('Cloudflare transport', () => {
+    it('preserves the Worker HTTP refusal for diagnosis without recording the bearer key', async () => {
+        const server = createServer();
+        server.on('upgrade', (_request, socket) =>
+            socket.end('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'),
+        );
+        await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+        const gateway = new CloudflareGateway();
+        let client;
+        try {
+            const port = await gateway.start('ws://127.0.0.1:' + server.address().port + '/tunnel', token, true);
+            client = connect(port, '127.0.0.1');
+            const response = new Promise((resolve, reject) => {
+                const parts = [];
+                client.on('data', (part) => parts.push(part));
+                client.on('error', reject);
+                client.on('end', () => resolve(Buffer.concat(parts).toString()));
+            });
+            client.write('CONNECT soundcloud.com:443 HTTP/1.1\r\nHost: soundcloud.com:443\r\n\r\n');
+            expect(await response).toContain('502 Bad Gateway');
+            expect(gateway.getDiagnostics()[0]).toMatchObject({ httpStatus: 401, failure: 'http', opened: false });
+            expect(JSON.stringify(gateway.getDiagnostics())).not.toContain(token);
+        } finally {
+            client?.destroy();
+            gateway.close();
+            await new Promise((resolve) => server.close(resolve));
+        }
+    });
     it('rejects unauthenticated or unrelated destinations before opening TCP', async () => {
         let calls = 0;
         const handler = createRelayHandler(() => {

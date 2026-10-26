@@ -88,6 +88,13 @@ app.whenReady().then(async () => {
             return 'Настройки сохранены';
         });
         ipcMain.handle('network:test', () => 'Тестовый Worker доступен');
+        let copies = 0;
+        ipcMain.handle('network:copy-diagnostics', () => {
+            const text = JSON.stringify(service.getDiagnostics());
+            assert(!text.includes(token));
+            copies++;
+            return 'Диагностика подключения скопирована';
+        });
         ipcMain.handle('network:status', () => service.getStatus());
         const wizardToken = 'wizard_test_token_'.repeat(3);
         ipcMain.handle('network:setup-accounts', (_event, value) => {
@@ -132,6 +139,13 @@ app.whenReady().then(async () => {
         assert.equal(
             await view.webContents.executeJavaScript('document.getElementById("cloudflareStatus").textContent'),
             'Тестовый Worker доступен',
+        );
+        await view.webContents.executeJavaScript('document.getElementById("cloudflareCopyDiagnostics").click()');
+        await wait(80);
+        assert.equal(copies, 1);
+        assert.equal(
+            await view.webContents.executeJavaScript('document.getElementById("cloudflareStatus").textContent'),
+            'Диагностика подключения скопирована',
         );
         await view.webContents.executeJavaScript(
             'document.getElementById("cloudflareWizard").open=true;document.getElementById("cloudflareApiToken").value=' +
@@ -178,6 +192,7 @@ app.whenReady().then(async () => {
                         'stale probe cannot enable disabled connection',
                         'secret encrypted and never rendered',
                         'settings buttons and JS execute',
+                        'diagnostics action works through the settings bridge without including the relay key',
                         'trusted settings sender required',
                         'wizard clears API token field',
                         'wizard automatically fills and saves HTTPS endpoint and generated key',

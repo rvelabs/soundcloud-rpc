@@ -1998,10 +1998,10 @@ async function init() {
                     if (!event.sender.isDestroyed()) event.sender.send('network:setup-progress', message);
                 },
             );
-            const applyNow = store.get('cloudflareMode', 'off') === 'off' && !store.get('proxyEnabled');
+            const applyNow = !store.get('proxyEnabled');
             connectionRecovery.save({ mode: 'auto', endpoint: result.endpoint, secret: result.secret });
             workerSetup.clear();
-            if (applyNow) await connectionRecovery.configure();
+            await connectionRecovery.configure();
             return { endpoint: result.endpoint, name: result.name, applied: applyNow };
         } finally {
             networkSettingsBusy = false;
@@ -2037,12 +2037,19 @@ async function init() {
         if (networkSettingsBusy) throw new Error('Подождите окончания проверки подключения.');
         networkSettingsBusy = true;
         try {
-            return (await connectionRecovery.testRelay())
-                ? 'Worker доступен: сайт и API SoundCloud отвечают.'
-                : 'Worker не смог подключиться к SoundCloud. Проверьте адрес, ключ и ограничения Cloudflare.';
+            await connectionRecovery.testRelay();
+            return connectionRecovery.getTestMessage();
         } finally {
             networkSettingsBusy = false;
         }
+    });
+    ipcMain.handle('network:copy-diagnostics', (event) => {
+        if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
+        if (networkSettingsBusy) throw new Error('Дождитесь окончания проверки подключения.');
+        const diagnostic = connectionRecovery.getDiagnostics();
+        if (!diagnostic) return 'Сначала нажмите «Проверить Worker».';
+        clipboard.writeText(JSON.stringify({ version: app.getVersion(), relay: diagnostic }, null, 2));
+        return 'Диагностика подключения скопирована. Она не содержит ключей, cookies и токенов.';
     });
     presenceService = new PresenceService(store, translationService);
     lastFmService = new LastFmService(contentView, store);

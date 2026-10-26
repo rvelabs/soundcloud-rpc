@@ -1,7 +1,8 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
 import { EventEmitter } from 'node:events';
 import { relayTarget, workerEndpoint } from './relayTargets';
+import { networkErrorCode, type TunnelDiagnostic } from './relayDiagnostics';
 interface Tunnel extends EventEmitter {
     send(data: Buffer | string, callback?: (error?: Error) => void): void;
     terminate(): void;
@@ -11,6 +12,14 @@ export class CloudflareGateway {
     private server?: Server;
     private sockets = new Set<Socket>();
     private tunnels = new Set<Tunnel>();
+    private diagnostics: TunnelDiagnostic[] = [];
+    private sequence = 0;
+    getDiagnosticCursor(): number {
+        return this.sequence;
+    }
+    getDiagnostics(after = 0): TunnelDiagnostic[] {
+        return this.diagnostics.filter((item) => item.id > after).map((item) => ({ ...item }));
+    }
     async start(endpoint: string, secret: string, localTest = false): Promise<number> {
         if (this.server) throw new Error('Туннель уже запущен.');
         const base = localTest ? endpoint : workerEndpoint(endpoint);
@@ -33,11 +42,22 @@ export class CloudflareGateway {
                 return;
             }
             socket.pause();
+            const began = Date.now();
+            const diagnostic: TunnelDiagnostic = {
+                id: ++this.sequence,
+                host: match[1].toLowerCase(),
+                opened: false,
+                sentBytes: 0,
+                receivedBytes: 0,
+                elapsedMs: 0,
+            };
+            this.diagnostics.push(diagnostic);
+            if (this.diagnostics.length > 32) this.diagnostics.shift();
             const url = new URL(base);
             url.searchParams.set('host', match[1].toLowerCase());
             const ws = new WebSocket(url.href, {
                 headers: { Authorization: 'Bearer ' + secret },
-                handshakeTimeout: 8000,
+                handshakeTimeout: 12000,
                 maxPayload: 65536,
                 perMessageDeflate: false,
                 followRedirects: false,
@@ -51,6 +71,8 @@ export class CloudflareGateway {
             const finish = () => {
                 if (closed) return;
                 closed = true;
+                diagnostic.elapsedMs = Date.now() - began;
+                if (!opened) diagnostic.failure ||= 'closed-before-open';
                 clearTimeout(ackTimer);
                 const release = ack;
                 ack = undefined;
@@ -69,6 +91,7 @@ export class CloudflareGateway {
                             resolve();
                         };
                         ackTimer = setTimeout(() => {
+                            diagnostic.failure ||= 'ack-timeout';
                             reject(new Error('Relay acknowledgement timed out'));
                             finish();
                         }, 15000);
@@ -76,7 +99,7 @@ export class CloudflareGateway {
                             if (error) {
                                 reject(error);
                                 finish();
-                            }
+                            } else diagnostic.sentBytes += Math.min(65536, data.length - offset);
                         });
                     });
                     if (closed) throw new Error('Relay closed');
@@ -84,6 +107,8 @@ export class CloudflareGateway {
             };
             ws.on('open', () => {
                 opened = true;
+                diagnostic.opened = true;
+                diagnostic.elapsedMs = Date.now() - began;
                 socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
                 socket.on('data', (data: Buffer) => {
                     socket.pause();
@@ -96,14 +121,19 @@ export class CloudflareGateway {
                 if (closed) return;
                 if (!binary) {
                     if (data.toString() === 'ack' && ack) ack();
-                    else finish();
+                    else {
+                        diagnostic.failure ||= 'protocol';
+                        finish();
+                    }
                     return;
                 }
                 if (!opened || receiving) {
+                    diagnostic.failure ||= 'protocol';
                     finish();
                     return;
                 }
                 receiving = true;
+                diagnostic.receivedBytes += data.length;
                 socket.write(data, () => {
                     receiving = false;
                     if (!closed)
@@ -112,7 +142,19 @@ export class CloudflareGateway {
                         });
                 });
             });
-            ws.on('error', finish);
+            ws.on('unexpected-response', (_request: unknown, response: IncomingMessage) => {
+                diagnostic.failure = 'http';
+                diagnostic.httpStatus = response.statusCode;
+                response.destroy();
+                finish();
+            });
+            ws.on('error', (error: Error) => {
+                diagnostic.failure ||= /opening handshake.*timed out/i.test(error.message)
+                    ? 'handshake-timeout'
+                    : 'network';
+                diagnostic.networkCode ||= networkErrorCode(error);
+                finish();
+            });
             ws.on('close', finish);
             socket.on('error', finish);
             socket.on('close', finish);
