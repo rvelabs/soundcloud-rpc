@@ -45,6 +45,7 @@ import {
 import { SoundCloudRecommender } from './wave/recommendation/soundcloudAdapter';
 import { RelatedDiscovery } from './wave/relatedDiscovery';
 import { ListeningEvidence } from './wave/listeningEvidence';
+import { WindowTasks } from './utils/windowTasks';
 import { waveEnglish, translateWaveText } from './wave/i18n';
 import { PreparedQueue } from './wave/preparedQueue';
 import {
@@ -538,14 +539,17 @@ async function init() {
         }
     });
     const updateWaveVisibility = () => {
-        if (contentView && !contentView.webContents.isDestroyed()) {
-            contentView.webContents.send(
+        const contents = contentView?.webContents;
+        const home = waveHomeView?.webContents;
+        if (mainWindow.isDestroyed()) return;
+        if (contents && !contents.isDestroyed()) {
+            contents.send(
                 'wave-inline:visibility',
                 mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
             );
         }
-        if (waveHomeView && !waveHomeView.webContents.isDestroyed()) {
-            waveHomeView.webContents.send(
+        if (home && !home.isDestroyed()) {
+            home.send(
                 'wave-home:visible',
                 waveVisible && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
             );
@@ -573,7 +577,7 @@ async function init() {
     });
     mainWindow.addBrowserView(headerView);
     const notifyWindowState = () => {
-        if (headerView && !headerView.webContents.isDestroyed())
+        if (headerView?.webContents && !headerView.webContents.isDestroyed() && !mainWindow.isDestroyed())
             headerView.webContents.send('window-state-changed', mainWindow.isMaximized());
     };
     mainWindow.on('maximize', notifyWindowState);
@@ -595,10 +599,15 @@ async function init() {
             nodeIntegrationInWorker: false,
             devTools: devMode,
             preload: path.join(__dirname, 'preload.js'),
+            backgroundThrottling: false,
             ...(isMac ? { spellcheck: false } : {}),
         },
     });
     mainWindow.addBrowserView(contentView);
+    const clientContents = contentView.webContents;
+    const clientWindow = mainWindow;
+    const windowTasks = new WindowTasks(() => !clientWindow.isDestroyed() && !clientContents.isDestroyed());
+    clientContents.once('destroyed', () => windowTasks.dispose());
     contentView.setBounds({
         x: 0,
         y: 32,
@@ -608,7 +617,7 @@ async function init() {
     contentView.setAutoResize({ width: true, height: true });
     installNativePageCover(mainWindow, contentView);
     setPublicMetadataFetch((input, init) =>
-        contentView.webContents.session.fetch(input instanceof URL ? input.href : input, {
+        clientContents.session.fetch(input instanceof URL ? input.href : input, {
             ...init,
             credentials: 'omit',
         }),
@@ -617,7 +626,7 @@ async function init() {
     waveListening.reset();
     waveDiscoveryView = new BrowserView({
         webPreferences: {
-            session: contentView.webContents.session,
+            session: clientContents.session,
             nodeIntegration: false,
             contextIsolation: true,
             sandbox: true,
@@ -626,11 +635,12 @@ async function init() {
             images: false,
         },
     });
+    const discoveryContents = waveDiscoveryView.webContents;
     waveDiscoveryView.setBounds({ x: 0, y: 0, width: 1000, height: 800 });
-    waveDiscoveryView.webContents.setUserAgent(globalUserAgent);
-    waveDiscoveryView.webContents.setAudioMuted(true);
-    waveDiscoveryView.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    contentView.webContents.setUserAgent(globalUserAgent);
+    discoveryContents.setUserAgent(globalUserAgent);
+    discoveryContents.setAudioMuted(true);
+    discoveryContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    clientContents.setUserAgent(globalUserAgent);
     translationService = new TranslationService();
     themeService = new ThemeService(store);
     pluginService = new PluginService(store);
@@ -651,7 +661,7 @@ async function init() {
     const disableStationAutoplay = (): Promise<void> => {
         if (stationAutoplayTask) return stationAutoplayTask;
         const task = (async () => {
-            const previous = await setStationAutoplay(contentView.webContents, false);
+            const previous = await setStationAutoplay(clientContents, false);
             if (previous === true) {
                 stationAutoplayPrevious = true;
                 store.set(stationAutoplayMarkerKey, true);
@@ -667,7 +677,7 @@ async function init() {
     const restoreStationAutoplay = async (): Promise<void> => {
         if (stationAutoplayTask) await stationAutoplayTask.catch(() => {});
         if (stationAutoplayPrevious !== true) return;
-        const previous = await setStationAutoplay(contentView.webContents, true);
+        const previous = await setStationAutoplay(clientContents, true);
         if (previous === null) return;
         stationAutoplayPrevious = null;
         store.delete(stationAutoplayMarkerKey);
@@ -686,13 +696,14 @@ async function init() {
     let importScanController: AbortController | null = null;
     const importSearchViews = new Set<BrowserView>();
     const closeImportView = (view: BrowserView) => {
-        if (!view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
+        const contents = view.webContents;
+        if (contents && !contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
         importSearchViews.delete(view);
     };
     const createImportView = (search = false) => {
         const view = new BrowserView({
             webPreferences: {
-                session: contentView.webContents.session,
+                session: clientContents.session,
                 nodeIntegration: false,
                 contextIsolation: true,
                 sandbox: true,
@@ -709,7 +720,7 @@ async function init() {
         return view;
     };
     const getImportView = () => {
-        if (!importView || importView.webContents.isDestroyed()) importView = createImportView();
+        if (!importView?.webContents || importView.webContents.isDestroyed()) importView = createImportView();
         return importView.webContents;
     };
     mainWindow.once('closed', () => {
@@ -725,8 +736,8 @@ async function init() {
         detail = '',
         update: Record<string, unknown> = {},
     ) => {
-        if (!contentView.webContents.isDestroyed())
-            contentView.webContents.send('playlist-import:progress', { phase, completed, total, detail, ...update });
+        if (!clientContents.isDestroyed())
+            clientContents.send('playlist-import:progress', { phase, completed, total, detail, ...update });
     };
     let likeTask: Promise<boolean> | null = null;
     const waveKnownLikes = new Map<string, boolean>();
@@ -749,12 +760,8 @@ async function init() {
     let waveQueueEpoch = 0;
     let endCaptureQueueReady = false;
     const syncMediaEndCapture = () => {
-        if (
-            contentView.webContents.isDestroyed() ||
-            !contentView.webContents.getURL().startsWith('https://soundcloud.com/')
-        )
-            return;
-        void contentView.webContents
+        if (clientContents.isDestroyed() || !clientContents.getURL().startsWith('https://soundcloud.com/')) return;
+        void clientContents
             .executeJavaScript(
                 `window.__waveMediaEndState = Object.assign(
             window.__waveMediaEndState || {}, { active: ${waveVisible}, queueReady: ${endCaptureQueueReady},
@@ -764,7 +771,7 @@ async function init() {
             .catch(() => {});
     };
     const sendInline = (channel: string, ...args: unknown[]) => {
-        if (!contentView.webContents.isDestroyed()) contentView.webContents.send(`wave-inline:${channel}`, ...args);
+        if (!clientContents.isDestroyed()) clientContents.send(`wave-inline:${channel}`, ...args);
         if (channel === 'active') syncMediaEndCapture();
         if (channel === 'queue-ready') {
             endCaptureQueueReady = args[0] === true;
@@ -778,10 +785,10 @@ async function init() {
         waveHomeView?.webContents.send('wave-home:liked', url, knownLike(url) === true);
     };
     const getLikeView = () => {
-        if (!waveLikeView || waveLikeView.webContents.isDestroyed()) {
+        if (!waveLikeView?.webContents || waveLikeView.webContents.isDestroyed()) {
             waveLikeView = new BrowserView({
                 webPreferences: {
-                    session: contentView.webContents.session,
+                    session: clientContents.session,
                     nodeIntegration: false,
                     contextIsolation: true,
                     sandbox: true,
@@ -796,44 +803,38 @@ async function init() {
         return waveLikeView.webContents;
     };
     const releaseLikePage = () => {
-        if (waveLikeView && !waveLikeView.webContents.isDestroyed())
+        if (waveLikeView?.webContents && !waveLikeView.webContents.isDestroyed())
             void waveLikeView.webContents.loadURL('about:blank').catch(() => {});
     };
-    const relatedDiscovery = new RelatedDiscovery((url) =>
-        discoverRelatedCandidates(waveDiscoveryView!.webContents, url),
-    );
+    const relatedDiscovery = new RelatedDiscovery((url) => discoverRelatedCandidates(discoveryContents, url));
     const waveRecommender = new SoundCloudRecommender(store, currentAccountId, async (seeds) => {
         const generation = waveGeneration;
         return relatedDiscovery.discover(seeds, () => waveVisible && generation === waveGeneration);
     });
     let waveMetadataWarmupStarted = false;
-    contentView.webContents.on('did-finish-load', () => {
-        if (
-            contentView.webContents.isDestroyed() ||
-            !contentView.webContents.getURL().startsWith('https://soundcloud.com/')
-        )
-            return;
-        void contentView.webContents
+    clientContents.on('did-finish-load', () => {
+        if (clientContents.isDestroyed() || !clientContents.getURL().startsWith('https://soundcloud.com/')) return;
+        void clientContents
             .executeJavaScript(`(${installWaveMediaEndCapture.toString()})()`, true)
             .then(syncMediaEndCapture)
             .catch((error) => console.debug('Wave media end hook unavailable:', error));
         if (!stationRecoveryAttempted && stationAutoplayPrevious === true && !waveVisible) {
             stationRecoveryAttempted = true;
-            setTimeout(() => {
+            windowTasks.defer(() => {
                 if (!waveVisible)
                     void restoreStationAutoplay().catch((error) =>
                         console.debug('Wave station autoplay restore unavailable:', error),
                     );
             }, 600);
         }
-        setTimeout(() => {
+        windowTasks.defer(() => {
             if (
-                contentView.webContents.isDestroyed() ||
+                clientContents.isDestroyed() ||
                 waveVisible ||
-                !contentView.webContents.getURL().startsWith('https://soundcloud.com/')
+                !clientContents.getURL().startsWith('https://soundcloud.com/')
             )
                 return;
-            void contentView.webContents
+            void clientContents
                 .executeJavaScript(`(${extractWaveLinks.toString()})()`, true)
                 .then(async (tracks: WaveCandidate[]) => {
                     waveRecommender.addCandidates(tracks.map((track) => ({ ...track, source: 'personal' })));
@@ -891,7 +892,7 @@ async function init() {
                     .catch((error) => console.debug('Wave settings refresh unavailable:', error));
         }
         store.set(controlsKey, waveControls);
-        contentView.webContents.send('wave-inline:controls', waveControls);
+        clientContents.send('wave-inline:controls', waveControls);
     };
     let waveGeneration = 0;
     let waveNextTask: Promise<void> | null = null;
@@ -925,7 +926,7 @@ async function init() {
                         );
                 if (available().length < minimum) {
                     try {
-                        const visible = (await contentView.webContents.executeJavaScript(
+                        const visible = (await clientContents.executeJavaScript(
                             `(${extractWaveLinks.toString()})()`,
                             true,
                         )) as WaveCandidate[];
@@ -1036,12 +1037,12 @@ async function init() {
                     const previous = waveCurrent;
                     waveCurrent = candidate.url;
                     try {
-                        await contentView.webContents.executeJavaScript(
+                        await clientContents.executeJavaScript(
                             `if (window.__waveMediaEndState) window.__waveMediaEndState.expectedPath = ${JSON.stringify(trackPath(candidate.url))};`,
                             true,
                         );
                         await playInNativePlayer(
-                            contentView.webContents,
+                            clientContents,
                             candidate.url,
                             candidate.title,
                             candidate.sourceQuery,
@@ -1127,7 +1128,7 @@ async function init() {
                 if (next.url === waveCurrent || nativeQueued.some((item) => item.url === next.url)) continue;
                 if (nativeQueueAvailable) {
                     try {
-                        const occupied = (await listNativeNextUp(contentView.webContents)).some(
+                        const occupied = (await listNativeNextUp(clientContents)).some(
                             (url) => trackPath(url) !== trackPath(waveCurrent),
                         );
                         if (occupied) {
@@ -1135,7 +1136,7 @@ async function init() {
                             traceWave('queue-occupied', waveCurrent, next.url);
                         } else {
                             await addToNativeNextUp(
-                                contentView.webContents,
+                                clientContents,
                                 next.url,
                                 next.title,
                                 next.sourceQuery,
@@ -1192,8 +1193,8 @@ async function init() {
         const task = (async () => {
             await previousSearch;
             try {
-                if (!waveDiscoveryView || waveDiscoveryView.webContents.isDestroyed()) return;
-                const personal = await discoverPersonalHistory(waveDiscoveryView.webContents);
+                if (!waveDiscoveryView || discoveryContents.isDestroyed()) return;
+                const personal = await discoverPersonalHistory(discoveryContents);
                 waveEngine.ingestLikes(personal.likes);
                 waveRecommender.seedLikes(personal.likes);
                 waveRecommender.seedRecent(personal.recent);
@@ -1212,21 +1213,22 @@ async function init() {
             if (waveTasteTask === task) waveTasteTask = undefined;
         }
     };
-    let tasteWarmup: ReturnType<typeof setTimeout> | undefined;
-    contentView.webContents.once('did-finish-load', () => {
-        tasteWarmup = setTimeout(() => {
+    clientContents.once('did-finish-load', () => {
+        windowTasks.defer(() => {
             void loadWaveTaste();
         }, 1800);
     });
     const disposeWaveViews = () => {
-        clearTimeout(tasteWarmup);
+        windowTasks.dispose();
         waveVisible = false;
         waveGeneration++;
         waveQueueEpoch++;
         wavePrepared.clear();
         onNativeWaveTrackUpdate = null;
-        for (const view of [waveDiscoveryView, waveLikeView])
-            if (view && !view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
+        for (const view of [waveDiscoveryView, waveLikeView]) {
+            const contents = view?.webContents;
+            if (contents && !contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
+        }
     };
     onNativeWaveTrackUpdate = (track) => {
         if (!waveVisible) return;
@@ -1270,7 +1272,7 @@ async function init() {
             }
             if (Date.now() - lastQueueInspection > 7000 && !nativeQueueTask) {
                 lastQueueInspection = Date.now();
-                void listNativeNextUp(contentView.webContents)
+                void listNativeNextUp(clientContents)
                     .then((urls) => {
                         if (!waveVisible) return;
                         const paths = new Set(urls.map(trackPath));
@@ -1342,9 +1344,9 @@ async function init() {
         waveReachedEnd = false;
         waveGeneration++;
         waveQueueEpoch++;
-        if (waveDiscoveryView && !waveDiscoveryView.webContents.isDestroyed()) {
-            waveDiscoveryView.webContents.stop();
-            void waveDiscoveryView.webContents.loadURL('about:blank').catch(() => {});
+        if (waveDiscoveryView && !discoveryContents.isDestroyed()) {
+            discoveryContents.stop();
+            void discoveryContents.loadURL('about:blank').catch(() => {});
         }
         recordCurrent('play');
         waveRecommender.clearCandidates();
@@ -1374,7 +1376,12 @@ async function init() {
                     sourceRank: 0,
                 });
             if (!lastTrackInfo.isPlaying || !lastTrackInfo.url) {
-                await loadWaveTaste();
+                if (
+                    !waveRecommender
+                        .rank(20)
+                        .some((candidate) => waveControls.discovery === 'favorites' || candidate.source === 'related')
+                )
+                    await loadWaveTaste();
                 await prepareUpcoming();
                 let first: WaveCandidate | undefined;
                 let playError: unknown;
@@ -1384,12 +1391,12 @@ async function init() {
                     if (!candidate) break;
                     waveCurrent = candidate.url;
                     try {
-                        await contentView.webContents.executeJavaScript(
+                        await clientContents.executeJavaScript(
                             `if (window.__waveMediaEndState) window.__waveMediaEndState.expectedPath = ${JSON.stringify(trackPath(candidate.url))};`,
                             true,
                         );
                         await playInNativePlayer(
-                            contentView.webContents,
+                            clientContents,
                             candidate.url,
                             candidate.title,
                             candidate.sourceQuery,
@@ -1439,7 +1446,7 @@ async function init() {
                 );
             void loadWaveTaste();
             sendInline('state', 'playing');
-            setTimeout(() => {
+            windowTasks.defer(() => {
                 if (waveVisible && generation === waveGeneration)
                     void prepareUpcoming().catch((error) => console.debug('Wave buffer warmup unavailable:', error));
             }, 0);
@@ -1590,7 +1597,7 @@ async function init() {
             const source = await loadSourcePlaylist(link, controller.signal);
             controller.signal.throwIfAborted();
             const concurrency = automaticImportConcurrency(availableParallelism(), freemem(), source.tracks.length);
-            const availability = createAvailabilityChecker(contentView.webContents.session, controller.signal);
+            const availability = createAvailabilityChecker(clientContents.session, controller.signal);
             importProgress('matching', 0, source.tracks.length, 'Ищем совпадения…', {
                 title: source.title,
                 tracks: source.tracks,
@@ -1706,7 +1713,7 @@ async function init() {
         const playlistTitle = input.title.trim();
         const task = (async () => {
             const title = playlistTitle;
-            const availability = createAvailabilityChecker(contentView.webContents.session);
+            const availability = createAvailabilityChecker(clientContents.session);
             importProgress('checking', 0, chosen.length, 'Проверяем доступность перед добавлением…');
             const checks = await mapImportTracks(chosen, {
                 concurrency: automaticImportConcurrency(availableParallelism(), freemem(), chosen.length),
@@ -1862,7 +1869,7 @@ async function init() {
             const url = new URL(target);
             if (url.origin !== 'https://soundcloud.com' || url.pathname.split('/').filter(Boolean).length !== 2) return;
             hideWave();
-            void contentView.webContents.loadURL(url.href);
+            void clientContents.loadURL(url.href);
         } catch {}
     });
     ipcMain.on('wave-home:navigate', (event, target: unknown) => {
@@ -1881,7 +1888,7 @@ async function init() {
         };
         if (urls[target]) {
             hideWave();
-            void contentView.webContents.loadURL(urls[target]);
+            void clientContents.loadURL(urls[target]);
         }
     });
     let lastInlineAudioAt = 0;
@@ -1952,11 +1959,11 @@ async function init() {
     });
     notificationManager = new NotificationManager(mainWindow);
     settingsManager = new SettingsManager(mainWindow, store, translationService);
-    proxyService = new ProxyService(mainWindow, store, queueToastNotification, contentView.webContents.session);
-    const connectionRecovery = new ConnectionRecovery(contentView.webContents, store, queueToastNotification);
+    proxyService = new ProxyService(mainWindow, store, queueToastNotification, clientContents.session);
+    const connectionRecovery = new ConnectionRecovery(clientContents, store, queueToastNotification);
     let networkSettingsBusy = false;
     const workerSetup = new WorkerSetup();
-    contentView.webContents.once('destroyed', () => workerSetup.clear());
+    clientContents.once('destroyed', () => workerSetup.clear());
     ipcMain.handle('network:setup-accounts', async (event, token: unknown) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Подождите окончания настройки.');
@@ -2041,8 +2048,8 @@ async function init() {
     lastFmService = new LastFmService(contentView, store);
     webhookService = new WebhookService(store);
     shortcutService = new ShortcutService(mainWindow);
-    shortcutService.attachToWebContents(contentView.webContents);
-    contentView.webContents.on('before-input-event', (event, input) => {
+    shortcutService.attachToWebContents(clientContents);
+    clientContents.on('before-input-event', (event, input) => {
         if (!waveVisible || input.type !== 'keyDown' || input.key !== 'MediaNextTrack') return;
         event.preventDefault();
         void chooseNext('user').catch((error) => console.debug('Wave media next unavailable:', error));
@@ -2106,31 +2113,31 @@ async function init() {
     function updateNavigationState() {
         if (headerView && headerView.webContents && contentView) {
             const state = {
-                canGoBack: contentView.webContents.navigationHistory.canGoBack(),
-                canGoForward: contentView.webContents.navigationHistory.canGoForward(),
+                canGoBack: clientContents.navigationHistory.canGoBack(),
+                canGoForward: clientContents.navigationHistory.canGoForward(),
             };
             headerView.webContents.send('navigation-state-changed', state);
         }
     }
-    contentView.webContents.on('did-navigate', () => {
+    clientContents.on('did-navigate', () => {
         updateNavigationState();
     });
-    contentView.webContents.on('did-navigate-in-page', () => {
+    clientContents.on('did-navigate-in-page', () => {
         updateNavigationState();
         sendInline('route');
     });
-    contentView.webContents.on('did-start-loading', () => {
+    clientContents.on('did-start-loading', () => {
         if (headerView && headerView.webContents) {
             headerView.webContents.send('refresh-state-changed', true);
         }
     });
-    contentView.webContents.on('did-stop-loading', () => {
+    clientContents.on('did-stop-loading', () => {
         if (headerView && headerView.webContents) {
             headerView.webContents.send('refresh-state-changed', false);
         }
         updateNavigationState();
     });
-    contentView.webContents.on('did-fail-load', () => {
+    clientContents.on('did-fail-load', () => {
         if (headerView && headerView.webContents) {
             headerView.webContents.send('refresh-state-changed', false);
         }
@@ -2148,13 +2155,13 @@ async function init() {
                     write: async (...args) => writeFileSync(...args),
                 },
             );
-            blocker.enableBlockingInSession(contentView.webContents.session);
+            blocker.enableBlockingInSession(clientContents.session);
         } catch (error) {
             console.error('Failed to initialize adblocker:', error);
         }
     }
     let isInitialLoad = true;
-    contentView.webContents.on('did-finish-load', async () => {
+    clientContents.on('did-finish-load', async () => {
         await lastFmService.authenticate();
         await getLanguage();
         if (isInitialLoad) {
@@ -2172,11 +2179,9 @@ async function init() {
     async function reinitializeAfterPageLoad() {
         try {
             applyThemeToContent(isDarkTheme);
-            if (new URL(contentView.webContents.getURL()).origin === 'https://soundcloud.com') {
-                await contentView.webContents.insertCSS(
-                    readFileSync(path.join(__dirname, 'wave', 'inline.css'), 'utf8'),
-                );
-                await contentView.webContents.executeJavaScript(
+            if (new URL(clientContents.getURL()).origin === 'https://soundcloud.com') {
+                await clientContents.insertCSS(readFileSync(path.join(__dirname, 'wave', 'inline.css'), 'utf8'));
+                await clientContents.executeJavaScript(
                     `window.__waveEnglish=${JSON.stringify(waveEnglish)};
                     window.__waveTranslate=(${translateWaveText.toString()});
                     window.__waveInitialLanguage=${JSON.stringify(store.get('waveInterfaceLanguage', 'auto'))};
@@ -2184,8 +2189,8 @@ async function init() {
                         readFileSync(path.join(__dirname, 'wave', 'inline.js'), 'utf8'),
                 );
             }
-            contentView.webContents.setZoomFactor(store.get('uiScale', 1) as number);
-            await contentView.webContents.executeJavaScript(audioMonitorScript);
+            clientContents.setZoomFactor(store.get('uiScale', 1) as number);
+            await clientContents.executeJavaScript(audioMonitorScript);
             if (pluginService) {
                 pluginService.injectAllContentScripts();
             }
@@ -2228,7 +2233,7 @@ async function init() {
                 headerView.webContents.send('navigation-controls-toggle', data.value);
             }
         } else if (key === 'uiScale') {
-            if (contentView) contentView.webContents.setZoomFactor(data.value);
+            if (contentView) clientContents.setZoomFactor(data.value);
         } else if (key === 'autoUpdaterEnabled') {
             if (data.value) {
                 setupUpdater();
@@ -2269,7 +2274,7 @@ async function init() {
     ipcMain.on('logout-account', async () => {
         const currentId = store.get('currentAccountId', 'default');
         if (contentView) {
-            await contentView.webContents.session.clearStorageData();
+            await clientContents.session.clearStorageData();
         }
         if (currentId !== 'default') {
             const accounts = store.get('accounts', [{ id: 'default', name: 'Main Account' }]);
@@ -2279,7 +2284,7 @@ async function init() {
             app.relaunch();
             app.quit();
         } else {
-            if (contentView) contentView.webContents.reload();
+            if (contentView) clientContents.reload();
         }
     });
     ipcMain.on('apply-changes', async () => {
@@ -2299,10 +2304,10 @@ async function init() {
     });
     let accountPollBusy = false;
     const accountPoll = setInterval(async () => {
-        if (accountPollBusy || !contentView || contentView.webContents.isDestroyed()) return;
+        if (accountPollBusy || !contentView || clientContents.isDestroyed()) return;
         accountPollBusy = true;
         try {
-            const username = await contentView.webContents.executeJavaScript(`
+            const username = await clientContents.executeJavaScript(`
 				(() => {
 					try {
 						const profileBtn = document.querySelector('.header__userNav [data-menu-name="profile"]');
@@ -2340,8 +2345,8 @@ async function init() {
             accountPollBusy = false;
         }
     }, 5000);
-    mainWindow.once('closed', () => clearInterval(accountPoll));
-    void contentView.webContents.loadURL('https://soundcloud.com/').catch(() => {});
+    clientContents.once('destroyed', () => clearInterval(accountPoll));
+    void clientContents.loadURL('https://soundcloud.com/').catch(() => {});
 }
 function setupMemoryPressureHandler() {
     if (memoryPressureHandlerRegistered) return;
