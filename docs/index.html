@@ -18,6 +18,8 @@
             content="Персональная волна, импорт плейлистов и привычный плеер SoundCloud. Бесплатный клиент для Windows с открытым кодом."
         />
         <meta property="og:url" content="https://rvelabs.github.io/soundcloud-rpc/" />
+        <meta property="og:image" content="https://rvelabs.github.io/soundcloud-rpc/images/headphones-1280.webp" />
+        <meta name="twitter:card" content="summary_large_image" />
         <meta name="theme-color" content="#ff5500" />
         <script type="application/ld+json">
             {
@@ -33,392 +35,129 @@
                 "description": "Unofficial open-source SoundCloud desktop client with personalized radio, playlist import and Discord Rich Presence."
             }
         </script>
-        <style>
-            :root {
-                color-scheme: dark;
-                --orange: #ff5500;
-                --muted: #aaa;
-                --border: #ffffff18;
-            }
-            * {
-                box-sizing: border-box;
-                min-width: 0;
-            }
-            html {
-                scroll-behavior: smooth;
-            }
-            body {
-                margin: 0;
-                background: #111;
-                color: #f5f5f5;
-                font:
-                    1rem/1.65 system-ui,
-                    -apple-system,
-                    'Segoe UI',
-                    sans-serif;
-                overflow-wrap: break-word;
-                -webkit-text-size-adjust: 100%;
-            }
-            a {
-                color: inherit;
-                text-underline-offset: 4px;
-            }
-            a:hover {
-                color: #ff8b50;
-            }
-            a:focus-visible,
-            button:focus-visible,
-            summary:focus-visible {
-                outline: 3px solid #ff8b50;
-                outline-offset: 5px;
-            }
-            header,
-            main,
-            footer {
-                max-width: 1120px;
-                margin: auto;
-                padding-left: max(clamp(16px, 4vw, 28px), env(safe-area-inset-left));
-                padding-right: max(clamp(16px, 4vw, 28px), env(safe-area-inset-right));
-            }
-            nav {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 26px 0;
-                border-bottom: 1px solid var(--border);
-                gap: 20px;
-            }
-            .brand {
-                font-size: 1.125rem;
-                font-weight: 750;
-                text-decoration: none;
-                display: inline-flex;
-                align-items: center;
-                flex-wrap: wrap;
-                gap: 7px;
-                min-height: 44px;
-            }
-            .brand i {
-                color: var(--orange);
-                font-style: normal;
-            }
-            nav > div {
-                display: flex;
-                gap: 24px;
-                font-size: 0.875rem;
-                align-items: center;
-                flex-wrap: wrap;
-            }
-            nav > div > a {
-                display: inline-flex;
-                align-items: center;
-                min-height: 44px;
-            }
-            .hero {
-                position: relative;
-                padding: 100px 0 90px;
-                overflow: hidden;
-                isolation: isolate;
-            }
-            .hero-glow {
-                position: absolute;
-                z-index: -1;
-                width: min(700px, 130%);
-                height: 600px;
-                right: -20%;
-                top: -100px;
-                background:
-                    radial-gradient(ellipse at 35% 50%, #782c7799, transparent 60%),
-                    radial-gradient(ellipse at 70% 65%, #bf531566, transparent 60%);
-                filter: blur(45px);
-                pointer-events: none;
-                contain: strict;
-            }
-            .eyebrow {
-                color: #ff9965;
-                text-transform: uppercase;
-                font-size: 0.75rem;
-                letter-spacing: 0.17em;
-                font-weight: 700;
-            }
-            h1 {
-                font-size: clamp(2rem, 6vw, 4.5rem);
-                line-height: 1.07;
-                letter-spacing: -0.045em;
-                max-width: 800px;
-                margin: 22px 0;
-            }
-            h1 span {
-                color: var(--orange);
-            }
-            .lead {
-                max-width: 630px;
-                color: #bbb;
-                font-size: 1.1875rem;
-            }
-            .actions {
-                display: flex;
-                gap: 12px;
-                flex-wrap: wrap;
-                margin: 30px 0 15px;
-            }
-            .button {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                background: var(--orange);
-                border: 1px solid var(--orange);
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-weight: 650;
-                text-decoration: none;
-                color: white;
-                min-height: 50px;
-                text-align: center;
-                transition:
-                    background 180ms,
-                    border-color 180ms,
-                    transform 180ms;
-            }
-            .button:hover {
-                color: white;
-                background: #e74d00;
-            }
-            .button.secondary {
-                background: #ffffff08;
-                border-color: #ffffff30;
-            }
-            .note {
-                font-size: 0.8125rem;
-                color: var(--muted);
-            }
-            section {
-                padding: 42px 0;
-            }
-            h2 {
-                font-size: clamp(1.5rem, 4vw, 1.875rem);
-                letter-spacing: -0.03em;
-                margin: 0 0 22px;
-            }
-            h3 {
-                font-size: 1.1875rem;
-                margin: 0 0 10px;
-            }
-            .grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-                gap: 18px;
-            }
-            .card {
-                border: 1px solid var(--border);
-                border-radius: 14px;
-                padding: 25px;
-                background: #1a1a1a;
-                transition:
-                    border-color 220ms,
-                    box-shadow 220ms;
-            }
-            .card .index {
-                color: #ff9965;
-                display: block;
-                margin-bottom: 20px;
-                font-size: 0.8125rem;
-            }
-            .card p {
-                margin-bottom: 0;
-                color: var(--muted);
-                font-size: 0.9375rem;
-            }
-            .flow {
-                padding: 28px;
-                border-left: 3px solid var(--orange);
-                background: #1a1a1a;
-                border-radius: 0 12px 12px 0;
-            }
-            .flow p {
-                margin: 0;
-                color: #bbb;
-            }
-            .flow strong {
-                color: white;
-            }
-            details {
-                border-bottom: 1px solid var(--border);
-                padding: 18px 0;
-            }
-            summary {
-                cursor: pointer;
-                font-weight: 650;
-                min-height: 44px;
-                padding: 9px 0;
-                line-height: 1.5;
-            }
-            details p {
-                color: var(--muted);
-                max-width: 850px;
-            }
-            .english {
-                padding: 28px;
-                border: 1px solid var(--border);
-                border-radius: 14px;
-                color: #bbb;
-            }
-            .english h2 {
-                font-size: 1.5rem;
-                color: white;
-            }
-            .english p {
-                margin-bottom: 0;
-            }
-            footer {
-                padding-top: 36px;
-                padding-bottom: max(35px, env(safe-area-inset-bottom));
-                color: var(--muted);
-                font-size: 0.8125rem;
-            }
-            footer > div {
-                border-top: 1px solid var(--border);
-                padding-top: 25px;
-                display: flex;
-                justify-content: space-between;
-                gap: 20px;
-            }
-            footer a {
-                color: #ddd;
-                display: inline-block;
-                padding: 10px 0;
-            }
-            @media (max-width: 720px) {
-                .hero {
-                    padding: 60px 0 45px;
-                }
-                nav > div {
-                    gap: 14px;
-                }
-                .lead {
-                    font-size: 1.0625rem;
-                }
-                footer > div {
-                    flex-direction: column;
-                }
-                .card {
-                    padding: 22px;
-                }
-            }
-            @media (prefers-reduced-motion: reduce) {
-                html {
-                    scroll-behavior: auto;
-                }
-                *,
-                *:before,
-                *:after {
-                    transition: none !important;
-                }
-            }
-            .site-language {
-                display: inline-flex;
-                gap: 3px;
-            }
-            .site-language button {
-                background: transparent;
-                border: 0;
-                border-radius: 5px;
-                color: #aaa;
-                cursor: pointer;
-                padding: 8px;
-                min-width: 44px;
-                min-height: 44px;
-                font: inherit;
-                transition:
-                    color 180ms,
-                    background 180ms;
-            }
-            .site-language button[aria-pressed='true'] {
-                background: #ffffff16;
-                color: white;
-            }
-            @media (max-width: 720px) {
-                nav {
-                    flex-wrap: wrap;
-                    gap: 8px;
-                    padding: 16px 0;
-                }
-                nav > div {
-                    flex-wrap: wrap;
-                    justify-content: space-between;
-                    width: 100%;
-                    gap: 6px 12px;
-                    font-size: 0.8125rem;
-                }
-            }
-            @media (max-width: 480px) {
-                .hero {
-                    padding: 48px 0 35px;
-                }
-                h1 {
-                    font-size: clamp(2rem, 8.8vw, 2.75rem);
-                }
-                .actions {
-                    flex-direction: column;
-                }
-                .card,
-                .flow,
-                .english {
-                    padding: 22px;
-                }
-                section {
-                    padding: 30px 0;
-                }
-                .eyebrow {
-                    letter-spacing: 0.1em;
-                    font-size: 0.6875rem;
-                }
-            }
-            @media (hover: hover) and (pointer: fine) {
-                .button:hover {
-                    transform: translateY(-2px);
-                }
-                .card:hover {
-                    border-color: #ff996560;
-                    box-shadow: 0 12px 36px #0003;
-                }
-            }
-            .button:active {
-                transform: scale(0.98);
-            }
-        </style>
+        <link rel="stylesheet" href="./styles.css" />
+        <link rel="stylesheet" href="./experience.css" />
     </head>
     <body>
+        <div class="reading-progress" aria-hidden="true"></div>
         <header>
             <nav aria-label="Основная навигация">
-                <a class="brand" href="./"><i>●</i> SoundCloud <small>by rvelabs</small></a>
-                <div>
-                    <span class="site-language" aria-label="Language"
-                        ><button type="button" data-site-language="en" aria-pressed="false">EN</button
-                        ><button type="button" data-site-language="ru" aria-pressed="false">RU</button></span
-                    >
-                    <a href="#features">Возможности</a><a href="https://github.com/rvelabs/soundcloud-rpc">GitHub ↗</a>
+                <a class="brand" href="./"><i>●</i><span>SoundCloud</span><small>by rvelabs</small></a>
+                <div class="nav-links">
+                    <a href="#features">Возможности</a><a href="#gallery" data-en="Inside the app">Интерфейс</a
+                    ><a href="https://github.com/rvelabs/soundcloud-rpc">GitHub ↗</a>
                 </div>
+                <span class="site-language" aria-label="Language"
+                    ><button type="button" data-site-language="en" aria-pressed="false">EN</button
+                    ><button type="button" data-site-language="ru" aria-pressed="false">RU</button></span
+                >
             </nav>
         </header>
         <main>
             <section class="hero" aria-labelledby="title">
                 <div class="hero-glow" aria-hidden="true"></div>
-                <div class="eyebrow">Windows · Open source · Бесплатно</div>
-                <h1 id="title">Ваш SoundCloud.<br /><span>Ваша музыка.</span></h1>
-                <p class="lead">
-                    Знакомый плеер, персональная «Моя волна» и плейлисты из других сервисов. Всё в одном настольном
-                    клиенте.
-                </p>
-                <div class="actions">
-                    <a class="button" href="https://github.com/rvelabs/soundcloud-rpc/releases/latest"
-                        >Скачать для Windows ↗</a
-                    ><a class="button secondary" href="https://github.com/rvelabs/soundcloud-rpc#readme"
-                        >Документация</a
-                    >
+                <div class="hero-copy">
+                    <div class="eyebrow">Windows · Open source · Бесплатно</div>
+                    <h1 id="title">Ваш SoundCloud.<br /><span>Ваша музыка.</span></h1>
+                    <p class="lead">
+                        Знакомый плеер, персональная «Моя волна» и плейлисты из других сервисов. Всё в одном настольном
+                        клиенте.
+                    </p>
+                    <div class="actions">
+                        <a class="button" href="https://github.com/rvelabs/soundcloud-rpc/releases/latest"
+                            >Скачать для Windows ↗</a
+                        >
+                        <a class="button secondary" href="#gallery" data-en="Take a look ↓">Посмотреть ближе ↓</a>
+                    </div>
+                    <p class="note">Неофициальный клиент. Нужен аккаунт SoundCloud. Поддержка Windows x64.</p>
+                    <div class="hero-facts">
+                        <span data-en="Your account">Ваш аккаунт</span><span data-en="Native player">Штатный плеер</span
+                        ><span data-en="Your pace">Ваш ритм</span>
+                    </div>
                 </div>
-                <p class="note">Неофициальный клиент. Нужен аккаунт SoundCloud. Поддержка Windows x64.</p>
+                <div class="hero-visual" data-reveal>
+                    <figure class="hero-photo">
+                        <img
+                            src="./images/headphones-1280.webp"
+                            srcset="./images/headphones-640.webp 640w, ./images/headphones-1280.webp 1280w"
+                            sizes="(max-width: 900px) 100vw, 50vw"
+                            width="1536"
+                            height="1024"
+                            alt="Наушники и виниловая пластинка в тёплом вечернем свете"
+                            data-en-alt="Headphones and a vinyl record in warm evening light"
+                            fetchpriority="high"
+                            decoding="async"
+                            data-photo-motion
+                        />
+                    </figure>
+                    <div class="wave-preview" data-preview-mood="calm">
+                        <div class="preview-orb orb-calm" aria-hidden="true"></div>
+                        <div class="preview-orb orb-energy" aria-hidden="true"></div>
+                        <div class="preview-orb orb-road" aria-hidden="true"></div>
+                        <div class="preview-top">
+                            <span class="eyebrow" data-en="A little preview">Маленькое превью</span
+                            ><span class="preview-dot" aria-hidden="true"></span>
+                        </div>
+                        <h2 data-en="My Wave">Моя волна</h2>
+                        <p class="preview-description" data-mood-copy="calm" data-en="Let the day slow down.">
+                            Пусть день станет чуть тише.
+                        </p>
+                        <p
+                            class="preview-description"
+                            data-mood-copy="energy"
+                            data-en="More energy. More movement."
+                            hidden
+                        >
+                            Больше энергии. Больше движения.
+                        </p>
+                        <p
+                            class="preview-description"
+                            data-mood-copy="road"
+                            data-en="A soundtrack for the road ahead."
+                            hidden
+                        >
+                            Саундтрек для вашего маршрута.
+                        </p>
+                        <div
+                            class="preview-moods"
+                            role="group"
+                            aria-label="Настроение превью"
+                            data-en-label="Preview mood"
+                        >
+                            <button type="button" data-mood="calm" aria-pressed="true" data-en="Calm">Спокойное</button
+                            ><button type="button" data-mood="energy" aria-pressed="false" data-en="Energetic">
+                                Бодрое</button
+                            ><button type="button" data-mood="road" aria-pressed="false" data-en="On the move">
+                                В дороге
+                            </button>
+                        </div>
+                        <div class="preview-bottom">
+                            <button class="preview-toggle" type="button" aria-pressed="false">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path class="preview-play" d="m9 5 11 7-11 7z" fill="currentColor" />
+                                    <path
+                                        class="preview-pause"
+                                        d="M8 5v14M16 5v14"
+                                        stroke="currentColor"
+                                        stroke-width="4"
+                                    /></svg
+                                ><span data-en="Animate the wave">Оживить волну</span>
+                            </button>
+                            <div class="preview-bars" aria-hidden="true">
+                                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                                ><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                            </div>
+                        </div>
+                        <p class="preview-note" data-en="Visual demo · no sound. Listen in the Windows app.">
+                            Визуальное демо · без звука. Музыка — в приложении для Windows.
+                        </p>
+                    </div>
+                </div>
             </section>
+            <div class="chapter-line" aria-hidden="true">
+                <span>01 / DISCOVER</span><span>02 / FEEL</span><span>03 / KEEP</span
+                ><span class="chapter-mark">SOUNDCLOUD, A LITTLE MORE PERSONAL.</span>
+            </div>
             <section id="features" aria-labelledby="features-title">
                 <h2 id="features-title">Больше любимой музыки</h2>
                 <div class="grid">
@@ -448,6 +187,218 @@
                     </article>
                 </div>
             </section>
+
+            <section class="story-section" aria-labelledby="rhythm-title">
+                <div class="story-copy" data-reveal>
+                    <span class="eyebrow" data-en="A soundtrack for your day">Саундтрек вашего дня</span>
+                    <h2 id="rhythm-title" class="display-title" data-en="One wave. Many states of mind.">
+                        Одна волна.<br />Разные состояния.
+                    </h2>
+                    <p
+                        class="section-lead"
+                        data-en="Focus on work, find your second wind, or slow down before sleep. Tell My Wave what kind of moment this is."
+                    >
+                        Сосредоточиться на работе, поймать второе дыхание или замедлиться перед сном. Подскажите волне,
+                        какой у вас сейчас момент.
+                    </p>
+                    <ul class="story-points">
+                        <li>
+                            <strong data-en="Set the direction">Задайте направление</strong
+                            ><span data-en="Mood, activity, discovery and music language — in one panel."
+                                >Настроение, занятие, знакомство с музыкой и язык — в одной панели.</span
+                            >
+                        </li>
+                        <li>
+                            <strong data-en="Make room for discoveries">Оставьте место открытиям</strong
+                            ><span data-en="Explore unfamiliar tracks related to music you already enjoy."
+                                >Пробуйте незнакомые записи, похожие на музыку, которая вам уже близка.</span
+                            >
+                        </li>
+                        <li>
+                            <strong data-en="Keep shaping your taste">Продолжайте свой вкус</strong
+                            ><span data-en="Listening feedback and excluded artists help shape future choices."
+                                >Реакции на прослушивание и исключённые исполнители помогают уточнять подбор.</span
+                            >
+                        </li>
+                    </ul>
+                </div>
+                <figure class="story-photo" data-reveal>
+                    <img
+                        src="./images/city-1280.webp"
+                        srcset="./images/city-640.webp 640w, ./images/city-1280.webp 1280w"
+                        sizes="(max-width: 760px) 100vw, 50vw"
+                        width="1536"
+                        height="1024"
+                        loading="lazy"
+                        decoding="async"
+                        alt="Слушатель в наушниках на вечерней городской улице"
+                        data-en-alt="A listener wearing headphones on a city street at dusk"
+                        data-photo-motion
+                    />
+                    <figcaption>
+                        <span class="photo-tag" data-en="On the move">В дороге</span
+                        ><span data-en="Your city. Your rhythm.">Ваш город. Ваш ритм.</span>
+                    </figcaption>
+                </figure>
+            </section>
+            <section id="gallery" aria-labelledby="gallery-title">
+                <div class="section-heading" data-reveal>
+                    <div>
+                        <span class="eyebrow" data-en="Inside the app">Внутри приложения</span>
+                        <h2 id="gallery-title" class="display-title" data-en="Looks familiar. Feels personal.">
+                            Всё знакомо.<br />Всё по-вашему.
+                        </h2>
+                    </div>
+                    <p
+                        class="section-lead"
+                        data-en="A new module inside the familiar SoundCloud interface. Your player, library and everyday controls stay close."
+                    >
+                        Новый модуль внутри привычного SoundCloud. Плеер, библиотека и повседневное управление остаются
+                        под рукой.
+                    </p>
+                </div>
+                <div
+                    class="gallery-tabs"
+                    role="group"
+                    aria-label="Снимки интерфейса"
+                    data-en-label="Interface screenshots"
+                    hidden
+                >
+                    <button type="button" data-gallery="wave" aria-pressed="true" data-en="My Wave">Моя волна</button
+                    ><button type="button" data-gallery="settings" aria-pressed="false" data-en="Your settings">
+                        Ваши настройки</button
+                    ><button type="button" data-gallery="import" aria-pressed="false" data-en="Playlist import">
+                        Перенос плейлистов
+                    </button>
+                </div>
+                <div class="gallery-stage" data-reveal>
+                    <figure class="gallery-panel" data-gallery-panel="wave">
+                        <a
+                            class="image-zoom"
+                            href="./images/wave.webp"
+                            aria-haspopup="dialog"
+                            data-zoom
+                            aria-label="Увеличить снимок волны"
+                            data-en-label="Enlarge My Wave screenshot"
+                        >
+                            <img
+                                src="./images/wave.webp"
+                                width="1280"
+                                height="900"
+                                loading="lazy"
+                                decoding="async"
+                                alt="Модуль My Wave и отдельная карточка импорта в тёмном интерфейсе"
+                                data-en-alt="My Wave module and a separate playlist import card in a dark interface"
+                            /><span class="zoom-label" data-en="View full size ↗">Рассмотреть ↗</span>
+                        </a>
+                    </figure>
+                    <figure class="gallery-panel" data-gallery-panel="settings" hidden>
+                        <a
+                            class="image-zoom"
+                            href="./images/settings.webp"
+                            aria-haspopup="dialog"
+                            data-zoom
+                            aria-label="Увеличить настройки"
+                            data-en-label="Enlarge settings screenshot"
+                        >
+                            <img
+                                src="./images/settings.webp"
+                                width="1280"
+                                height="900"
+                                loading="lazy"
+                                decoding="async"
+                                alt="Панель настроения, занятия, знакомства и языка музыки"
+                                data-en-alt="Mood, activity, discovery and music language settings"
+                            /><span class="zoom-label" data-en="View full size ↗">Рассмотреть ↗</span>
+                        </a>
+                    </figure>
+                    <figure class="gallery-panel" data-gallery-panel="import" hidden>
+                        <a
+                            class="image-zoom"
+                            href="./images/import.webp"
+                            aria-haspopup="dialog"
+                            data-zoom
+                            aria-label="Увеличить импорт плейлиста"
+                            data-en-label="Enlarge playlist import screenshot"
+                        >
+                            <img
+                                src="./images/import.webp"
+                                width="1044"
+                                height="659"
+                                loading="lazy"
+                                decoding="async"
+                                alt="Окно импорта плейлиста с проверкой совпадений и прогрессом"
+                                data-en-alt="Playlist import with match checking and progress"
+                            /><span class="zoom-label" data-en="View full size ↗">Рассмотреть ↗</span>
+                        </a>
+                    </figure>
+                </div>
+                <p
+                    class="note gallery-caption"
+                    data-en="Module screenshots with demo data. Click an image to explore it."
+                >
+                    Снимки модуля на демонстрационных данных. Нажмите на изображение, чтобы рассмотреть.
+                </p>
+            </section>
+            <section class="import-story" aria-labelledby="import-title">
+                <div data-reveal>
+                    <span class="eyebrow" data-en="Bring your collection along">Коллекция переезжает с вами</span>
+                    <h2 id="import-title" class="display-title" data-en="New place. Same favorite playlists.">
+                        Новое место.<br />Любимые плейлисты.
+                    </h2>
+                    <p
+                        class="section-lead"
+                        data-en="No need to rebuild everything track by track. Bring a public playlist link from Spotify, Yandex Music or YouTube Music."
+                    >
+                        Не нужно собирать всё заново по одному треку. Принесите публичную ссылку из Spotify, Яндекс
+                        Музыки или YouTube Music.
+                    </p>
+                    <div class="service-tags">
+                        <span>Spotify</span><span data-en="Yandex Music">Яндекс Музыка</span><span>YouTube Music</span>
+                    </div>
+                    <p
+                        class="note"
+                        data-en="Matches depend on the catalog and regional availability. You can save the tracks that were found, even if the source list is incomplete."
+                    >
+                        Совпадения зависят от каталога и региона. Найденные треки можно сохранить, даже если исходный
+                        список неполный.
+                    </p>
+                </div>
+                <ol class="import-steps">
+                    <li data-reveal>
+                        <span>01</span>
+                        <div>
+                            <h3 data-en="Paste a link">Вставьте ссылку</h3>
+                            <p data-en="The client reads the playlist title, artists and track names.">
+                                Клиент прочитает название плейлиста, исполнителей и названия записей.
+                            </p>
+                        </div>
+                    </li>
+                    <li data-reveal>
+                        <span>02</span>
+                        <div>
+                            <h3 data-en="Review the matches">Проверьте совпадения</h3>
+                            <p
+                                data-en="Tracks are searched and checked in parallel. You decide which versions to keep."
+                            >
+                                Треки ищутся и проверяются параллельно. Вы выбираете, какие версии оставить.
+                            </p>
+                        </div>
+                    </li>
+                    <li data-reveal>
+                        <span>03</span>
+                        <div>
+                            <h3 data-en="Keep the music you found">Сохраните найденное</h3>
+                            <p
+                                data-en="Create a SoundCloud playlist from the available matches, without waiting for every missing track."
+                            >
+                                Создайте плейлист SoundCloud из доступных совпадений, не дожидаясь каждого
+                                отсутствующего трека.
+                            </p>
+                        </div>
+                    </li>
+                </ol>
+            </section>
             <section aria-labelledby="radio-title">
                 <h2 id="radio-title">Как подбирается музыка</h2>
                 <div class="flow">
@@ -459,6 +410,74 @@
                         для получения рекомендаций. Недавние повторы и исключённые исполнители отсекаются локально.
                     </p>
                 </div>
+            </section>
+
+            <section aria-labelledby="details-title">
+                <div class="section-heading" data-reveal>
+                    <div>
+                        <span class="eyebrow" data-en="Thoughtful details">Продуманные детали</span>
+                        <h2 id="details-title" class="display-title" data-en="Music first. Everything else, in place.">
+                            Главное — музыка.<br />Остальное — на месте.
+                        </h2>
+                    </div>
+                </div>
+                <div class="grid detail-grid">
+                    <article class="card" data-reveal>
+                        <span class="detail-symbol" aria-hidden="true">↗</span>
+                        <h3 data-en="Keep listening">Слушайте дальше</h3>
+                        <p
+                            data-en="Minimize the window or switch pages. Music keeps playing while My Wave prepares what comes next."
+                        >
+                            Сверните окно или смените страницу. Музыка продолжит играть, а волна подготовит продолжение.
+                        </p>
+                    </article>
+                    <article class="card" data-reveal>
+                        <span class="detail-symbol" aria-hidden="true">◎</span>
+                        <h3 data-en="Share your listening">Расскажите, что слушаете</h3>
+                        <p
+                            data-en="Discord Rich Presence and Last.fm complement your listening routine. Themes and plugins let you make the client your own."
+                        >
+                            Discord Rich Presence и Last.fm дополнят прослушивание. Темы и плагины помогут настроить
+                            клиент под себя.
+                        </p>
+                    </article>
+                    <article class="card" data-reveal>
+                        <span class="detail-symbol" aria-hidden="true">⌘</span>
+                        <h3 data-en="Open by design">Открыто по замыслу</h3>
+                        <p
+                            data-en="Explore the source, follow releases or suggest an improvement on GitHub. Your local recommendation profile stays on your computer."
+                        >
+                            Изучайте код, следите за релизами или предлагайте улучшения на GitHub. Локальный профиль
+                            рекомендаций хранится на вашем компьютере.
+                        </p>
+                    </article>
+                </div>
+            </section>
+            <section class="start-section" aria-labelledby="start-title">
+                <span class="eyebrow" data-en="Three small steps">Три простых шага</span>
+                <h2 id="start-title" class="display-title" data-en="Your next favorite is out there.">
+                    Ваш следующий<br />любимый трек — где-то рядом.
+                </h2>
+                <ol class="start-steps">
+                    <li data-reveal>
+                        <span>01</span>
+                        <p data-en="Install the Windows app and sign in to SoundCloud.">
+                            Установите клиент для Windows и войдите в SoundCloud.
+                        </p>
+                    </li>
+                    <li data-reveal>
+                        <span>02</span>
+                        <p data-en="Like a few tracks or play a favorite to give My Wave a starting point.">
+                            Добавьте несколько лайков или включите любимый трек — это отправная точка для волны.
+                        </p>
+                    </li>
+                    <li data-reveal>
+                        <span>03</span>
+                        <p data-en="Open Home, press Listen, and make room for something new.">
+                            Откройте главную, нажмите «Слушать» и оставьте место новому.
+                        </p>
+                    </li>
+                </ol>
             </section>
             <section aria-labelledby="faq-title">
                 <h2 id="faq-title">Перед установкой</h2>
@@ -503,6 +522,20 @@
                     </p>
                 </details>
             </section>
+            <section class="download-band" data-reveal>
+                <span class="eyebrow" data-en="Ready when you are">Начните, когда захочется</span>
+                <h2 class="display-title" data-en="A little more your SoundCloud.">
+                    Чуть больше<br />вашего SoundCloud.
+                </h2>
+                <div class="actions">
+                    <a class="button" href="https://github.com/rvelabs/soundcloud-rpc/releases/latest"
+                        >Скачать для Windows ↗</a
+                    ><a class="button secondary" href="https://github.com/rvelabs/soundcloud-rpc#readme"
+                        >Документация</a
+                    >
+                </div>
+                <p class="note" data-en="Free · Windows x64 · Open source">Бесплатно · Windows x64 · Открытый код</p>
+            </section>
             <section lang="en" class="english">
                 <h2>SoundCloud desktop client for Windows</h2>
                 <p>
@@ -516,13 +549,21 @@
         </main>
         <footer>
             <div>
-                <span>SoundCloud Desktop · rvelabs · MIT</span
+                <span
+                    >SoundCloud Desktop · rvelabs · MIT<br /><small data-en="Mood photography created with AI."
+                        >Атмосферные фотографии созданы с помощью ИИ.</small
+                    ></span
                 ><span
                     ><a href="https://github.com/rvelabs/soundcloud-rpc">Исходный код</a> ·
                     <a href="https://github.com/rvelabs/soundcloud-rpc/issues">Обратная связь</a></span
                 >
             </div>
         </footer>
+        <dialog class="lightbox" aria-label="Снимок интерфейса" data-en-label="Interface screenshot">
+            <button type="button" class="lightbox-close" data-en-label="Close image" aria-label="Закрыть изображение">
+                ×</button
+            ><img alt="" width="1280" height="900" />
+        </dialog>
         <script src="./language.js" defer></script>
         <script src="./animations.js" defer></script>
     </body>

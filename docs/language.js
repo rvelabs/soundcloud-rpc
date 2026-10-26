@@ -52,10 +52,22 @@
         'Обратная связь': 'Feedback',
     };
     const entries = [];
+    const labels = [...document.querySelectorAll('[data-en]')].map((element) => ({
+        element,
+        ru: element.innerHTML,
+        en: element.dataset.en,
+    }));
+    const attributes = [...document.querySelectorAll('[data-en-alt],[data-en-label]')].map((element) => ({
+        element,
+        attribute: element.hasAttribute('data-en-alt') ? 'alt' : 'aria-label',
+        en: element.dataset.enAlt || element.dataset.enLabel,
+        ru: element.getAttribute(element.hasAttribute('data-en-alt') ? 'alt' : 'aria-label'),
+    }));
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
         const node = walker.currentNode;
-        if (['SCRIPT', 'STYLE'].includes(node.parentElement?.tagName)) continue;
+        if (['SCRIPT', 'STYLE'].includes(node.parentElement?.tagName) || node.parentElement?.closest('[data-en]'))
+            continue;
         const original = node.nodeValue;
         const key = original.replace(/\s+/g, ' ').trim();
         if (english[key]) entries.push({ node, original, key });
@@ -68,6 +80,12 @@
             locale === 'ru' ? originalTitle : 'SoundCloud Desktop for Windows — My Wave & playlist import | rvelabs';
         for (const { node, original, key } of entries)
             node.nodeValue = locale === 'ru' ? original : original.replace(original.trim(), english[key]);
+        for (const { element, ru, en } of labels) {
+            if (locale === 'ru') element.innerHTML = ru;
+            else element.textContent = en;
+        }
+        for (const { element, attribute, ru, en } of attributes)
+            element.setAttribute(attribute, locale === 'ru' ? ru : en);
         for (const button of document.querySelectorAll('[data-site-language]'))
             button.setAttribute('aria-pressed', String(button.dataset.siteLanguage === locale));
         document
