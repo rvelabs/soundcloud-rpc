@@ -98,6 +98,7 @@ export function createRelayHandler(connect) {
             clearTimeout(timer);
         }
         const pair = new WebSocketPair();
+        pair[1].binaryType = 'arraybuffer';
         pair[1].accept();
         bridgeSocket(pair[1], socket);
         return new Response(null, { status: 101, webSocket: pair[0] });

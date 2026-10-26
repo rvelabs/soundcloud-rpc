@@ -50,6 +50,11 @@ authentication, connection and SoundCloud response errors without including keys
 reachable from your network;
 [ISP restrictions can also affect Workers](https://developers.cloudflare.com/support/troubleshooting/general-troubleshooting/service-disruption/).
 
+For Workers deployed before 0.28.2, add `no_websocket_standard_binary_type` in the Worker's Cloudflare compatibility
+flags and save/deploy, or redeploy the updated Worker code. This fixes immediate closure after the first binary packet;
+updating the desktop app alone does not change an already deployed Worker. Keep the existing `RELAY_TOKEN` when
+updating.
+
 ## Development
 
 Node.js 22 and npm:
@@ -57,6 +62,7 @@ Node.js 22 and npm:
 ```sh
 npm ci
 npm test
+npm run test:worker
 npm run lint
 npm run dev
 npm run build-win

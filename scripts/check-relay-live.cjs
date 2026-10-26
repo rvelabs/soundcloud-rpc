@@ -23,7 +23,9 @@ app.whenReady().then(async () => {
             pathToFileURL(path.join(repo, 'cloudflare/soundcloud-relay/protocol.mjs'))
         );
         const { ConnectionRecovery } = require(path.join(repo, 'tsc/network/connectionRecovery.js'));
-        const token = randomBytes(32).toString('hex');
+        const runtimeUrl = process.env.WAVE_RELAY_RUNTIME_URL;
+        const token = runtimeUrl ? process.env.WAVE_RELAY_RUNTIME_KEY : randomBytes(32).toString('hex');
+        assert(token && token.length >= 32);
         const hosts = [];
         let rejectStatus = 0,
             transferLimit = Infinity,
@@ -103,7 +105,8 @@ app.whenReady().then(async () => {
             () => {},
         );
         const start = recovery.gateway.start.bind(recovery.gateway);
-        recovery.gateway.start = () => start('ws://127.0.0.1:' + server.address().port + '/tunnel', token, true);
+        recovery.gateway.start = () =>
+            start(runtimeUrl || 'ws://127.0.0.1:' + server.address().port + '/tunnel', token, true);
         const began = Date.now();
         const pending = recovery.testRelay();
         assert.equal(recovery.testRelay(), pending, 'manual and automatic probes share one in-flight check');
@@ -111,7 +114,7 @@ app.whenReady().then(async () => {
         const report = {
             actualElectronFetch: true,
             realPublicSoundCloud: true,
-            workerRuntime: 'local TCP/WebSocket adapter',
+            workerRuntime: runtimeUrl ? 'Cloudflare workerd, native cloudflare:sockets' : 'local TCP/WebSocket adapter',
             success: result,
             elapsedMs: Date.now() - began,
             hosts,
@@ -120,6 +123,10 @@ app.whenReady().then(async () => {
         fs.writeFileSync(path.join(out, 'relay-live.json'), JSON.stringify(report, null, 2));
         console.log(JSON.stringify(report));
         assert(result, 'actual Chromium HTTPS through CONNECT/WebSocket/TCP should pass');
+        if (runtimeUrl) {
+            app.exit(0);
+            return;
+        }
         const cases = [];
         rejectStatus = 401;
         await recovery.configure();
