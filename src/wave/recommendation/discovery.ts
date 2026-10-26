@@ -15,15 +15,14 @@ export function discoverySeeds(profile: TasteProfile, controls: Controls, rotati
             score: (profile.likedIds.has(track.id) ? 2 : 0) + moodEvidence(track, controls.mood).score - order / 1000,
         }))
         .sort((a, b) => b.score - a.score);
-    const artists = new Set<string>();
-    const distinct = sorted
-        .filter(({ track }) => {
-            const key = normalize(track.artist);
-            if (artists.has(key)) return false;
-            artists.add(key);
-            return true;
-        })
-        .map(({ track }) => track);
+    const artists = new Map<string, Track[]>();
+    for (const { track } of sorted) {
+        const key = normalize(track.artist);
+        const group = artists.get(key) || [];
+        group.push(track);
+        artists.set(key, group);
+    }
+    const distinct = [...artists.values()].map((group) => group[Math.max(0, Math.floor(rotation)) % group.length]);
     if (!distinct.length) return [];
     const start = (Math.max(0, rotation) * 2) % distinct.length;
     return [...distinct.slice(start), ...distinct.slice(0, start)].slice(0, 3);

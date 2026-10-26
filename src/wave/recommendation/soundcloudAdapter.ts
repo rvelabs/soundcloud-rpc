@@ -212,6 +212,11 @@ export class SoundCloudRecommender {
                     ...Object.fromEntries(Object.entries(track).filter(([, value]) => value !== undefined)),
                 } as WaveCandidate;
                 if (!track.tags?.length && previous?.tags?.length) next.tags = previous.tags;
+                if (previous?.relatedTo?.length || track.relatedTo?.length)
+                    next.relatedTo = [...new Set([...(track.relatedTo || []), ...(previous?.relatedTo || [])])].slice(
+                        0,
+                        12,
+                    );
                 this.candidates.set(track.url, next);
                 return next;
             });
@@ -228,7 +233,8 @@ export class SoundCloudRecommender {
             });
     }
     seedLikes(tracks: WaveCandidate[]): void {
-        const liked = new Set(buildProfile(this.feedbackEvents, this.now()).likedIds);
+        if (!tracks.length) return;
+        const liked = new Set(this.session.profile().likedIds);
         const explicit = new Set(
             this.feedbackEvents
                 .filter((event) => ['like', 'unlike', 'dislike'].includes(event.kind))
@@ -244,7 +250,8 @@ export class SoundCloudRecommender {
         this.addCandidates(tracks, false);
     }
     seedRecent(tracks: WaveCandidate[]): void {
-        const heard = new Set(buildProfile(this.feedbackEvents, this.now()).heardIds);
+        if (!tracks.length) return;
+        const heard = new Set(this.session.profile().heardIds);
         const additions: Feedback[] = [];
         for (const candidate of [...tracks].reverse())
             if (!heard.has(candidate.url)) {

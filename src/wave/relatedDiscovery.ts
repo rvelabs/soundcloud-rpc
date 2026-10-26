@@ -35,7 +35,9 @@ export class RelatedDiscovery {
             if (!trackPath(seed.id)) continue;
             const cached = this.cache.get(seed.id);
             let tracks =
-                cached && this.now() - cached.at < (cached.tracks.length ? 30 * 60000 : 15000)
+                cached &&
+                this.now() >= cached.at &&
+                this.now() - cached.at < (cached.tracks.length ? 30 * 60000 : 15000)
                     ? cached.tracks
                     : undefined;
             if (!tracks) {
@@ -51,6 +53,7 @@ export class RelatedDiscovery {
                 } catch {
                     this.failures++;
                     tracks = [];
+                    if (isActive()) this.cache.set(seed.id, { at: this.now(), tracks });
                 } finally {
                     if (this.pending.get(seed.id) === task) this.pending.delete(seed.id);
                 }

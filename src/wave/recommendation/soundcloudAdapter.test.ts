@@ -25,6 +25,17 @@ const memoryStore = (initial: Record<string, unknown> = {}) => {
     };
 };
 describe('SoundCloud recommendation adapter', () => {
+    it('keeps independent related-track evidence across catalog refreshes', () => {
+        const { store } = memoryStore();
+        const model = new SoundCloudRecommender(store, 'sources', async () => []);
+        const candidate = {
+            ...item('https://soundcloud.com/artist/new', 'Artist', 'ambient'),
+            source: 'related' as const,
+        };
+        model.addCandidates([{ ...candidate, relatedTo: ['seed-one'] }]);
+        model.addCandidates([{ ...candidate, relatedTo: ['seed-two'] }]);
+        expect(new Set(model.rank()[0].relatedTo)).toEqual(new Set(['seed-one', 'seed-two']));
+    });
     it('restores favorite candidates when a stopped wave starts again in the same client', () => {
         const { store } = memoryStore();
         const model = new SoundCloudRecommender(store, 'restart', async () => []);

@@ -9,6 +9,27 @@ import type { WaveCandidate } from './waveEngine';
 const seed = (id: string, artist = id): Track => ({ id: `https://soundcloud.com/${id}/song`, title: id, artist });
 const candidate = (id: string): WaveCandidate => ({ url: seed(id).id, title: id, artist: id, sourceRank: 0 });
 describe('track-based discovery', () => {
+    it('rotates recordings within one artist instead of exhausting the same related page forever', () => {
+        const profile = buildProfile(
+            [0, 1, 2].map((i) => ({ track: seed('song' + i, 'same artist'), kind: 'like' as const, at: i })),
+            1000,
+        );
+        const picked = [0, 1, 2].map((rotation) => discoverySeeds(profile, defaultControls, rotation)[0].id);
+        expect(new Set(picked).size).toBe(3);
+    });
+    it('backs off a failing source before retrying instead of hammering it on every refill', async () => {
+        let time = 0;
+        const load = vi.fn(async () => {
+            throw Error('offline');
+        });
+        const discovery = new RelatedDiscovery(load, () => time);
+        await discovery.discover([seed('one')]);
+        await discovery.discover([seed('one')]);
+        expect(load).toHaveBeenCalledTimes(1);
+        time = 16000;
+        await discovery.discover([seed('one')]);
+        expect(load).toHaveBeenCalledTimes(2);
+    });
     it('uses related recordings instead of generating genre searches, even without any tags', async () => {
         const related = vi.fn(async () => [
             { ...seed('new'), source: 'related' as const, relatedTo: [seed('favorite').id] },

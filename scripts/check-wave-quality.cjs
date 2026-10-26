@@ -20,7 +20,7 @@ const events = Array.from({ length: 5000 }, (_, i) => ({
     at: now - i * 60000,
 }));
 function run(Session) {
-    const model = new Session({ search: async () => candidates }, () => now);
+    const model = new Session({ related: async () => candidates, search: async () => candidates }, () => now);
     model.loadFeedback(events);
     model.addCandidates(candidates);
     model.rank(12);
@@ -32,7 +32,7 @@ function run(Session) {
     }
     return times.sort((a, b) => a - b)[3];
 }
-const model = new current({ search: async () => candidates }, () => now);
+const model = new current({ related: async () => candidates, search: async () => candidates }, () => now);
 model.loadFeedback(events);
 model.addCandidates(candidates);
 const cases = [
