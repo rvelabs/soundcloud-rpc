@@ -45,6 +45,7 @@ import {
 import { SoundCloudRecommender } from './wave/recommendation/soundcloudAdapter';
 import { RelatedDiscovery } from './wave/relatedDiscovery';
 import { ListeningEvidence } from './wave/listeningEvidence';
+import { waveEnglish, translateWaveText } from './wave/i18n';
 import { PreparedQueue } from './wave/preparedQueue';
 import {
     addToNativeNextUp,
@@ -1473,6 +1474,7 @@ async function init() {
         if (!isTrustedSoundCloudSender(event)) return null;
         return {
             active: waveVisible,
+            interfaceLanguage: store.get('waveInterfaceLanguage', 'auto'),
             controls: waveControls,
             excludedArtists: waveRecommender.getExcludedArtists(),
             track: waveVisible ? lastTrackInfo : null,
@@ -1483,6 +1485,13 @@ async function init() {
             like: waveCurrentCandidate ? likeState(waveCurrentCandidate.url) : null,
             visible: mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
         };
+    });
+    ipcMain.handle('wave-inline:set-language', (event, language: unknown) => {
+        if (!isTrustedSoundCloudSender(event) || !['auto', 'ru', 'en'].includes(String(language)))
+            throw new Error('Invalid interface language');
+        store.set('waveInterfaceLanguage', language);
+        sendInline('interface-language', language);
+        return language;
     });
     ipcMain.handle('wave-inline:like', async (event, url: unknown, desired: unknown) => {
         if (
@@ -2168,7 +2177,11 @@ async function init() {
                     readFileSync(path.join(__dirname, 'wave', 'inline.css'), 'utf8'),
                 );
                 await contentView.webContents.executeJavaScript(
-                    readFileSync(path.join(__dirname, 'wave', 'inline.js'), 'utf8'),
+                    `window.__waveEnglish=${JSON.stringify(waveEnglish)};
+                    window.__waveTranslate=(${translateWaveText.toString()});
+                    window.__waveInitialLanguage=${JSON.stringify(store.get('waveInterfaceLanguage', 'auto'))};
+                    window.__waveSystemLocale=${JSON.stringify(app.getLocale())};\n` +
+                        readFileSync(path.join(__dirname, 'wave', 'inline.js'), 'utf8'),
                 );
             }
             contentView.webContents.setZoomFactor(store.get('uiScale', 1) as number);

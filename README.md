@@ -1,928 +1,99 @@
-# SoundCloud Desktop — Моя волна и импорт плейлистов
+# SoundCloud Desktop
 
-Неофициальный настольный клиент SoundCloud для Windows. Форк
-[richardhbtz/soundcloud-rpc](https://github.com/richardhbtz/soundcloud-rpc) с персональными рекомендациями и импортом
-плейлистов.
+**Your SoundCloud library, a personal radio, and playlists from other services — in one Windows app.**
 
-**SoundCloud desktop client for Windows.** Personalized radio from related tracks, playlist import from Spotify, YouTube
-Music and Yandex Music, Discord Rich Presence and Last.fm. Free and open source.
+[Download for Windows](https://github.com/rvelabs/soundcloud-rpc/releases/latest) ·
+[Website](https://rvelabs.github.io/soundcloud-rpc/) ·
+[Report a bug](https://github.com/rvelabs/soundcloud-rpc/issues/new/choose)
 
-[Страница проекта](https://rvelabs.github.io/soundcloud-rpc/) ·
-[Скачать](https://github.com/rvelabs/soundcloud-rpc/releases/latest) ·
-[Сообщить об ошибке](https://github.com/rvelabs/soundcloud-rpc/issues/new/choose)
+## Why install it?
 
-## Содержание
+- **My Wave** finds music related to tracks you enjoy, learns from your reactions and prepares the next tracks while you
+  listen. Choose a mood, activity or music language. Animated artwork pauses when the app is unfocused, minimized or out
+  of view; music keeps playing.
+- **Playlist import** brings public Spotify, Yandex Music and YouTube Music playlists to SoundCloud. Review matches and
+  save the found part even when some tracks are unavailable.
+- **Familiar SoundCloud controls**, plus Discord Rich Presence, Last.fm, themes and plugins. My Wave and playlist import
+  support **English and Russian**, with an automatic language option.
 
-- [Установка](#установка)
-- [Моя волна](#wave) и [её настройки](#wave-settings)
-- [Импорт плейлистов](#playlist-import)
-- [Резервное подключение через Cloudflare](#cloudflare)
-- [Темы](#themes) и [скорость воспроизведения](#playback-speed)
-- [Разработка и сборка](#development)
-- [Устройство рекомендателя](#recommendation)
-- [Проверка модулей](#module-review)
-- [Исследование подхода Яндекс Музыки](#research)
-- [Изменения и история версий](#changes)
-- [Авторы и лицензия](#credits)
+## Get started
 
-## Установка
+1. Download and install the Windows x64 release, then sign in to SoundCloud.
+2. Like a few tracks or play a favorite, then open **Home → My Wave → Listen**.
+3. Use **Customize** for mood, activity, music language and interface language. Playlist import has its own card below
+   My Wave.
 
-Скачайте установщик `soundcloud-0.26.0-installer-win.exe` в
-[Releases](https://github.com/rvelabs/soundcloud-rpc/releases/latest), установите и войдите в свой аккаунт SoundCloud.
-Существующие данные клиента сохраняются при обновлении. Установщик пока не подписан доверенным сертификатом издателя.
+Upgrading preserves your profile. The installer is currently unsigned, so Windows may show a publisher warning. SHA-256
+checksums are included with releases.
 
-## Возможности
+## What to expect
 
-- «Моя волна» на главной странице: собственный рекомендатель на основе похожих записей SoundCloud, истории, реакций,
-  настроения, темпа, звучания, занятия и языка.
-- Воспроизведение через штатный плеер SoundCloud: оригинальные громкость, перемотка, лайки и очередь.
-- Подготовка следующих рекомендаций во время воспроизведения; скрытие служебных переходов поиска.
-- Импорт публичных плейлистов Яндекс Музыки, Spotify и YouTube Music, проверка доступности, до 10 одновременных поисков
-  и создание плейлиста из найденной части.
-- Дополнительное подключение через собственный Cloudflare Worker с мастером установки.
-- Discord Rich Presence, Last.fm, webhook, темы и локальные плагины исходного клиента.
+Recommendations use SoundCloud related tracks and local ranking. This is an independent algorithm; it does not reproduce
+Yandex Music's proprietary model. Cold starts depend on SoundCloud. Tempo, mood and language matching depend on
+available metadata.
 
-Рекомендатель собственный: закрытый алгоритм Яндекс Музыки не копируется. Там, где каталог не сообщает BPM или
-характеристики, подбор опирается на метаданные и теги. Фильтры не гарантируют точную аудиоклассификацию.
+Import finds existing SoundCloud uploads; it does not copy audio. Source services may return partial playlists, and
+versions or regional availability can differ. SoundCloud playlists are limited to 500 tracks.
 
-<a id="wave"></a>
+## Optional fallback connection
 
-## Моя волна
+Press **F1** → **Резервное подключение SoundCloud**. The wizard deploys a personal Cloudflare Worker and saves its HTTPS
+address. It needs a Cloudflare API token with **Account Settings: Read** and **Workers Scripts: Edit**, scoped to your
+account. Revoke the setup token after deployment; never publish it or the relay key.
 
-«Моя волна» появляется на главной странице SoundCloud над рекомендациями. Войдите в свой аккаунт и нажмите «Слушать».
-Client ID и Client Secret не требуются: модуль работает с интерфейсом SoundCloud в авторизованной сессии пользователя.
+For manual deployment, open the Worker folder from settings: run `npx wrangler@4 login`, `npx wrangler@4 deploy`, then
+`npx wrangler@4 secret put RELAY_TOKEN`. Enter the Worker URL and the same randomly generated secret in the client.
+Cloudflare TCP restrictions apply; this is not a system VPN or a guarantee of access in every region.
 
-### Воспроизведение и переходы
+## Development
 
-Модуль ищет выбранный трек штатным поиском SoundCloud и запускает его кнопкой Play на карточке. После этого он
-возвращает страницу, сохраняя штатный плеер. Пауза, лайк, перемотка и громкость остаются функциями SoundCloud. Музыка
-продолжает играть при переходах между Home, Feed и Library.
-
-Во время воспроизведения рекомендатель готовит до трёх следующих треков. Сначала модуль пытается добавить один из них
-через штатную кнопку **Add to Next Up** и проверяет результат. Если очередь уже занята, модуль сохраняет её и держит
-свою рекомендацию локально. Если поиск SoundCloud не нашёл отдельный трек, модуль пробует другие варианты; это не
-считается отказом Next Up на час. Подтверждённый отказ самой очереди запоминается на час для текущего аккаунта. В
-запасном режиме Next перехватывается в preload до обработчиков страницы. Кнопка Next на панели задач Windows и клавиша
-MediaNextTrack направляются туда же. Когда трек подтверждён в свободной штатной очереди, Next остаётся штатным.
-
-На время «Волны» модуль через штатный переключатель SoundCloud выключает **Autoplay station**, чтобы SoundCloud не
-запускал свою рекомендацию между треками. Исходное значение восстанавливается после остановки «Волны» или при следующем
-запуске после аварийного закрытия. При завершении трека модуль перехватывает событие на аудиоэлементе, который
-SoundCloud держит вне DOM, и запускает готового кандидата. Если буфер опустел или поиск не нашёл карточку, переход всё
-ещё может занять несколько секунд. Журнал `wave-diagnostics.json` содержит только публичные пути треков и
-последовательность событий, без авторизации и аудио.
-
-### Подбор
-
-Код рекомендателя находится в `src/wave/recommendation`. Он строит профиль из лайков, истории и реакций на «Волну», ищет
-новые треки по жанрам и стилям, учитывает настроение, звучание, темп, ситуацию и желаемую степень знакомства. Выбор
-ограничен ранее неслушанными кандидатами; последние исполнители отодвигаются, когда есть альтернативы. По длительности
-видимых карточек отсеиваются записи короче 45 секунд и длиннее 20 минут. Настройки и реакции хранятся локально отдельно
-для каждого аккаунта.
-
-Если карточка поиска не содержит длительность, модуль заранее читает публичные метаданные страницы трека. Так из буфера
-исключаются DJ-сеты длиннее 20 минут и записи короче 45 секунд. Жанр из этих метаданных уточняет профиль кандидата.
-Некоторые треки не содержат BPM или подробных тегов. В этих случаях темп и характер звучания оцениваются по доступным
-метаданным и названиям, поэтому совпадение нельзя гарантировать. Модуль не скачивает и не сохраняет аудиофайлы. Алгоритм
-Яндекс Музыки закрыт; здесь реализован собственный рекомендатель с похожими настройками.
-
-### Проверка
-
-`npx tsc --noEmit` и `npm test` проверяют типы и логику модулей (177 тестов в 0.24.0). Подробности прогона и его
-ограничения приведены в [проверке модулей](#module-review). В предыдущих версиях в авторизованной сессии проверены
-запуск «Волны», ручной Next, переход при перемотке к концу, фильтрация часовых сетов и восстановление Autoplay station
-после обычной остановки и принудительного завершения процесса. В контрольном прогоне при выключенном Autoplay station
-журнал показал `candidate-selected` → `expected-track` → `candidate-playing` без `unexpected-track`. Надпись **Added**
-на кнопке Next Up в этой версии SoundCloud не гарантирует, что текущий плеер действительно сыграет добавленный трек
-следующим, поэтому модуль сохраняет запасной маршрут.
-
-Установщик не имеет доверенной цифровой подписи; режим `testsigning` не нужен. Автообновление отключено.
-
-В настройках → **Скопировать диагностику** доступен отчёт об источниках и локальной очереди. Перед публикацией проверьте
-ссылки на треки: отчёт не отправляется автоматически.
-
-Перемотка к концу не считается полным прослушиванием. Положительная реакция формируется по реально прошедшему времени
-воспроизведения; паузы и скачки позиции исключаются. Холодный запуск всё ещё зависит от ответов SoundCloud. Точный темп,
-язык и настроение новых записей нельзя подтвердить без соответствующих метаданных.
-
-<a id="wave-settings"></a>
-
-## Настройки Моей волны
-
-### Что изучено у Яндекса
-
-Официальная [инструкция для настольного интерфейса](https://inclusion.yandex.ru/tutorials/music-web) описывает сочетание
-характера потока, настроения и языка.
-[Справка о текущей Моей волне](https://yandex.ru/support/music/ru/my-wave-and-recommendation) дополнительно объясняет
-музыкальные сценарии под занятие и момент, а [правила рекомендаций](https://music.yandex.ru/legal/recommendations/ru/) —
-роль истории и явно выбранных предпочтений. Скриншот пользователя принят как ориентир панели. Закрытые модели Яндекса не
-копировались; коэффициенты, источники и реализация этого форка собственные.
-
-### Как работают настройки форка
-
-| Группа         | Варианты                                                                | Влияние                                                                                                                                                                                                                                                                                                                                                                                             |
-| -------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Под занятие    | Просыпаюсь, В дороге, Работаю, Тренируюсь, Засыпаю; также Любое и Отдых | Разные поисковые намерения и теги. При невыбранном настроении пробуждение и тренировка предпочитают энергичную музыку, работа и сон — спокойную. Явно выбранное настроение сохраняет приоритет.                                                                                                                                                                                                     |
-| По характеру   | Любимое                                                                 | Лайки и записи с положительной историей прослушивания. Новые незнакомые записи сюда не подмешиваются. Короткая защита от повторов позволяет небольшому любимому каталогу продолжать играть.                                                                                                                                                                                                         |
-| По характеру   | Незнакомое                                                              | Неизвестные записи и расширение музыкальных направлений; известные и недавно сыгранные версии исключаются.                                                                                                                                                                                                                                                                                          |
-| По характеру   | Популярное                                                              | Только доступные записи с не менее 1000 прослушиваний по данным SoundCloud, с персональным ранжированием. Это не чарт Яндекса и не тренд в реальном времени.                                                                                                                                                                                                                                        |
-| По характеру   | Баланс                                                                  | Персональные новые рекомендации с обычным балансом близости вкусу и разнообразия.                                                                                                                                                                                                                                                                                                                   |
-| Под настроение | Бодрое, Весёлое, Спокойное, Грустное                                    | Энергия и эмоциональная окраска разделены. Высокая энергия не означает радость, низкая — грусть. Для весёлого и грустного используются явные теги и описание записи; для спокойного и бодрого также доступны ранее полученные звуковые признаки. Для весёлого и грустного финальный буфер требует явной положительной пометки, неизвестная эмоциональная окраска не подставляется вместо выбранной. |
-| По языку       | Русский, Иностранный, Без слов; также Любой                             | Используются явные языковые метаданные или теги. Инструментал определяется по явной пометке. Алфавит названия, имя исполнителя и поисковый запрос не доказывают язык вокала. Неизвестные и противоречивые варианты не попадают в готовый буфер при включённом фильтре языка.                                                                                                                        |
-| Дополнительно  | Звучание, Темп                                                          | Сохранены прежние настройки, без текстового жанрового фильтра.                                                                                                                                                                                                                                                                                                                                      |
-
-### Интерфейс и сохранение
-
-Кнопка «Настроить» открывает боковую тёмную панель. Текущие выбранные параметры кратко показаны на главной карточке.
-Панель поддерживает клавиатуру, Escape, явное закрытие и прокрутку. Сброс очищает фильтры, сохраняя историю и лайки.
-Настройки хранятся отдельно по аккаунтам; прежний режим «Знакомое» переводится в «Любимое». Официальный плеер SoundCloud
-не заменяется.
-
-### Ограничения
-
-Клиент не распознаёт речь и эмоции в звуке нового трека и не скачивает каталог для анализа. Теги могут быть неполными
-или ошибочными; без языковых пометок строгий языковой фильтр заметно сокращает выдачу. Популярность проверяется по
-доступному счётчику SoundCloud. Предварительно неизвестные записи разрешены только для уточнения метаданных, затем
-проходят строгую проверку перед постановкой в локальный буфер.
-
-Поиск и запуск через интерфейс SoundCloud всё ещё могут ждать ответа сервиса. Уже переданный штатной очереди трек
-сохраняется при изменении настроек. Автоматическое определение занятия, геолокации и внешнего контекста не добавлялось —
-ситуацию выбирает слушатель.
-
-При отсутствии подтверждённых совпадений показывается причина и кнопка «Повторить подбор». Фильтры не ослабляются
-скрытно.
-
-<a id="playlist-import"></a>
-
-## Импорт плейлистов
-
-Число одновременных проверок выбирается автоматически по процессору, свободной памяти и размеру списка — до 10 треков.
-Ручной настройки нет. Анимированный индикатор показывает этап и количество проверенных треков; результаты поступают
-постепенно и сохраняют исходный порядок. Можно отменить поиск. Скрытые поисковые страницы работают без изображений и
-звука, закрываются при завершении или отмене. Добавление выполняется последовательно, сохраняя порядок.
-
-На главной SoundCloud нажмите **Импорт плейлиста**, вставьте ссылку на публичный плейлист Яндекс Музыки, Spotify или
-YouTube Music и нажмите **Найти треки**. Клиент покажет название, треки и найденные варианты SoundCloud. Проверьте
-совпадения, при необходимости поправьте название и выберите треки. Кнопка **Создать в SoundCloud** создаст приватный
-плейлист и добавит выбранные треки через штатный интерфейс авторизованного SoundCloud. Если плейлист с этим названием
-уже существует, импорт дополнит его; существующая настройка публичности сохранится. Поиск и добавление выполняются в
-скрытых страницах и не переключают открытую вкладку или плеер.
-
-Клиент не переносит аудиофайлы. Он ищет версии с похожими названием и исполнителем, поэтому обложка, качество, автор
-загрузки и версия записи могут отличаться. Совпадения с оценкой ниже 85% не отмечаются автоматически; результаты ниже
-78% вообще не предлагаются. Ненайденные треки остаются в отчёте и не попадают в плейлист.
-
-Источники могут ограничить выдачу. Публичный Spotify embed показывает максимум 100 треков. Если YouTube Music показывает
-экран согласия, клиент пробует публичную страницу YouTube; она обычно отдаёт только первую часть плейлиста. Яндекс
-Музыка может быть недоступна в текущем регионе. Интерфейс предупреждает о частичном результате. Если есть доступные
-совпадения, можно создать плейлист из найденной части; без совпадений создание невозможно. Приватные плейлисты не
-читаются по обычной ссылке без доступа к аккаунту источника. Вход в источники и копирование их cookies клиент не
-выполняет.
-
-Импорт ограничен 500 треками, что соответствует лимиту плейлиста SoundCloud. Если добавление оборвалось, запустите поиск
-снова с тем же названием: существующий плейлист будет дополнен, уже добавленные треки пропущены.
-
-Перед предложением совпадения и повторно перед добавлением клиент проверяет сведения о полном потоке на странице
-SoundCloud. Заблокированные треки, ознакомительные фрагменты, только защищённые потоки и варианты с неподтверждённой
-доступностью исключаются; поиск пробует другие подходящие версии. Это проверка метаданных, а не пробное воспроизведение:
-история прослушивания не изменяется. Доступность может измениться со временем и отличаться для другого аккаунта, региона
-или подписки. Защищённые версии отсекаются консервативно, даже если они доступны в браузере.
-
-Создание поддерживает как вкладку создания, так и форму, сразу открытую для нового аккаунта. Успешное сохранение и
-наличие первого трека проверяются повторным открытием штатного окна SoundCloud.
-
-Добавление ожидает завершения штатного запроса SoundCloud и повторно открывает список плейлистов для проверки
-сохранённого трека. Оптимистичное изменение кнопки больше не считается подтверждением.
-
-<a id="cloudflare"></a>
-
-## Резервное подключение через Cloudflare
-
-Панель клиента открывается клавишей **F1** или через значок приложения в трее → **Settings**. Раздел — **«Резервное
-подключение SoundCloud»**.
-
-Это комплект для вашего Worker, а не готовый публичный сервер. Аккаунт Cloudflare и развёртывание выполняет владелец.
-Регистрация SoundCloud API приложения не требуется.
-
-### Автоматическая настройка в клиенте
-
-1. Откройте настройки SoundCloud → «Резервное подключение SoundCloud» → «Создать и настроить Worker автоматически».
-2. Нажмите «Открыть Cloudflare». Войдите в своём браузере и создайте API-токен с правами Account → Account Settings →
-   Read и Account → Workers Scripts → Edit. В Account Resources ограничьте его своим аккаунтом. Пароль Cloudflare
-   приложение не запрашивает.
-3. Вставьте API-токен в мастер и нажмите «Подключить аккаунт». Поле токена очищается сразу; токен остаётся только в
-   памяти на время настройки, не записывается в настройки или журналы.
-4. Проверьте выбранный аккаунт и нажмите «Создать Worker и подставить адрес». Клиент создаст отдельный Worker со
-   случайным именем, сгенерирует ключ туннеля, загрузит оба модуля, включит workers.dev и сохранит HTTPS-адрес вместе с
-   зашифрованным ключом. Существующий адрес аккаунта workers.dev не заменяется. Если адреса ещё нет, мастер
-   зарегистрирует новый.
-5. Нажмите «Проверить Worker». Если первое подключение ещё не проходит, дайте Cloudflare время обновить DNS и повторите
-   проверку. Если мастер сообщает о необходимости перезапуска, перезапустите клиент для применения нового подключения.
-
-API-токен можно отозвать в Cloudflare после завершения настройки: клиент использует отдельный ключ RELAY_TOKEN,
-созданный мастером. Кнопка «Забыть токен» очищает сеанс настройки; автоматический срок — 10 минут. Если развёртывание
-завершилось ошибкой, повтор в том же сеансе использует то же имя и ключ Worker. Если закрыть клиент после частичного
-сбоя, незавершённый Worker может остаться в вашем Cloudflare: найдите его по имени из сообщения мастера. Мастер не
-удаляет внешние ресурсы автоматически.
-
-Ни API-токен, ни ключ туннеля не отправляйте в чат. Живой аккаунт пока не использовался для проверки этого мастера;
-API-контракт и интерфейс проверены на подставленных ответах. Cloudflare может потребовать первоначально активировать
-Workers или принять условия в своём браузере.
-
-### Ручное развёртывание через терминал (необязательно)
-
-1. Создайте аккаунт Cloudflare, установите Node.js и откройте терминал в папке `cloudflare/soundcloud-relay` исходников
-   или в папке файлов Worker из настроек установленного клиента.
-2. Выполните: `npx wrangler@4 login`. Войдите в свой Cloudflare в браузере.
-3. Выполните: `npx wrangler@4 deploy`. Сохраните выданный HTTPS-адрес Worker вида
-   https://soundcloud-wave-relay.YOUR-SUBDOMAIN.workers.dev.
-4. Сгенерируйте ключ локально: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Сохраните его
-   у себя, не публикуйте и не отправляйте в чат.
-5. Выполните `npx wrangler@4 secret put RELAY_TOKEN`, вставьте этот ключ в интерактивный запрос. Ключ не помещается в
-   URL, исходники или wrangler.toml.
-6. В SoundCloud → настройки → «Резервное подключение SoundCloud» вставьте HTTPS-адрес и тот же ключ. Выберите
-   «Автоматически», нажмите «Сохранить подключение», затем «Проверить Worker». Оставленное пустым поле ключа сохраняет
-   прежний ключ.
-7. Перезапустите клиент после первого сохранения. Без доступного SoundCloud обычный маршрут проверяется после ошибки
-   либо примерно через 18 секунд; переключение происходит только после успешной проверки Worker. Полный процесс Electron
-   для этого не перезапускается — повторно загружается страница SoundCloud с сохранением аккаунта.
-
-«Проверить Worker» использует сохранённые настройки. «Всегда через Worker» выбирает резервный маршрут сразу. Включённый
-обычный прокси из соседнего раздела имеет приоритет.
-
-### Что передаётся
-
-Electron → HTTP CONNECT на 127.0.0.1 со случайным портом → WSS вашего Worker → TCP:443 SoundCloud. Внутри остаётся
-настоящий HTTPS браузера к SoundCloud. Подмены сертификатов, установки собственного корневого сертификата и отключения
-проверки TLS нет. Worker принимает только SoundCloud и sndcdn.com и только порт 443. В обе стороны используется
-подтверждение каждого блока до 64 КиБ: медленный получатель не вызывает неограниченное накопление данных.
-
-Ключ передаётся в заголовке Authorization только вашему Worker. На Windows он хранится через Electron safeStorage с
-системным шифрованием. При ошибке Worker исходное подключение не заменяется в автоматическом режиме; повторные попытки
-ограничены интервалом. Активное воспроизведение автоматическое переключение не прерывает. Полностью недоступная сеть не
-вызывает бесконечных перезапусков.
-
-### Пределы
-
-- В этой поставке проверены локальный сквозной туннель, передача 2 МиБ, Chromium PAC, настройки и логика переключения.
-  Проверки на развёрнутом Cloudflare Worker не было: аккаунт/Worker пока не предоставлены.
-- Cloudflare запрещает исходящие TCP-подключения к Cloudflare IP и частным адресам. Если нужный узел SoundCloud окажется
-  за таким адресом, этот туннель не сможет его обслужить. Это ограничение connect(), которое клиент не обходит.
-- Cloudflare не предоставляет здесь выбор страны выхода. Доступ к самому сайту и доступность лицензированного трека в
-  конкретной стране — разные проверки; гарантировать обход всех региональных ограничений нельзя.
-- Доступность Cloudflare в вашей сети и лимиты вашего тарифного плана влияют на работу. Проверьте лимиты перед раздачей
-  доступа другим пользователям.
-- Для публичного клиента не вшивайте общий RELAY_TOKEN в установщик. Держите личный Worker с личным ключом либо создайте
-  отдельную серверную выдачу отзываемых пользовательских ключей и лимитов. Такой сервер регистрации пользователей в этот
-  комплект не входит.
-- Это резервное подключение доменов SoundCloud, а не системный VPN. Сторонняя авторизация и чужие стриминговые платформы
-  идут обычным маршрутом.
-
-### Источники
-
-- [Cloudflare: загрузка Worker через API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/).
-- [Cloudflare: включение HTTPS workers.dev](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/methods/create/).
-- [Flowseal tg-ws-proxy: архитектура](https://github.com/Flowseal/tg-ws-proxy): протокол MTProto через WebSocket; его
-  Telegram DC не обслуживают SoundCloud.
-- [Cloudflare TCP sockets и ограничения](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/).
-- [Cloudflare Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
-- [Electron session.setProxy и closeAllConnections](https://www.electronjs.org/docs/latest/api/session).
-
-<a id="themes"></a>
-
-## Пользовательские темы
-
-soundcloud-rpc now supports custom themes, You can customize the appearance of the SoundCloud UI by creating and loading
-CSS theme files.
-
-### How to Use Custom Themes
-
-1. **Open the Settings Panel**: Press `F1` or click the settings button in the application
-2. **Navigate to Custom Themes**: Find the "Custom Themes" section in the settings
-3. **Open Themes Folder**: Click the "Open Themes Folder" button to open your themes directory
-4. **Add Theme Files**: Place your `.css` theme files in the opened folder
-5. **Refresh Themes**: Click "Refresh Themes" in the settings to load new theme files
-6. **Select Theme**: Choose your desired theme from the dropdown menu
-7. **Apply Changes**: The theme will be applied immediately
-
-### Creating Custom Themes
-
-Custom themes are standard CSS files that can modify the appearance of SoundCloud. Here are some tips for creating your
-own themes:
-
-#### Basic Structure
-
-```css
-/* Your Custom Theme Name */
-/* Description of what your theme does */
-
-/* Target SoundCloud elements */
-body {
-    background-color: #your-color !important;
-}
-
-.header {
-    background: linear-gradient(135deg, #color1 0%, #color2 100%) !important;
-}
-```
-
-#### Important Notes
-
-- Use `!important` declarations to ensure your styles override SoundCloud's default styles
-- SoundCloud's class names may change, so themes might need updates occasionally
-- Test your themes thoroughly to ensure they work across different pages
-
-#### Common Elements to Customize
-
-- `body` - Main background
-- `.header` - Top navigation bar
-- `.sidebar` - Left sidebar
-- `.soundList__item`, `.trackItem` - Track cards
-- `.playButton`, `.sc-button-play` - Play buttons
-- `.progressBar`, `.playbackTimeline` - Progress bars
-- `::-webkit-scrollbar` - Scrollbars
-
-### Theme Locations
-
-Themes are stored in your user data directory:
-
-- **Windows**: `%APPDATA%\soundcloud-rpc\themes\`
-- **macOS**: `~/Library/Application Support/soundcloud-rpc/themes/`
-- **Linux**: `~/.config/soundcloud-rpc/themes/`
-
-### Troubleshooting
-
-#### Theme Not Loading
-
-1. Ensure the file has a `.css` extension
-2. Check that the CSS syntax is valid
-3. Try refreshing themes in the settings
-4. Restart the application if necessary
-
-#### Theme Not Working
-
-1. Verify you're using `!important` declarations
-2. Check browser developer tools for CSS conflicts
-3. SoundCloud may have updated their class names
-
-#### Reverting to Default
-
-Select "No Theme" from the dropdown to remove all custom styling.
-
-### Advanced Features
-
-#### CSS Variables
-
-Some themes may use CSS custom properties:
-
-```css
-:root {
-    --primary-color: #ff6b35;
-    --secondary-color: #ff4500;
-}
-```
-
-#### Animations
-
-Add custom animations:
-
-```css
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-}
-
-.my-element {
-    animation: fadeIn 0.3s ease-in;
-}
-```
-
-### Contributing Themes
-
-Feel free to share themes you've created — if you'd like your theme included in the project, open a pull request adding
-your `.css` file under the `themes/` folder (or send it in an issue/attachment). I'll review submissions and merge
-themes that are well-made and follow the guidelines above.
-
-Guidelines for contribution:
-
-- Include a short header comment at the top of your `.css` with the theme name and a one-line description.
-- Keep changes scoped to styling only (no scripts or binary files).
-- Prefer reasonably named CSS selectors and document any assumptions in the comment block.
-
-If your theme is accepted I'll add it to the repository so other users can enjoy it. Thanks for contributing!
-
-<a id="playback-speed"></a>
-
-## Плагин скорости воспроизведения
-
-`plugins/playback-speed.js` ports the playback-rate controls from
-[SoundCloud Desktop](https://github.com/zxcloli666/SoundCloud-Desktop) to soundcloud-rpc's content-script plugin API.
-
-### Features
-
-- Playback rate from `0.50×` to `2.00×` in `0.05` steps.
-- Click the displayed value to reset to `1×`.
-- Click the player-bar rate button to open a slider, preset buttons, and slower/faster step controls.
-- Change the rate with the mouse wheel over the button or slider.
-- Optional pitch preservation. By default, pitch follows playback speed to match SoundCloud Desktop's coupled
-  tempo/pitch behavior.
-- The selected rate and pitch mode persist across tracks and app restarts.
-- The plugin does not poll or patch Discord Rich Presence; RPC keeps the application's native, stable timer behavior.
-- Captures SoundCloud's detached `Audio` player even though it is not present in the page DOM, and reapplies the rate
-  when the player is replaced.
-- Russian and English labels, selected from the SoundCloud page language.
-
-### Installation
-
-1. Open soundcloud-rpc and press `F1`.
-2. In **Plugins**, click **Open plugins folder**.
-3. Copy `playback-speed.js` into that folder.
-4. Click **Refresh plugins**, then enable **Playback Speed**.
-
-The `1×` button appears in the SoundCloud playback controls. If the current SoundCloud layout has no compatible controls
-container, the plugin shows a floating button above the player instead.
-
-Disabling the plugin restores active audio elements to `1×`. The saved setting is retained and will be restored if the
-plugin is enabled again.
-
-<a id="development"></a>
-
-## Разработка и сборка
-
-Нужен Node.js 22 и Git. Используется npm и `package-lock.json`.
+Node.js 22 and npm:
 
 ```sh
 npm ci
 npm test
 npm run lint
-npx tsc --noEmit
 npm run dev
-```
-
-Сборка Windows:
-
-```sh
 npm run build-win
 ```
 
-Результат находится в `build/`. Иконка и имя EXE задаются в `package.json`; при ручной упаковке через `--prepackaged`
-ресурсы самого EXE должны быть подготовлены заранее.
+Source: [recommendations](src/wave/recommendation), [playlist import](src/import), [network transport](src/network).
+Reproducible Electron checks are in [scripts](scripts). Detailed changes and verification notes are in
+[Releases](https://github.com/rvelabs/soundcloud-rpc/releases).
 
-Дополнительные проверки интерфейса запускаются установленным Windows Electron runtime с отдельным тестовым профилем:
-
-```sh
-electron scripts/check-module-lifecycle.cjs
-electron scripts/check-wave-placement.cjs
-electron scripts/check-network-settings.cjs
-electron scripts/check-native-cover.cjs
-```
-
-Часть проверки размещения читает публичные страницы SoundCloud. Диагностические сценарии не требуют входа. Настоящие
-сервисы, длительное прослушивание и все варианты интерфейса сайта нельзя заменить модульными тестами.
-
-<a id="recommendation"></a>
-
-## Устройство рекомендателя
-
-Это независимый модуль подбора. Он не использует закрытый код Яндекс Музыки и не обещает идентичную выдачу: для неё
-потребовались бы модель, каталог, разметка и история взаимодействий других пользователей Яндекса. Зато модуль
-воспроизводит доступные для проверки принципы персонального потока: реакции слушателя, контекст, настроение, темп, новые
-треки и разнообразие.
-
-### Состав
-
-- `src/wave/recommendation/types.ts` — контракт кандидата, акустических признаков, реакций и настроек.
-- `profile.ts` — профиль предпочтений по лайкам, дизлайкам, пропускам и дослушиваниям; старые реакции постепенно теряют
-  вес.
-- `discovery.ts` — выбор конкретных записей для получения похожих треков, ротация источников между исполнителями.
-- `ranker.ts` — фильтрация уже услышанного и лайкнутого, ранжирование по вкусу и настройкам, разведение исполнителей,
-  проверка надёжного BPM и объяснение выбора.
-- `session.ts` — сессия с поставщиком кандидатов: новая пачка похожих записей при исчерпании каталога, мгновенный
-  пересчёт после смены настроек или реакции.
-- `recommendation.test.ts` — сценарии поведения.
-
-### Входные данные
-
-`Track.id` должен быть стабильной ссылкой или ID трека SoundCloud. Жанр и теги берутся из метаданных трека;
-`features.energy`, `bass` и `brightness` — нормализованные значения от 0 до 1 из анализа звука самого плеера.
-`features.bpm` учитывается как подтверждённый только при `bpmConfidence >= 0.65`. Текущая оценка BPM в `home.js` по
-нескольким пикам баса не должна передаваться с высокой уверенностью без дополнительной проверки. Если у доступных треков
-нет надёжного BPM выбранного диапазона, модуль допускает кандидата с неизвестным BPM и отмечает
-`measuredTempoMatch: false`.
-
-`Feedback` задаёт явную реакцию. `play` с прослушанной долей меньше 35% не даёт положительного веса; ранний `skip` даёт
-отрицательный. `like` сильнее дослушивания. При интеграции историю событий нужно хранить отдельно для каждого аккаунта и
-подавать в сессию после входа. Отметка `like` внутри рекомендателя означает только изменение предпочтений; вызов
-реального лайка SoundCloud остаётся задачей клиента.
-
-Пример контракта интеграции: `loadRelatedSoundCloudTracks` и `playInNativeSoundCloudPlayer` здесь обозначают функции
-вызывающего клиента. Реальный адаптер находится в `src/wave/recommendation/soundcloudAdapter.ts`.
-
-```ts
-import { RecommendationSession } from './recommendation';
-
-const wave = new RecommendationSession({
-    search: async (queries) => searchSoundCloudTracks(queries),
-});
-wave.setControls({ mood: 'calm', tempo: 'slow', discovery: 'new' });
-wave.setActivity('focus');
-const suggestion = await wave.next();
-if (suggestion) {
-    playInNativeSoundCloudPlayer(suggestion.track.id);
-    wave.feedback({ track: suggestion.track, kind: 'play', listenedFraction: 0.8 });
-}
-```
-
-В форке подключён `soundcloudAdapter.ts`: он преобразует кандидатов SoundCloud, переносит историю из старого движка и
-сохраняет события по аккаунтам. `main.ts` передаёт ему связанные треки, а выбранная рекомендация запускается через
-штатный плеер SoundCloud. При подтверждённом лайке, пропуске и завершении трека адаптер обновляет профиль. Сам
-рекомендатель не скачивает аудио и не подменяет авторизацию.
-
-Звуковые признаки для уже проигранного трека поступают из существующего анализа звука плеера. Для нового трека доступны
-метаданные SoundCloud; без надёжного BPM точное соответствие темпу заранее не гарантируется. Авторизованное
-воспроизведение и лайки необходимо дополнительно проверить в установленном приложении.
-
-Проверка: `npx tsc --noEmit`, `npx eslint src/wave/recommendation`, `npm test -- --run`.
-
-Изменения 0.19.0 описаны в разделе [«Подбор и диагностика»](#history-0190). Режим familiar допускает знакомые записи с
-защитой от недавних повторов; остальные режимы исключают известные записи. rankBuffered повторно применяет текущие
-реакции и настройки к подготовленному локальному буферу.
-
-<a id="module-review"></a>
-
-## Проверка модулей 0.24.0
+For a bug report, use **Customize → Copy diagnostics**. Check the public track links before sharing; the report excludes
+sign-in cookies and tokens.
 
 <details>
-<summary>Подробный отчёт и ограничения проверки</summary>
+<summary><strong>По-русски</strong></summary>
 
-Дата: 23 октября 2026. Целевая система проверки: Windows, Electron из используемой сборки клиента.
+### Для чего этот клиент?
 
-### Что проверено
+Слушать SoundCloud с персональной «Моей волной», переносить плейлисты из других сервисов и пользоваться привычным
+штатным плеером.
 
-Все TypeScript-файлы `src` проходят компиляцию и ESLint. Для JavaScript приложения, диагностических сценариев и Worker
-выполнена проверка синтаксиса. Разбор модулей и регрессионные проверки охватывают следующие группы:
+- **Моя волна** подбирает похожие записи к вашим любимым трекам, учитывает реакции и готовит продолжение заранее.
+  Настроение, занятие, язык музыки и язык интерфейса выбираются в «Настроить».
+- **Импорт** находится в отдельной карточке. Вставьте публичную ссылку Spotify, Яндекс Музыки или YouTube Music,
+  проверьте совпадения и сохраните найденную часть.
+- Фон плавно движется, но останавливает анимацию при потере фокуса, сворачивании или прокрутке за пределы карточки.
+  Музыка продолжает играть.
 
-| Группа                                | Файлы и проверка                                                                                                                                                      | Результат                                                                                                                                                                                                                                                                                           |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Запуск, аккаунты, IPC                 | `main.ts`, `preload.ts`, `types.ts`, `validation.ts`                                                                                                                  | Исправлен порядок первой загрузки; обработчики UI регистрируются до навигации. Опрос имени не запускается параллельно сам с собой и прекращается при закрытии окна.                                                                                                                                 |
-| Наблюдение за штатным плеером         | `audioMonitorService.ts`, `thumbarService.ts`                                                                                                                         | Наблюдатели следуют за заменой DOM, в том числе лайком и Play/Pause. Дребезг событий объединяется. Изображения кнопок Windows кэшируются; состояние панели задач не зависит от завершения запросов интеграций.                                                                                      |
-| Штатные действия и переходы           | `nativeQueue.ts`, `nativePageCover.ts`, `nativePresentation.ts`, `nativeAutoplay.ts`, `mediaEndCapture.ts`, `nativeLike.ts`                                           | Ожидающее действие отменённой Волны не нажимает Play. Вставка текста поиска ожидается явно. Проверка воспроизведения не зависит от английского title. Обложка перехода учитывает масштаб интерфейса.                                                                                                |
-| Получение кандидатов                  | `nativeWave.ts`, `nativeMetadata.ts`, `trackMetadata.ts`, `trackHydration.ts`                                                                                         | Проверены извлечение карточек, точное соответствие метаданных треку и отсеивание недоступных версий. HTTP 403/404/410/451 не превращаются в непроверенного кандидата. Старая сетевая сессия не заполняет новый кэш.                                                                                 |
-| Рекомендатель                         | `recommendation/types.ts`, `index.ts`, `profile.ts`, `preferences.ts`, `discovery.ts`, `ranker.ts`, `session.ts`, `soundcloudAdapter.ts`                              | Исключены повторное добавление отклонённых результатов и возврат результатов остановленного поиска. Сохранены BPM/жанр при частичных обновлениях. Индексы известных записей кэшируются с профилем. Учитываются также дубликаты зарезервированных записей.                                           |
-| Локальная история и буфер             | `waveEngine.ts`, `preparedQueue.ts`                                                                                                                                   | Пройдены проверки учёта пропусков, истории и отбрасывания устаревшего буфера. Активный рекомендатель — `recommendation`; старый ранжировщик в `waveEngine` не выбирает следующий трек.                                                                                                              |
-| Импорт                                | `import/source.ts`, `loadSource.ts`, `match.ts`, `availability.ts`, `parallel.ts`, `partialPlaylist.ts`, `nativePlaylist.ts`                                          | Проверены парсеры трёх платформ, порядок параллельных результатов, отмена, доступность, частичное сохранение и подтверждение записи. Загрузка HTML ограничена по байтам во время чтения потока.                                                                                                     |
-| Подключение и Worker                  | `proxyService.ts`, `network/relayTargets.ts`, `cloudflareGateway.ts`, `recoveryPolicy.ts`, `connectionRecovery.ts`, `workerSetup.ts`, `cloudflare/soundcloud-relay/*` | Прокси с авторизацией получает обработчик только для выбранной сессии/адреса. Убраны повторные уведомления в cooldown и установка неработающего маршрута после провала проверки. Старый ответ проверки не включает отключённый Worker. Входящий поток шлюза ограничен подтверждениями кадров.       |
-| Last.fm                               | `lastFmService.ts`                                                                                                                                                    | Подписка на callback устанавливается до перехода. Запросы ограничены по времени. Пауза не засчитывается в прослушивание, неизвестная длительность и короткие записи не дают немедленный скроббл. Таймер не придумывает повторы. Старый HTTP-ответ не меняет состояние следующей записи/авторизации. |
-| Webhook                               | `webhookService.ts`                                                                                                                                                   | Исправлена гонка между треками, обработка ранних событий, отключения, неизвестной длительности и порога 0%. Запрос ограничен по времени.                                                                                                                                                            |
-| Discord                               | `presenceService.ts`                                                                                                                                                  | Исправлено ожидание подключения. Один запрос входа на параллельные обновления, ограничение повторных попыток, публикация последнего трека после подключения. Ошибки асинхронных вызовов обрабатываются.                                                                                             |
-| Плагины и темы                        | `pluginService.ts`, `themeService.ts`, `playback-speed.js`                                                                                                            | Таймеры плагина освобождаются при отключении, неуспешный onEnable откатывает состояние. Начальное выполнение скрипта имеет лимит. События файлов объединяются с задержкой 150 мс. Наблюдатели файлов освобождаются при выходе.                                                                      |
-| Настройки, уведомления, подтверждения | `settings/*`, `notifications/*`                                                                                                                                       | Предпросмотр не перерисовывается и не ведёт таймер, когда отключён/скрыт. Уведомления экранируют текст, ограничивают очередь, проверяют источник IPC и освобождают BrowserView. Замена/закрытие подтверждения завершает ожидающий запрос.                                                           |
-| Заголовок и вспомогательные сервисы   | `header/*`, `shortcutService.ts`, `translationService.ts`, `macos/menu.ts`                                                                                            | Опрос максимизации 10 раз в секунду заменён событиями окна. Проверены маршруты горячих клавиш и переводы.                                                                                                                                                                                           |
-| Утилиты                               | `utils/trackParser.ts`, `metadataParser.ts`, `colorExtractor.ts`, `readText.ts`                                                                                       | Проверены типы и использование. Новый ограничитель HTML корректно декодирует UTF-8 через границы чанков и прекращает слишком большую загрузку.                                                                                                                                                      |
-| Старый отдельный экран                | `wave/home*`, `wave/metadata.*`, `inline.js`, `inline.css`                                                                                                            | Проверены синтаксис, существующие тесты Widget и актуальная вставка на главную. Отдельный Widget-экран сейчас не создаётся; управление остаётся штатным SoundCloud.                                                                                                                                 |
-| Упаковка                              | `package.json`, lock-файл, сценарии сборки/подписи                                                                                                                    | Версия 0.24.0; тестовые файлы исключены из app.asar. Runtime и зависимости не заменялись неподтверждённым обновлением. Доверенная подпись Windows этим обновлением не добавляется.                                                                                                                  |
+Установите сборку из [Releases](https://github.com/rvelabs/soundcloud-rpc/releases/latest), войдите в SoundCloud и
+нажмите «Слушать» на главной. Для нового аккаунта сначала добавьте несколько лайков или включите любимую запись.
+Обновление сохраняет профиль; доверенной подписи Windows пока нет.
 
-### Проверки
+Алгоритм собственный, на основе похожих треков SoundCloud и ваших реакций. Поиска по словам жанра нет. Скорость зависит
+от сервиса, а точность темпа, настроения и языка — от метаданных. Импорт переносит найденные версии SoundCloud, не
+аудиофайлы; часть треков может отсутствовать.
 
-- 177 тестов Vitest в 26 файлах: рекомендатель, история, буфер, импорт, сетевой протокол, жизненный цикл Last.fm/webhook
-  и отложенное подключение Discord.
-- `npx tsc --noEmit`, `npm run lint`, `node --check` для JavaScript.
-- 20 сценариев `scripts/check-wave-placement.cjs`: новые/существующие аккаунты, поздняя загрузка, замена DOM, переходы,
-  сохранение настроек, импорт 414 строк, частичный импорт, публичные метаданные и настоящая неавторизованная страница
-  SoundCloud.
-- 8 групп `scripts/check-module-lifecycle.cjs`: 30 замен штатного плеера; 1000 посторонних DOM-изменений; освобождение
-  наблюдателей; 12 циклов плагина; темы; уведомления; подтверждения; область действия авторизации прокси.
-- 10 групп `scripts/check-network-settings.cjs`: настоящий Chromium PAC, шифрование ключа, действия мастера на тестовых
-  ответах, отключение/устаревшая проверка, очистка.
-- 4 группы `scripts/check-native-cover.cjs`: скрытие служебного перехода, работа нижней панели, возврат после ошибок,
-  масштаб 125%.
-- Локальный тест передаёт 2 МиБ через HTTP CONNECT и WebSocket с подтверждениями.
-
-В диагностике используются отдельные профили, без входа и записи в аккаунт пользователя. Умышленная ошибка тестового
-плагина проверяет откат и не является сбоем установленного плагина.
-
-### Замер вычислений рекомендателя
-
-Один сравнительный прогон на этом ПК, 500 кандидатов, 5000 событий, медиана 7 повторных ранжирований после прогрева:
-
-| Версия |  Медиана |
-| ------ | -------: |
-| 0.23.0 | 26.64 мс |
-| 0.24.0 | 20.59 мс |
-
-В этом прогоне вычисления ускорились примерно на 23%. Проверки темпа, настроения, занятия и жанра сохранили по 12
-рекомендаций от 12 исполнителей. Это не замер скорости сети или первого запуска: они зависят от SoundCloud. Исходный
-JSON сохранён рядом с отчётом в outputs.
-
-### Практические ограничения проверки
-
-- Регистрация Worker и доступ к SoundCloud через настоящий Cloudflare-аккаунт не подтверждались: мастер проверен на
-  тестовых ответах. Ограничения исходящих TCP Cloudflare сохраняются; универсальный обход блокировок не гарантируется.
-- Настройки настроения/звучания используют доступные теги и метаданные; BPM считается подтверждённым только при
-  достаточной уверенности. Полноценная классификация всех аудиофайлов и закрытый алгоритм Яндекс Музыки здесь не
-  воспроизводятся.
-- Запись плейлистов/лайков и длительное прослушивание в авторизованном аккаунте этим прогоном не выполнялись. Проверены
-  адаптеры, подтверждение записи, публичная доступность и интерфейс, что не гарантирует все варианты живого SoundCloud.
-- Публичные страницы Spotify/YouTube могут отдавать неполный список. Частичный импорт остаётся доступен.
-- macOS/Linux и внешний Discord/Last.fm/webhook-сервер этим прогоном не проверялись. Ошибки/задержки этих интеграций
-  моделировались с воспроизводимыми ответами.
-- Штатные действия зависят от DOM SoundCloud. `wave-diagnostics.json` и отдельные результаты проверок помогают разбирать
-  изменения сайта; отсутствие найденных ошибок не означает доказанное отсутствие всех ошибок.
+Для сообщения об ошибке: «Настроить» → «Скопировать диагностику». Перед публикацией проверьте ссылки на треки в отчёте.
+История изменений и результаты проверок доступны в релизах.
 
 </details>
 
-<a id="research"></a>
-
-## Исследование подхода Яндекс Музыки
-
-Изучена установленная сборка YandexMusicMod 5.86.0: интерфейс и клиентский пакет `resources/app.asar`. Учётные данные,
-cookies и ключи не извлекались, приватные запросы не воспроизводились.
-
-В клиентском коде поток организован как радиосессия. Приложение создаёт или продолжает сессию, получает пачку следующих
-треков, вставляет их в очередь **до** завершения текущей пачки и заранее подготавливает источники аудио. Следующее
-нажатие не запускает видимый поиск. Клиент отправляет обратную связь о запуске, дослушивании и пропуске. Выбор самих
-треков выполняется серверной рекомендательной системой Яндекса, поэтому исходники Electron не раскрывают точную формулу
-ранжирования.
-
-В интерфейсе установленной сборки «Моя волна» занимает центральную часть главного экрана с цветным движущимся фоном,
-отдельной кнопкой настройки и общим нижним плеером. На плеере есть лайк, переходы, повтор и очередь. Официальное
-описание Яндекса подтверждает влияние лайков, дизлайков, пропусков, жанров, контекста и степени знакомства на
-рекомендации: https://m.yandex.ru/support/music/ru/my-wave-and-recommendation и
-https://music.yandex.ru/legal/recommendations/ru/ .
-
-В этом форке применены переносимые идеи: локальный буфер кандидатов, проверка метаданных заранее, обратная связь от
-прослушивания и управление переходом через существующий плеер SoundCloud. SoundCloud не предоставляет этому форку
-серверную радиосессию Яндекса; рекомендации здесь строятся локально из доступных данных SoundCloud. Штатный поиск
-SoundCloud нужен для запуска трека, которого ещё нет на странице, и он остаётся основным источником задержки.
-
-<a id="changes"></a>
-
-## Изменения и история версий
-
-### 0.26.0
-
-- Источник рекомендаций заменён: похожие записи к конкретным любимым трекам вместо поиска по словам жанра. Поле жанра
-  удалено; старый фильтр сбрасывается.
-- Кэш на 80 исходных записей, объединение совпадений из нескольких списков похожего, чередование исполнителей и
-  исключение отрицательных источников.
-- Фоновые страницы закрываются вместе с окном клиента и загружаются с ограничением времени; ожидается позднее появление
-  карточек. Редиректы на другой маршрут не принимаются за рекомендации.
-- Перемотки и паузы не превращаются в положительный сигнал дослушивания. Учитывается фактическое продвижение
-  воспроизведения относительно прошедшего времени.
-- Загрузка вкуса объединяет одновременные запросы и начинается в фоне после запуска. Для уже видимой карточки не
-  создаётся тяжёлая обложка перехода.
-- В настройках появилась кнопка «Скопировать диагностику» со счётчиками источников, кэша и очереди. Отчёт содержит
-  публичные ссылки на треки; cookies и ключи не включаются.
-- Добавлены сценарии поведения нового источника и учёта прослушивания; отдельный публичный Electron-прогон читает
-  настоящий список похожих треков без входа в аккаунт.
-
-### 0.25.0
-
-- Название приложения, EXE, ярлыков и записи удаления — SoundCloud.
-- Исправлены встроенная иконка Windows EXE и ресурсы установщика.
-- Сохранены идентификатор обновления и прежний каталог пользовательских данных.
-- Удалены поясняющие комментарии; служебные метаданные плагинов/тем и лицензия сохранены.
-- Настройки ESLint перенесены из комментариев в конфигурацию.
-- Добавлены исключения Git для сборок, копий исходников, кэшей, конфигурации Worker, логов и секретов.
-- README и Windows CI подготовлены для этого форка и npm lock-файла.
-
-### 0.24.0
-
-Проверка модулей, исправления наблюдения за плеером и отмены действий, объединения метаданных, фоновых интеграций и
-резервного подключения. Подробности в [Проверка модулей 0.24.0](#module-review).
-
-Исторические отчёты ниже описывают состояние соответствующих версий. Старые количества тестов, названия режимов и
-ограничения относятся к указанной версии; актуальные инструкции находятся в разделах выше.
-
-<a id="history-0230"></a>
-
-<details>
-<summary>0.23.0 — мастер настройки Worker</summary>
-
-Настройки → Резервное подключение SoundCloud → Создать и настроить Worker автоматически.
-
-Пользователь входит в Cloudflare через браузер, создаёт ограниченный API-токен и вставляет его в мастер. Приложение
-получает доступные аккаунты; пользователь проверяет выбор и нажимает создание. Дальше автоматически: чтение
-существующего workers.dev, регистрация адреса при его отсутствии, генерация отдельного ключа туннеля, загрузка
-worker.mjs и protocol.mjs через официальный API с секретной привязкой RELAY_TOKEN, включение HTTPS, сохранение адреса и
-зашифрованного ключа. Node.js и терминал для этого способа не нужны.
-
-API-токен используется только в памяти на время настройки, в поле интерфейса очищается сразу и не возвращается из main в
-renderer. Срок сеанса — 10 минут; есть явное забывание. После успеха в интерфейсе показан HTTPS-адрес, ключ не
-показывается. Автоматический режим применяется сразу при первоначальной настройке с выключенным резервным подключением и
-без обычного прокси. При изменении уже существующего подключения предлагается перезапуск для применения.
-
-Ручные поля адреса и ключа сохранены. Можно использовать уже развёрнутый Worker. Из настроек доступна папка с файлами и
-обновлённой инструкцией.
-
-Проверки: модульные сценарии существующего и отсутствующего subdomain, отказ прав без попытки создания домена, оба
-модуля и secret_text в multipart, отказ включения HTTPS, повторное использование имени/ключа, очистка токена; Electron
-проверяет полный путь от авторизации через выбор аккаунта до автоматического заполнения адреса и пустого поля ключа.
-Живого развёртывания нет: токен реального Cloudflare не предоставлялся. Ограничения транспорта 0.22.0 сохраняются.
-
-</details>
-
-<a id="history-0220"></a>
-
-<details>
-<summary>0.22.0 — резервное подключение</summary>
-
-Подготовлены локальный CONNECT→WSS туннель, Cloudflare Worker с разрешёнными адресами SoundCloud/CDN, автоматическая
-проверка обычного и резервного маршрута, режим принудительного Worker, настройка и проверка подключения. Worker пока не
-развёрнут: нужны аккаунт Cloudflare, адрес и личный ключ. По умолчанию модуль выключен.
-
-В настройках есть кнопка «Файлы Worker и инструкция». Папка с `worker.mjs`, `protocol.mjs` и `wrangler.toml` включена в
-установщик. Единый README копируется туда при сборке.
-
-Автоматический режим реагирует на ошибку загрузки и HTTP 403/451/5xx, проверяет зависшую загрузку примерно через 18
-секунд и реагирует на сетевые ошибки API/медиа. Проверяет основной маршрут и доступность Worker, прежде чем менять
-маршрут. При ошибках обоих маршрутов не перезапускает приложение по кругу; проверки ограничены интервалом две минуты.
-Активный штатный плеер при автоматическом переключении не прерывается; переключение откладывается. Успешный переход
-повторно загружает страницу SoundCloud, не меняет системную сеть и не удаляет вход в аккаунт.
-
-Исправлено применение обычного прокси к сессии выбранного аккаунта. Публичные метаданные волны теперь тоже используют
-сетевую сессию клиента. Ключ Worker шифруется через Electron safeStorage, не выводится в HTML настроек и не вшивается в
-сборку. Добавлен UTF-8 для страницы настроек.
-
-Проверки: 158 модульных тестов, включая локальный сквозной CONNECT/WSS тест на 2 МиБ, ограничение целевых адресов и
-защиту от повторных переключений. Проверки Electron подтверждают PAC-маршруты только SoundCloud/CDN, выбранную сессию
-аккаунта, шифрование ключа, работу новой панели и её кнопок. Проверки волны/импорта выполняются отдельно. Живой
-Cloudflare Worker не тестировался, потому что он ещё не развёрнут.
-
-Ограничения и установка описаны в [Резервное подключение через Cloudflare](#cloudflare). Cloudflare connect() запрещает
-соединения к IP самой Cloudflare; нет выбора страны выхода и гарантии обхода всех региональных ограничений каталога. Это
-подготовленный резервный транспорт, не обещание доступа к каждому треку в каждой стране.
-
-</details>
-
-<a id="history-0211"></a>
-
-<details>
-<summary>0.21.1 — частичный импорт</summary>
-
-- Кнопка «Создать из найденных» доступна, как только появились выбранные совпадения: не нужно ждать весь большой
-  плейлист. Поиск останавливается, завершённые совпадения сохраняются, затем начинается создание.
-- Обычная отмена поиска тоже сохраняет найденную часть; непроверенные строки помечаются отдельно.
-- Не найденные треки не блокируют найденные. Сбой проверки доступности отдельной записи не отменяет всю проверку.
-- Если первый найденный трек не добавился, клиент пробует создать/найти плейлист через следующий доступный трек.
-  Последующие ошибки собираются в отчёт, успешные добавления сохраняются.
-- После частичного успеха результаты остаются в окне; подтверждённые записи отмечаются «Добавлено в плейлист» и
-  снимаются с выбора. Неудачные можно повторить.
-- Повторный поиск и добавление под тем же названием использует существующий единственный плейлист и штатную проверку
-  наличия записи: дубли не создаются. Если плейлистов с одинаковым названием несколько, нужно уточнить название.
-- Автоматического продолжения незавершённого поиска после создания нет: для оставшейся части запустите поиск снова. Уже
-  найденные неподтверждённые совпадения можно повторно добавить без нового поиска.
-- Если нет ни одного доступного совпадения или SoundCloud не подтвердил ни одну запись, клиент сообщает об ошибке и не
-  заявляет об успешном импорте. Найденные данные остаются для повторной попытки в текущем окне приложения.
-
-Проверка: 152 модульных теста; 20 сценариев Electron UI, включая остановку поиска после одного совпадения, создание
-найденной части и сохранение оставшихся строк. TypeScript и ESLint нового модуля проходят. Проверка записи настоящего
-аккаунта в этой версии не выполнялась: штатный адаптер сохранения не менялся, сбои создания и добавления проверены
-отдельно через подставляемые операции.
-
-</details>
-
-<a id="history-0210"></a>
-
-<details>
-<summary>0.21.0 — переходы и обратная связь</summary>
-
-### Незаметные переходы
-
-Служебный поиск остаётся штатным поиском SoundCloud. На время поиска, запуска выбранного трека и возврата Electron
-показывает снимок исходной страницы поверх её основной области. Нижняя панель SoundCloud остаётся настоящей и доступной.
-Плеер и аудиосессия не пересоздаются.
-
-Перед снятием прикрытия восстанавливаются исходный маршрут, текст поиска и прокрутка. При ошибке прикрытие снимается в
-finally. Если сам снимок получить нельзя, служебный поиск не начинается. Прикрытие учитывает размер окна. Снимки не
-пишутся на диск, очищаются после перехода; отдельный renderer закрывается через 30 секунд простоя.
-
-Основная область страницы во время служебного перехода ненадолго статична и не принимает нажатия. Нижний плеер
-продолжает работать. Это скрытие перехода, а не устранение сетевой задержки SoundCloud.
-
-### Исключение исполнителя
-
-Кнопка «Не предлагать исполнителя» находится рядом с «Не подходит». Она исключает исполнителя из последующих
-рекомендаций и готового локального буфера, переключает текущую запись. Настройки → «Исключённые исполнители» → «Вернуть»
-отменяет исключение. Список отдельный для каждого аккаунта, сохраняется после перезапуска. Лайки, подписки и история
-SoundCloud не удаляются. Сопоставление по нормализованному имени исполнителя; совместные релизы с другим именем требуют
-отдельного исключения.
-
-### Что дали обсуждения
-
-В [Spotify Community](https://community.spotify.com/forum/en/discussion/5504758/keep-getting-recommended-the-same-songs)
-пользователи описывают повторение рекомендаций; это отдельные отзывы, а не измерение качества всех сервисов. В
-официальном
-[описании рекомендаций Spotify](https://www.spotify.com/uk/safetyandprivacy/understanding-recommendations/plain) явно
-учитываются прослушивания, пропуски и сохранения. Поэтому добавлено прямое управление нежелательными исполнителями
-поверх уже имеющихся защиты от повторов записей, разнообразия исполнителей, локального отрицательного отклика и
-предварительной подготовки очереди.
-
-Следующие полезные направления: временная сессия без обучения вкуса; история «почему не подошло» с отменой; измерение
-разнообразия и доли новых записей на длинных сессиях. Это предложения, не реализованные функции этой версии. Закрытые
-модели других сервисов не копировались.
-
-### Проверки
-
-150 модульных проверок; 19 сценариев Electron UI; три группы проверок прикрытия в Electron (успех/ошибка после
-поиска/ошибка до поиска). На настоящем SoundCloud проверены скрытый поиск, ручной Next, реальный конец аудио,
-пауза/продолжение и исключение исполнителя с последующим восстановлением. Подробности в отчёте поставки.
-
-### Технические материалы
-
-- [Spotify Research: Contextual and Sequential User Embeddings](https://research.atspotify.com/2021/4/contextual-and-sequential-user-embeddings-for-music-recommendation):
-  последовательность и контекст сессии полезны наряду с общим вкусом. Практическое направление форка — отдельно
-  учитывать краткосрочные предпочтения текущей сессии.
-- [Enhancing Sequential Music Recommendation with Negative Feedback-informed Contrastive Learning](https://arxiv.org/abs/2409.07367):
-  отрицательный отклик — отдельный сигнал при обучении последовательных рекомендаций. Работа не означает, что обычный
-  пропуск равен запрету исполнителя. В форке явное исключение отделено от пропуска и отрицательного отклика на один
-  трек. Нейросетевая модель из статьи не реализована и результаты её авторов не приписываются этому клиенту.
-
-</details>
-
-<a id="history-0190"></a>
-
-<details>
-<summary>0.19.0 — подбор и диагностика</summary>
-
-### Что изменено
-
-- Запросы к каталогу начинаются с выбранных настроек. При обновлении используются до трёх запросов; составные жанры,
-  включая drum and bass и hip-hop, сохраняются и сопоставляются с распространёнными написаниями.
-- До помещения в буфер уточняются жанр, теги, длительность, заявленный автором BPM и сведения о потоке. После уточнения
-  кандидат проходит ранжирование повторно. Заблокированные, ознакомительные и только защищённые варианты отсекаются
-  консервативно.
-- Последняя явная реакция заменяет предыдущую. Снятый лайк нейтрален; повторные прослушивания одной записи ограничены по
-  весу. Новый дизлайк сохраняет отрицательный эффект даже после множества старых дослушиваний.
-- «Знакомое» допускает знакомые записи с защитой от недавних повторов; «Баланс» и «Новое» исключают известные записи.
-  Копии с совпадающими исполнителем и названием объединяются.
-- Локальный буфер ранжируется заново перед выбором следующего трека. Уже переданный штатной очереди трек сохраняется.
-  Настройки переиспользуют подходящих кандидатов вместо обязательного поиска с нуля.
-- Кнопка «Не подходит» сохраняет локальный дизлайк и переключает рекомендацию. Она не меняет лайки SoundCloud. «Почему
-  этот трек» показывает основания выбора и наличие BPM.
-- Прогресс штатного плеера поступает в рекомендатель раз в пять секунд отдельным каналом: поздний пропуск больше не
-  считается мгновенным отказом. Этот канал не обновляет Discord и Last.fm.
-- Профиль и токены кэшируются; одновременные запросы обновления каталога объединяются. Лайки и история поступают в
-  локальное хранилище пакетами. При смене трека сбрасываются накопленные звуковые признаки.
-
-### Диагностика и воспроизводимость
-
-`waveInline.ready().diagnostics` в инструментах разработчика показывает размер каталога, число реакций, наиболее
-значимые жанры и причины первых рекомендаций. Данные остаются локальными.
-
-Команды: `npm test`, `npx tsc --noEmit`, `node scripts/check-wave-quality.cjs`. Последний сценарий проверяет 500
-кандидатов и 5000 реакций. В сравнительном прогоне на одном компьютере медиана локального ранжирования составила 23 мс
-против 1261 мс в 0.18.3. Это синтетическая нагрузка и время вычисления, а не задержка поиска SoundCloud или
-доказательство субъективного качества музыки.
-
-BPM из метаданных задаёт фильтр темпа. Он заявлен загрузившим трек, а не измерен клиентом. Если BPM отсутствует, темп
-оценивается по тегам и помечается как неподтверждённый. Настроение и звучание новых записей также зависят от полноты
-тегов. Клиент не загружает аудиофайлы для предварительного анализа и не располагает общей историей слушателей
-SoundCloud.
-
-### Основание подхода
-
-Разделение поиска кандидатов, оценки и разнообразия выдачи соответствует
-[описанию архитектуры рекомендателей Google](https://developers.google.com/machine-learning/recommendation/overview/types).
-Роль реакций слушателя и разнообразия обсуждается в
-[описании рекомендаций Spotify](https://www.spotify.com/uk/safetyandprivacy/understanding-recommendations/plain).
-Реализация и коэффициенты этого форка собственные; идентичная выдача других сервисов не заявляется.
-
-</details>
-
-<a id="fresh-account"></a>
-
-<details>
-<summary>Исправления первого запуска</summary>
-
-Начиная с версии 0.18.1, «Моя волна», настройки подбора и импорт отображаются и на новых аккаунтах. Для установки
-актуальной версии используйте [инструкцию в начале README](#установка).
-
-В 0.18.0 наш блок искал на странице персональный раздел «More of what you like». На новом аккаунте этого раздела нет,
-поэтому блок не добавлялся. В 0.18.1 он размещается в основной колонке главной независимо от языка, лайков и истории.
-Когда персональные рекомендации есть, прежнее место после загрузок сохраняется. Поздняя загрузка страницы и переходы
-внутри SoundCloud больше не теряют блок и его настройки.
-
-Также исправлена ошибка инициализации лайка при отсутствии текущего трека. Модификации входят в установщик и не требуют
-переноса настроек другого пользователя.
-
-Проверки: 105 тестов, 11 сценариев в настоящем Chromium, живая главная с пустым профилем и полный собранный клиент с
-нулевой историей. В последнем проверены настоящий preload и открытие окна импорта; тестовые аккаунты не создавались.
-
-Для повторения проверки интерфейса в исходниках есть `npm run test:placement -- --live` (требует установленного Electron
-для вашей ОС). Сценарий использует отдельный пустой профиль и не входит в аккаунт SoundCloud. Подробнее о плейлистах:
-[Импорт плейлистов](#playlist-import).
-
-</details>
-
-<a id="credits"></a>
-
-## Авторы и лицензия
-
-Основа клиента — [Richard Habitzreuter и участники soundcloud-rpc](https://github.com/richardhbtz/soundcloud-rpc).
-Изменения этого форка — [rvelabs](https://github.com/rvelabs). Лицензия [MIT](LICENSE). SoundCloud и упомянутые сервисы
-принадлежат их владельцам; этот форк с ними не аффилирован.
+## Credits
+
+An unofficial fork of [richardhbtz/soundcloud-rpc](https://github.com/richardhbtz/soundcloud-rpc), maintained by
+[rvelabs](https://github.com/rvelabs). [MIT license](LICENSE). Not affiliated with SoundCloud or the other streaming
+services mentioned here.

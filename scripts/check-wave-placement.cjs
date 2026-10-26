@@ -37,7 +37,7 @@ const stateScript = `(() => {
         detached:!!r?.classList.contains('cw-detached'),width:r?.getBoundingClientRect().width||0,
         rect:r?{top:r.getBoundingClientRect().top,bottom:r.getBoundingClientRect().bottom,height:r.getBoundingClientRect().height}:null,
         firstModuleTop:document.querySelector('.l-main .mixedSelectionModule')?.getBoundingClientRect().top,
-        importButton:!!r?.querySelector('.cw-import-open'),before:r?.nextElementSibling?.id||'',
+        importButton:!!document.querySelector('#codex-playlist-import .cw-import-open'),before:document.querySelector('#codex-playlist-import')?.nextElementSibling?.id||'',
         mood:r?.querySelector('[data-setting=\"mood\"][aria-pressed=\"true\"]')?.dataset.value,sidebarTop:side?.getBoundingClientRect().top};
 })()`;
 async function createWindow(body, route = '/discover') {
@@ -208,7 +208,7 @@ app.whenReady()
             const win = await createWindow(layout());
             try {
                 const partial = await win.webContents.executeJavaScript(`(() => {
-                const r=document.getElementById('codex-wave-inline');r.querySelector('.cw-import-open').click();
+                const r=document.getElementById('codex-playlist-import');r.querySelector('.cw-import-open').click();
                 r.querySelector('.cw-import-source input').value='https://open.spotify.com/playlist/5l10KpZaBOpWLVSsqhakjI';
                 r.querySelector('[data-command="import-scan"]').click();
                 const tracks=[0,1,2].map(i=>({title:'Track '+i,artist:'Artist '+i}));window.__qaImportTracks=tracks;
@@ -249,7 +249,7 @@ app.whenReady()
             const win = await createWindow(layout());
             try {
                 await win.webContents.executeJavaScript(
-                    `(()=>{const r=document.querySelector('#codex-wave-inline');r.querySelector('[data-command="import-open"]').click();r.querySelector('.cw-import-source input').value='https://open.spotify.com/playlist/test';r.querySelector('[data-command="import-scan"]').click();const tracks=[{title:'Found',artist:'A'},{title:'Missing',artist:'B'}];window.__qaImportProgress({phase:'matching',completed:0,total:2,title:'Partial',tracks});window.__qaImportProgress({phase:'matching',completed:1,total:2,index:0,match:{source:tracks[0],soundcloud:{url:'https://soundcloud.com/a/found',title:'Found',artist:'A',score:1}}});window.playlistImporter.commit=async value=>{window.__qaCommit=value;return {title:value.title,added:1,already:0,failures:[],successfulUrls:['https://soundcloud.com/a/found']}};r.querySelector('[data-command="import-commit"]').click()})()`,
+                    `(()=>{const r=document.querySelector('#codex-playlist-import');r.querySelector('[data-command="import-open"]').click();r.querySelector('.cw-import-source input').value='https://open.spotify.com/playlist/test';r.querySelector('[data-command="import-scan"]').click();const tracks=[{title:'Found',artist:'A'},{title:'Missing',artist:'B'}];window.__qaImportProgress({phase:'matching',completed:0,total:2,title:'Partial',tracks});window.__qaImportProgress({phase:'matching',completed:1,total:2,index:0,match:{source:tracks[0],soundcloud:{url:'https://soundcloud.com/a/found',title:'Found',artist:'A',score:1}}});window.playlistImporter.commit=async value=>{window.__qaCommit=value;return {title:value.title,added:1,already:0,failures:[],successfulUrls:['https://soundcloud.com/a/found']}};r.querySelector('[data-command="import-commit"]').click()})()`,
                 );
                 await pause(100);
                 const state = await win.webContents.executeJavaScript(
@@ -410,7 +410,7 @@ app.whenReady()
             win.setSize(1060, 720);
             try {
                 const state = await win.webContents.executeJavaScript(`(() => {
-                const r=document.getElementById('codex-wave-inline');r.querySelector('.cw-import-open').click();
+                const r=document.getElementById('codex-playlist-import');r.querySelector('.cw-import-open').click();
                 r.querySelector('.cw-import-source input').value='https://open.spotify.com/playlist/test';
                 r.querySelector('[data-command="import-scan"]').click();
                 window.__qaImportProgress({phase:'matching',completed:283,total:414,title:'Large playlist'});

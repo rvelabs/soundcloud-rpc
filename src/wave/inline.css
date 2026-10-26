@@ -1,4 +1,4 @@
-#codex-wave-inline {
+:is(#codex-wave-inline, #codex-playlist-import) {
     box-sizing: border-box;
     position: relative;
     width: 100%;
@@ -15,21 +15,21 @@
     box-shadow: 0 12px 36px #0005;
     scroll-margin-top: 110px;
 }
-#codex-wave-inline * {
+:is(#codex-wave-inline, #codex-playlist-import) * {
     box-sizing: border-box;
 }
-#codex-wave-inline button {
+:is(#codex-wave-inline, #codex-playlist-import) button {
     font: inherit;
     cursor: pointer;
 }
-#codex-wave-inline .cw-hero {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-hero {
     position: relative;
     min-height: 276px;
     isolation: isolate;
     background: radial-gradient(ellipse at 55% 48%, #28171c, #191919 70%);
     overflow: hidden;
 }
-#codex-wave-inline .cw-aurora {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora {
     position: absolute;
     inset: -32%;
     z-index: -1;
@@ -40,7 +40,7 @@
         filter 2s,
         opacity 1s;
 }
-#codex-wave-inline .cw-aurora i {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i {
     position: absolute;
     width: 58%;
     height: 65%;
@@ -49,19 +49,19 @@
     animation: cw-drift 13s ease-in-out infinite alternate paused;
     transform: rotate(-24deg);
 }
-#codex-wave-inline .cw-aurora i:first-child {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i:first-child {
     left: 22%;
     top: 2%;
     background: radial-gradient(ellipse, #ec4c41 1%, #db3c8e 36%, transparent 72%);
 }
-#codex-wave-inline .cw-aurora i:nth-child(2) {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i:nth-child(2) {
     left: 43%;
     top: 16%;
     background: radial-gradient(ellipse, #ffaf38 1%, #ff542a 40%, transparent 72%);
     animation-duration: 17s;
     animation-delay: -4s;
 }
-#codex-wave-inline .cw-aurora i:last-child {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i:last-child {
     left: 4%;
     top: 28%;
     background: radial-gradient(ellipse, #8a3cda 1%, #d32fa0 38%, transparent 70%);
@@ -76,19 +76,19 @@
         transform: translate3d(11%, -6%, 0) rotate(-8deg) scale(1.15);
     }
 }
-#codex-wave-inline .cw-content {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-content {
     padding: 18px 30px 18px;
     position: relative;
     text-shadow: 0 1px 8px #0008;
 }
-#codex-wave-inline .cw-kicker {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-kicker {
     color: #ffd4c6;
     font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.16em;
     text-transform: uppercase;
 }
-#codex-wave-inline .cw-dot {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-dot {
     display: inline-block;
     width: 7px;
     height: 7px;
@@ -97,28 +97,28 @@
     box-shadow: 0 0 10px #ff6c3b;
     margin-right: 5px;
 }
-#codex-wave-inline .cw-top {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-top {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 20px;
     margin: 12px 0 16px;
 }
-#codex-wave-inline h2 {
+:is(#codex-wave-inline, #codex-playlist-import) h2 {
     font-size: 31px;
     line-height: 1.15;
     font-weight: 800;
     margin: 0 0 7px;
     color: #fff;
 }
-#codex-wave-inline p {
+:is(#codex-wave-inline, #codex-playlist-import) p {
     margin: 0;
 }
-#codex-wave-inline .cw-top p {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-top p {
     color: #f1e6e3;
     max-width: 480px;
 }
-#codex-wave-inline .cw-start {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-start {
     display: flex;
     align-items: center;
     gap: 7px;
@@ -131,14 +131,14 @@
     font-weight: 700;
     box-shadow: 0 7px 22px #be381180;
 }
-#codex-wave-inline .cw-start:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-start:hover {
     background: #ff713f;
 }
-#codex-wave-inline .cw-start:disabled {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-start:disabled {
     cursor: wait;
     opacity: 0.75;
 }
-#codex-wave-inline .cw-import-open {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-open {
     border: 1px solid #ffffff73;
     border-radius: 20px;
     background: #1b1b1ba6;
@@ -148,18 +148,18 @@
     font-weight: 700;
     white-space: nowrap;
 }
-#codex-wave-inline .cw-import-open:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-open:hover {
     border-color: #fff;
     background: #3339;
 }
-#codex-wave-inline .cw-actions {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-actions {
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
     justify-content: flex-end;
 }
-#codex-wave-inline .cw-stop {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-stop {
     display: none;
     border: 1px solid #ffffff6b;
     border-radius: 18px;
@@ -168,40 +168,40 @@
     padding: 7px 11px;
     font-size: 11px;
 }
-#codex-wave-inline.cw-active .cw-stop {
+:is(#codex-wave-inline, #codex-playlist-import).cw-active .cw-stop {
     display: block;
 }
-#codex-wave-inline .cw-start svg:nth-child(2),
-#codex-wave-inline.cw-playing .cw-start svg:first-child {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-start svg:nth-child(2),
+:is(#codex-wave-inline, #codex-playlist-import).cw-playing .cw-start svg:first-child {
     display: none;
 }
-#codex-wave-inline.cw-playing .cw-start svg:nth-child(2) {
+:is(#codex-wave-inline, #codex-playlist-import).cw-playing .cw-start svg:nth-child(2) {
     display: none;
 }
-#codex-wave-inline svg {
+:is(#codex-wave-inline, #codex-playlist-import) svg {
     width: 17px;
     height: 17px;
     fill: currentColor;
 }
-#codex-wave-inline .cw-options {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-options {
     display: flex;
     flex-wrap: wrap;
     gap: 10px 22px;
     align-items: end;
 }
-#codex-wave-inline .cw-option > span,
-#codex-wave-inline .cw-genre {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-option > span,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-genre {
     display: block;
     font-size: 11px;
     color: #e8dcd9;
     font-weight: 700;
     margin-bottom: 7px;
 }
-#codex-wave-inline .cw-option > div {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-option > div {
     display: flex;
     gap: 4px;
 }
-#codex-wave-inline .cw-option button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-option button {
     font-size: 11px;
     color: #f5eceb;
     border: 1px solid #ffffff40;
@@ -210,19 +210,19 @@
     padding: 5px 9px;
     text-shadow: none;
 }
-#codex-wave-inline .cw-option button[aria-pressed='true'] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-option button[aria-pressed='true'] {
     background: #fff;
     color: #191919;
     border-color: #fff;
     font-weight: 700;
 }
-#codex-wave-inline .cw-genre-fields {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-genre-fields {
     display: flex;
     gap: 5px;
     margin-top: 7px;
 }
-#codex-wave-inline .cw-genre select,
-#codex-wave-inline .cw-genre input {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-genre select,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-genre input {
     min-width: 0;
     width: 126px;
     border: 1px solid #ffffff50;
@@ -233,11 +233,11 @@
     font-size: 11px;
     outline: none;
 }
-#codex-wave-inline .cw-genre select option {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-genre select option {
     background: #252525;
     color: #fff;
 }
-#codex-wave-inline .cw-player-wrap {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-player-wrap {
     display: grid;
     grid-template-rows: 0fr;
     opacity: 0;
@@ -249,13 +249,13 @@
         opacity 0.28s ease,
         transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-#codex-wave-inline.cw-active .cw-player-wrap {
+:is(#codex-wave-inline, #codex-playlist-import).cw-active .cw-player-wrap {
     grid-template-rows: 1fr;
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;
 }
-#codex-wave-inline .cw-player {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-player {
     min-height: 0;
     overflow: hidden;
     display: grid;
@@ -269,11 +269,11 @@
         padding 0.42s cubic-bezier(0.2, 0.8, 0.2, 1),
         border-width 0.42s;
 }
-#codex-wave-inline.cw-active .cw-player {
+:is(#codex-wave-inline, #codex-playlist-import).cw-active .cw-player {
     padding: 15px 20px 10px;
     border-top-width: 1px;
 }
-#codex-wave-inline .cw-art {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-art {
     width: 54px;
     height: 54px;
     background: #39312e center/cover;
@@ -283,23 +283,23 @@
     font-size: 24px;
     color: #ff773f;
 }
-#codex-wave-inline .cw-track {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-track {
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 1px;
 }
-#codex-wave-inline .cw-track-head {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-track-head {
     display: flex;
     align-items: center;
     min-width: 0;
     gap: 5px;
 }
-#codex-wave-inline .cw-track-head .cw-title {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-track-head .cw-title {
     min-width: 0;
     flex: 0 1 auto;
 }
-#codex-wave-inline .cw-like {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-like {
     flex: 0 0 27px;
     width: 27px;
     height: 27px;
@@ -311,47 +311,47 @@
     place-items: center;
     padding: 0;
 }
-#codex-wave-inline .cw-like:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-like:hover {
     color: #fff;
     background: #303030;
 }
-#codex-wave-inline .cw-like svg {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-like svg {
     width: 17px;
     height: 17px;
 }
-#codex-wave-inline.cw-liked .cw-like {
+:is(#codex-wave-inline, #codex-playlist-import).cw-liked .cw-like {
     color: #ff6030;
 }
-#codex-wave-inline.cw-liked .cw-like path {
+:is(#codex-wave-inline, #codex-playlist-import).cw-liked .cw-like path {
     fill: #ff6030;
 }
-#codex-wave-inline .cw-like:disabled {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-like:disabled {
     opacity: 0.55;
     cursor: wait;
 }
-#codex-wave-inline .cw-track strong,
-#codex-wave-inline .cw-track span {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-track strong,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-track span {
     white-space: nowrap;
     text-overflow: ellipsis;
     overflow: hidden;
 }
-#codex-wave-inline .cw-title {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-title {
     font-weight: 700;
 }
-#codex-wave-inline .cw-artist,
-#codex-wave-inline .cw-tags {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-artist,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-tags {
     color: #a9a9a9;
     font-size: 11px;
 }
-#codex-wave-inline .cw-transport,
-#codex-wave-inline .cw-extras {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras {
     display: flex;
     gap: 5px;
     align-items: center;
 }
-#codex-wave-inline .cw-transport button,
-#codex-wave-inline .cw-extras button,
-#codex-wave-inline .cw-volume button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport button,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras button,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-volume button {
     border: 0;
     background: transparent;
     color: #ddd;
@@ -361,46 +361,46 @@
     display: grid;
     place-items: center;
 }
-#codex-wave-inline .cw-transport button:hover,
-#codex-wave-inline .cw-extras button:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport button:hover,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras button:hover {
     background: #343434;
     color: #fff;
 }
-#codex-wave-inline .cw-transport .cw-play {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport .cw-play {
     width: 38px;
     height: 38px;
     background: #f7f7f7;
     color: #111;
 }
-#codex-wave-inline .cw-transport .cw-play:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport .cw-play:hover {
     background: #fff;
     color: #111;
 }
-#codex-wave-inline .cw-transport .cw-play svg:last-child,
-#codex-wave-inline.cw-playing .cw-transport .cw-play svg:first-child {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport .cw-play svg:last-child,
+:is(#codex-wave-inline, #codex-playlist-import).cw-playing .cw-transport .cw-play svg:first-child {
     display: none;
 }
-#codex-wave-inline.cw-playing .cw-transport .cw-play svg:last-child {
+:is(#codex-wave-inline, #codex-playlist-import).cw-playing .cw-transport .cw-play svg:last-child {
     display: block;
 }
-#codex-wave-inline .cw-volume svg:last-child,
-#codex-wave-inline.cw-muted .cw-volume svg:first-child {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-volume svg:last-child,
+:is(#codex-wave-inline, #codex-playlist-import).cw-muted .cw-volume svg:first-child {
     display: none;
 }
-#codex-wave-inline.cw-muted .cw-volume svg:last-child {
+:is(#codex-wave-inline, #codex-playlist-import).cw-muted .cw-volume svg:last-child {
     display: block;
 }
-#codex-wave-inline .cw-extras button[data-command='stop'] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras button[data-command='stop'] {
     margin-left: 3px;
     color: #9a9a9a;
 }
-#codex-wave-inline .cw-extras button[data-command='stop']:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras button[data-command='stop']:hover {
     color: #fff;
 }
-#codex-wave-inline .cw-extras button[aria-pressed='true'] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras button[aria-pressed='true'] {
     color: #ff7a45;
 }
-#codex-wave-inline .cw-timeline {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-timeline {
     grid-column: 2/4;
     display: flex;
     align-items: center;
@@ -408,23 +408,23 @@
     font-size: 10px;
     color: #a9a9a9;
 }
-#codex-wave-inline input[type='range'] {
+:is(#codex-wave-inline, #codex-playlist-import) input[type='range'] {
     accent-color: #ff5b23;
     cursor: pointer;
     height: 4px;
 }
-#codex-wave-inline .cw-timeline input {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-timeline input {
     flex: 1;
 }
-#codex-wave-inline .cw-volume {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-volume {
     display: flex;
     align-items: center;
     gap: 2px;
 }
-#codex-wave-inline .cw-volume input {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-volume input {
     width: 76px;
 }
-#codex-wave-inline .cw-status {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-status {
     padding: 0 20px 13px;
     color: #9f9f9f;
     font-size: 11px;
@@ -441,48 +441,48 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     font-size: 18px;
 }
 @media (max-width: 760px) {
-    #codex-wave-inline .cw-content {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-content {
         padding: 20px;
     }
-    #codex-wave-inline .cw-top {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-top {
         align-items: start;
     }
-    #codex-wave-inline .cw-player {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-player {
         grid-template-columns: 46px 1fr auto;
     }
-    #codex-wave-inline .cw-extras {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-extras {
         grid-column: 2/4;
     }
-    #codex-wave-inline .cw-timeline {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-timeline {
         grid-column: 1/4;
     }
-    #codex-wave-inline .cw-volume {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-volume {
         grid-column: 1/4;
     }
 }
 @media (prefers-reduced-motion: reduce) {
-    #codex-wave-inline .cw-aurora i {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i {
         animation: none !important;
     }
-    #codex-wave-inline .cw-player-wrap,
-    #codex-wave-inline .cw-player {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-player-wrap,
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-player {
         transition: none !important;
     }
 }
-#codex-wave-inline.cw-active.cw-playing:not(.cw-window-hidden) .cw-aurora i {
+:is(#codex-wave-inline, #codex-playlist-import).cw-motion .cw-aurora i {
     animation-play-state: running;
     will-change: transform;
 }
-#codex-wave-inline {
+:is(#codex-wave-inline, #codex-playlist-import) {
     overflow: visible;
 }
-#codex-wave-inline .cw-hero {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-hero {
     border-radius: 11px 11px 0 0;
 }
-#codex-wave-inline .cw-status {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-status {
     border-radius: 0 0 11px 11px;
 }
-#codex-wave-inline.cw-detached {
+:is(#codex-wave-inline, #codex-playlist-import).cw-detached {
     position: fixed !important;
     left: 0;
     top: 0;
@@ -493,14 +493,14 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     box-shadow: none !important;
     z-index: 2147483640;
 }
-#codex-wave-inline.cw-detached .cw-hero,
-#codex-wave-inline.cw-detached .cw-status {
+:is(#codex-wave-inline, #codex-playlist-import).cw-detached .cw-hero,
+:is(#codex-wave-inline, #codex-playlist-import).cw-detached .cw-status {
     display: none;
 }
-#codex-wave-inline .cw-player-wrap {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-player-wrap {
     display: none !important;
 }
-#codex-wave-inline .cw-player-wrap {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-player-wrap {
     position: fixed;
     left: 0;
     right: 0;
@@ -520,15 +520,15 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
         opacity 0.28s ease,
         visibility 0s linear 0.38s;
 }
-#codex-wave-inline.cw-active .cw-player-wrap {
+:is(#codex-wave-inline, #codex-playlist-import).cw-active .cw-player-wrap {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
     pointer-events: auto;
     transition-delay: 0s;
 }
-#codex-wave-inline .cw-player,
-#codex-wave-inline.cw-active .cw-player {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-player,
+:is(#codex-wave-inline, #codex-playlist-import).cw-active .cw-player {
     width: 100%;
     max-width: 1600px;
     height: 65px;
@@ -545,67 +545,67 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     background: transparent;
     transition: none;
 }
-#codex-wave-inline .cw-transport {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport {
     grid-area: transport;
     justify-content: center;
 }
-#codex-wave-inline .cw-extras {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras {
     grid-area: extras;
     justify-content: center;
 }
-#codex-wave-inline .cw-timeline {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-timeline {
     grid-area: timeline;
     min-width: 0;
 }
-#codex-wave-inline .cw-volume {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-volume {
     grid-area: volume;
 }
-#codex-wave-inline .cw-art {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-art {
     grid-area: art;
     width: 40px;
     height: 40px;
     font-size: 18px;
 }
-#codex-wave-inline .cw-track {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-track {
     grid-area: track;
     min-width: 0;
 }
-#codex-wave-inline .cw-tags {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-tags {
     display: none;
 }
-#codex-wave-inline .cw-track-head .cw-title {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-track-head .cw-title {
     max-width: calc(100% - 29px);
 }
-#codex-wave-inline .cw-artist {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-artist {
     font-size: 10px;
 }
-#codex-wave-inline .cw-extras button,
-#codex-wave-inline .cw-transport button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-extras button,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport button {
     min-width: 28px;
     min-height: 28px;
 }
-#codex-wave-inline .cw-transport .cw-play {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-transport .cw-play {
     width: 34px;
     height: 34px;
 }
 @media (max-width: 900px) {
-    #codex-wave-inline .cw-player,
-    #codex-wave-inline.cw-active .cw-player {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-player,
+    :is(#codex-wave-inline, #codex-playlist-import).cw-active .cw-player {
         grid-template-columns: 118px 92px minmax(110px, 1fr) 34px minmax(110px, 170px);
         grid-template-areas: 'transport extras timeline art track';
         gap: 6px;
         padding: 7px 10px;
     }
-    #codex-wave-inline .cw-volume {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-volume {
         display: none;
     }
 }
 @media (max-width: 650px) {
-    #codex-wave-inline .cw-player-wrap {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-player-wrap {
         height: 91px;
     }
-    #codex-wave-inline .cw-player,
-    #codex-wave-inline.cw-active .cw-player {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-player,
+    :is(#codex-wave-inline, #codex-playlist-import).cw-active .cw-player {
         height: 90px;
         min-height: 90px;
         grid-template-columns: 112px 96px minmax(0, 1fr);
@@ -613,14 +613,14 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
         grid-template-areas: 'transport extras track' 'timeline timeline timeline';
         gap: 6px;
     }
-    #codex-wave-inline .cw-art {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-art {
         display: none;
     }
-    #codex-wave-inline .cw-timeline {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-timeline {
         width: 100%;
     }
 }
-#codex-wave-inline .cw-import-dialog {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-dialog {
     width: min(720px, calc(100vw - 30px));
     max-height: min(86vh, 820px);
     overflow: hidden;
@@ -635,66 +635,66 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
         Arial,
         sans-serif;
 }
-#codex-wave-inline .cw-import-dialog[open] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-dialog[open] {
     display: flex;
     flex-direction: column;
 }
-#codex-wave-inline .cw-import-head,
-#codex-wave-inline .cw-import-source,
-#codex-wave-inline .cw-import-title,
-#codex-wave-inline .cw-import-progress,
-#codex-wave-inline .cw-import-message,
-#codex-wave-inline .cw-import-footer {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-head,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-source,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-title,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-progress,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-message,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer {
     flex-shrink: 0;
 }
-#codex-wave-inline .cw-import-dialog::backdrop {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-dialog::backdrop {
     background: #000b;
 }
-#codex-wave-inline .cw-import-head {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-head {
     display: flex;
     justify-content: space-between;
     align-items: start;
     gap: 20px;
     margin-bottom: 18px;
 }
-#codex-wave-inline .cw-import-head strong {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-head strong {
     font-size: 22px;
 }
-#codex-wave-inline .cw-import-head p {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-head p {
     margin: 4px 0;
     color: #aaa;
 }
-#codex-wave-inline .cw-import-head button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-head button {
     border: 0;
     background: transparent;
     color: #aaa;
     font-size: 26px;
     line-height: 1;
 }
-#codex-wave-inline .cw-import-source {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-source {
     display: flex;
     gap: 8px;
 }
-#codex-wave-inline .cw-import-progress {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-progress {
     margin-top: 18px;
     padding: 14px;
     border: 1px solid #ffffff13;
     border-radius: 11px;
     background: linear-gradient(110deg, #ff642312, #a23ce309);
 }
-#codex-wave-inline .cw-import-progress-head {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-progress-head {
     display: flex;
     align-items: center;
     gap: 9px;
     margin-bottom: 12px;
     font-size: 12px;
 }
-#codex-wave-inline .cw-import-count {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-count {
     margin-left: auto;
     color: #d3c1b7;
     font-variant-numeric: tabular-nums;
 }
-#codex-wave-inline .cw-import-orbit {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-orbit {
     width: 16px;
     height: 16px;
     border-radius: 50%;
@@ -702,17 +702,17 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     border-top-color: #ff713e;
     box-shadow: 0 0 12px #ff5b2326;
 }
-#codex-wave-inline .is-busy .cw-import-orbit {
+:is(#codex-wave-inline, #codex-playlist-import) .is-busy .cw-import-orbit {
     animation: cw-import-spin 0.9s linear infinite;
 }
-#codex-wave-inline .cw-import-meter {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-meter {
     position: relative;
     height: 5px;
     overflow: hidden;
     border-radius: 5px;
     background: #ffffff12;
 }
-#codex-wave-inline .cw-import-meter i {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-meter i {
     display: block;
     position: relative;
     height: 100%;
@@ -721,18 +721,18 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     background: linear-gradient(90deg, #fb4527, #ff9b48);
     transition: width 0.35s ease;
 }
-#codex-wave-inline .is-busy .cw-import-meter i:after {
+:is(#codex-wave-inline, #codex-playlist-import) .is-busy .cw-import-meter i:after {
     content: '';
     position: absolute;
     inset: 0;
     background: linear-gradient(90deg, transparent, #fff8, transparent);
     animation: cw-import-glow 1.7s ease-in-out infinite;
 }
-#codex-wave-inline .is-indeterminate .cw-import-meter i {
+:is(#codex-wave-inline, #codex-playlist-import) .is-indeterminate .cw-import-meter i {
     width: 36%;
     animation: cw-import-travel 1.5s ease-in-out infinite;
 }
-#codex-wave-inline .is-error .cw-import-orbit {
+:is(#codex-wave-inline, #codex-playlist-import) .is-error .cw-import-orbit {
     border-color: #aaa6;
 }
 @keyframes cw-import-spin {
@@ -757,12 +757,12 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     }
 }
 @media (prefers-reduced-motion: reduce) {
-    #codex-wave-inline .cw-import-progress * {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-import-progress * {
         animation: none !important;
         transition: none !important;
     }
 }
-#codex-wave-inline .cw-import-source input {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-source input {
     flex: 1;
     min-width: 0;
     background: #111;
@@ -772,14 +772,14 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     padding: 10px 12px;
     font: inherit;
 }
-#codex-wave-inline .cw-import-title {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-title {
     display: grid;
     gap: 5px;
     margin-top: 13px;
     color: #aaa;
     font-size: 12px;
 }
-#codex-wave-inline .cw-import-title input {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-title input {
     width: 100%;
     background: #111;
     color: #fff;
@@ -788,11 +788,11 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     padding: 8px 10px;
     font: inherit;
 }
-#codex-wave-inline .cw-import-title input:disabled {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-title input:disabled {
     opacity: 0.5;
 }
-#codex-wave-inline .cw-import-source button,
-#codex-wave-inline .cw-import-footer button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-source button,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer button {
     border: 0;
     border-radius: 5px;
     padding: 10px 15px;
@@ -801,24 +801,24 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     font-weight: 700;
     white-space: nowrap;
 }
-#codex-wave-inline .cw-import-source button:disabled,
-#codex-wave-inline .cw-import-footer button:disabled {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-source button:disabled,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer button:disabled {
     opacity: 0.55;
     cursor: not-allowed;
 }
-#codex-wave-inline .cw-import-message {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-message {
     min-height: 20px;
     margin: 14px 0 !important;
     color: #bbb;
 }
-#codex-wave-inline .cw-import-results {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-results {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;
     border-top: 1px solid #383838;
 }
-#codex-wave-inline .cw-import-row {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-row {
     display: flex;
     gap: 12px;
     align-items: start;
@@ -826,24 +826,24 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     border-bottom: 1px solid #333;
     cursor: pointer;
 }
-#codex-wave-inline .cw-import-row input {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-row input {
     margin-top: 3px;
     accent-color: #ff5b23;
 }
-#codex-wave-inline .cw-import-row span {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-row span {
     display: grid;
     min-width: 0;
     gap: 3px;
 }
-#codex-wave-inline .cw-import-row strong {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-row strong {
     font-weight: 600;
     overflow-wrap: anywhere;
 }
-#codex-wave-inline .cw-import-row small {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-row small {
     color: #aaa;
     overflow-wrap: anywhere;
 }
-#codex-wave-inline .cw-import-footer {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -851,26 +851,26 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     margin-top: 16px;
     color: #aaa;
 }
-#codex-wave-inline .cw-import-footer-actions {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer-actions {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
 }
-#codex-wave-inline .cw-import-footer .cw-import-cancel {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer .cw-import-cancel {
     background: #333;
     color: #eee;
     border: 1px solid #555;
 }
 @media (max-width: 600px) {
-    #codex-wave-inline .cw-import-source {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-import-source {
         flex-direction: column;
     }
-    #codex-wave-inline .cw-import-footer {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer {
         align-items: stretch;
         flex-direction: column;
     }
 }
-#codex-wave-inline .cw-insight {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight {
     margin: 0 20px 16px;
     padding: 12px 14px;
     border: 1px solid #ffffff12;
@@ -881,28 +881,28 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     gap: 16px;
     font-size: 12px;
 }
-#codex-wave-inline .cw-insight:not([hidden]) {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight:not([hidden]) {
     display: flex;
 }
-#codex-wave-inline .cw-insight details {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight details {
     flex: 1;
     min-width: 0;
 }
-#codex-wave-inline .cw-insight summary {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight summary {
     cursor: pointer;
     list-style-position: inside;
     color: #ddd;
     user-select: none;
 }
-#codex-wave-inline .cw-insight p {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight p {
     margin: 9px 0 5px;
     line-height: 1.6;
 }
-#codex-wave-inline .cw-evidence {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-evidence {
     font-size: 11px;
     color: #999;
 }
-#codex-wave-inline .cw-insight button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight button {
     background: transparent;
     border: 1px solid #555;
     border-radius: 16px;
@@ -912,31 +912,31 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     cursor: pointer;
     white-space: nowrap;
 }
-#codex-wave-inline .cw-insight button:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight button:hover {
     border-color: #ff703f;
     color: #ff703f;
 }
-#codex-wave-inline .cw-insight button:disabled {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight button:disabled {
     opacity: 0.5;
     cursor: wait;
 }
-#codex-wave-inline.cw-detached .cw-insight {
+:is(#codex-wave-inline, #codex-playlist-import).cw-detached .cw-insight {
     display: none !important;
 }
-#codex-wave-inline .cw-hero .cw-content {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-hero .cw-content {
     min-height: 280px;
     display: flex;
     flex-direction: column;
     justify-content: center;
 }
-#codex-wave-inline .cw-preset-summary {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-preset-summary {
     margin: 22px 0 0;
     color: #ffffffc4;
     font-size: 12px;
     max-width: 560px;
     line-height: 1.6;
 }
-#codex-wave-inline .cw-settings-open {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-open {
     border: 1px solid #ffffff55;
     border-radius: 22px;
     background: #ffffff16;
@@ -946,10 +946,10 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     cursor: pointer;
     backdrop-filter: blur(8px);
 }
-#codex-wave-inline .cw-settings-open:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-open:hover {
     background: #ffffff28;
 }
-#codex-wave-inline .cw-settings-dialog {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog {
     position: fixed;
     inset: 0 0 0 auto;
     margin: 0;
@@ -970,14 +970,14 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
         Arial,
         sans-serif;
 }
-#codex-wave-inline .cw-settings-dialog[open] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog[open] {
     animation: cw-settings-enter 0.22s ease-out;
 }
-#codex-wave-inline .cw-settings-dialog::backdrop {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog::backdrop {
     background: #0007;
     backdrop-filter: blur(2px);
 }
-#codex-wave-inline .cw-settings-head {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-head {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -988,14 +988,14 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     background: #191919f5;
     z-index: 2;
 }
-#codex-wave-inline .cw-settings-head h3 {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-head h3 {
     margin: 0 auto 0 0;
     font-size: 23px;
     line-height: 1.2;
     letter-spacing: -0.4px;
     font-weight: 750;
 }
-#codex-wave-inline .cw-settings-head button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-head button {
     width: 32px;
     height: 32px;
     flex: 0 0 32px;
@@ -1008,11 +1008,11 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     padding: 5px;
     cursor: pointer;
 }
-#codex-wave-inline .cw-settings-head button:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-head button:hover {
     color: #fff;
     border-color: #aaa;
 }
-#codex-wave-inline .cw-settings-head svg {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-head svg {
     width: 19px;
     height: 19px;
     fill: none;
@@ -1021,25 +1021,25 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     stroke-linecap: round;
     stroke-linejoin: round;
 }
-#codex-wave-inline .cw-settings-dialog .cw-options {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog .cw-options {
     display: flex;
     flex-direction: column;
     gap: 27px;
     margin: 0;
 }
-#codex-wave-inline .cw-settings-dialog .cw-option > span {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog .cw-option > span {
     display: block;
     font-size: 13px;
     color: #999;
     margin-bottom: 12px;
     font-weight: 600;
 }
-#codex-wave-inline .cw-settings-dialog .cw-option > div {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog .cw-option > div {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
-#codex-wave-inline .cw-settings-dialog [data-setting] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-setting] {
     font-size: 13px;
     padding: 11px 16px;
     background: #292929;
@@ -1052,16 +1052,16 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
         background 0.15s,
         border-color 0.15s;
 }
-#codex-wave-inline .cw-settings-dialog [data-setting]:hover {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-setting]:hover {
     border-color: #666;
     background: #333;
 }
-#codex-wave-inline .cw-settings-dialog [data-setting][aria-pressed='true'] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-setting][aria-pressed='true'] {
     background: #ff5b23;
     color: #fff;
     border-color: #ff8b5b;
 }
-#codex-wave-inline .cw-settings-dialog [data-setting='mood'] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-setting='mood'] {
     position: relative;
     padding-top: 46px;
     min-width: 86px;
@@ -1070,7 +1070,7 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     padding-left: 6px;
     padding-right: 6px;
 }
-#codex-wave-inline .cw-settings-dialog [data-setting='mood']:before {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-setting='mood']:before {
     content: '';
     position: absolute;
     top: 12px;
@@ -1080,43 +1080,45 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     border-radius: 50%;
     background: #777;
 }
-#codex-wave-inline .cw-settings-dialog [data-value='energetic'][data-setting='mood']:before {
+:is(#codex-wave-inline, #codex-playlist-import)
+    .cw-settings-dialog
+    [data-value='energetic'][data-setting='mood']:before {
     background: linear-gradient(#ffc231, #ed3e12);
 }
-#codex-wave-inline .cw-settings-dialog [data-value='happy'][data-setting='mood']:before {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-value='happy'][data-setting='mood']:before {
     background: linear-gradient(#e4f018, #37bf45);
 }
-#codex-wave-inline .cw-settings-dialog [data-value='calm'][data-setting='mood']:before {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-value='calm'][data-setting='mood']:before {
     background: linear-gradient(#0dd6b8, #0878d7);
 }
-#codex-wave-inline .cw-settings-dialog [data-value='sad'][data-setting='mood']:before {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-value='sad'][data-setting='mood']:before {
     background: linear-gradient(#278bef, #6627e5);
 }
-#codex-wave-inline .cw-settings-dialog [data-value='any'][data-setting='mood'] {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-value='any'][data-setting='mood'] {
     flex-basis: 100%;
     padding: 8px 14px;
     min-width: 0;
     border-radius: 22px;
 }
-#codex-wave-inline .cw-settings-dialog [data-value='any'][data-setting='mood']:before {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-value='any'][data-setting='mood']:before {
     display: none;
 }
-#codex-wave-inline .cw-language-hint {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-language-hint {
     color: #888;
     font-size: 11px;
     line-height: 1.6;
     margin: 22px 0 4px;
 }
-#codex-wave-inline .cw-advanced {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-advanced {
     border-top: 1px solid #333;
     padding-top: 17px;
     color: #aaa;
 }
-#codex-wave-inline .cw-advanced summary {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-advanced summary {
     cursor: pointer;
     font-size: 12px;
 }
-#codex-wave-inline .cw-advanced-content {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-advanced-content {
     display: flex;
     flex-direction: column;
     gap: 24px;
@@ -1133,37 +1135,37 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     }
 }
 @media (prefers-reduced-motion: reduce) {
-    #codex-wave-inline .cw-settings-dialog[open] {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog[open] {
         animation: none;
     }
-    #codex-wave-inline .cw-settings-dialog [data-setting] {
+    :is(#codex-wave-inline, #codex-playlist-import) .cw-settings-dialog [data-setting] {
         transition: none;
     }
 }
 
-#codex-wave-inline .cw-exclusions {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-exclusions {
     margin-top: 24px;
     border-top: 1px solid #383838;
     padding-top: 18px;
     font-size: 13px;
     color: #bbb;
 }
-#codex-wave-inline .cw-exclusions summary {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-exclusions summary {
     cursor: pointer;
     color: #eee;
 }
-#codex-wave-inline .cw-exclusions p {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-exclusions p {
     line-height: 1.5;
     color: #999;
 }
-#codex-wave-inline .cw-exclusions > div > div {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-exclusions > div > div {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     padding: 8px 0;
 }
-#codex-wave-inline .cw-exclusions button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-exclusions button {
     border: 1px solid #555;
     border-radius: 18px;
     background: transparent;
@@ -1171,15 +1173,15 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     padding: 6px 12px;
     cursor: pointer;
 }
-#codex-wave-inline .cw-insight {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-insight {
     flex-wrap: wrap;
 }
-#codex-wave-inline .cw-diagnostics {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-diagnostics {
     border-top: 1px solid #ffffff18;
     margin-top: 28px;
     padding-top: 20px;
 }
-#codex-wave-inline .cw-diagnostics button {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-diagnostics button {
     background: #292929;
     color: #fff;
     border: 1px solid #ffffff26;
@@ -1187,9 +1189,315 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     padding: 10px 14px;
     cursor: pointer;
 }
-#codex-wave-inline .cw-diagnostics p,
-#codex-wave-inline .cw-diagnostics span {
+:is(#codex-wave-inline, #codex-playlist-import) .cw-diagnostics p,
+:is(#codex-wave-inline, #codex-playlist-import) .cw-diagnostics span {
     font-size: 12px;
     line-height: 1.5;
     color: #a0a0a0;
+}
+#codex-wave-inline {
+    margin-bottom: 14px;
+    animation: cw-card-enter 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+#codex-wave-inline .cw-hero {
+    border-radius: 12px;
+}
+#codex-wave-inline .cw-hero .cw-content {
+    min-height: 302px;
+    padding: 30px 32px;
+}
+#codex-wave-inline .cw-aurora {
+    inset: -18%;
+    filter: blur(25px) hue-rotate(var(--cw-hue, 0deg));
+    opacity: 0.86;
+}
+#codex-wave-inline .cw-aurora i {
+    width: 66%;
+    height: 85%;
+    animation: cw-flow 19s cubic-bezier(0.45, 0, 0.55, 1) infinite paused;
+    will-change: auto;
+}
+#codex-wave-inline .cw-aurora i:first-child {
+    left: 11%;
+    top: -5%;
+    background: radial-gradient(ellipse, #ffbd42, #fa572a 30%, transparent 68%);
+}
+#codex-wave-inline .cw-aurora i:nth-child(2) {
+    left: 39%;
+    top: 4%;
+    background: radial-gradient(ellipse, #fa3ab0, #b529b5 38%, transparent 70%);
+    animation-name: cw-flow-reverse;
+    animation-duration: 23s;
+    animation-delay: -9s;
+}
+#codex-wave-inline .cw-aurora i:last-child {
+    left: -5%;
+    top: 25%;
+    background: radial-gradient(ellipse, #793ed6, #b520a1 35%, transparent 70%);
+    animation-duration: 27s;
+    animation-delay: -14s;
+}
+#codex-wave-inline.cw-motion .cw-aurora i {
+    animation-play-state: running;
+    will-change: transform;
+}
+#codex-wave-inline .cw-actions button {
+    transition:
+        transform 0.2s ease,
+        background-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+#codex-wave-inline .cw-actions button:hover {
+    transform: translateY(-2px);
+}
+#codex-wave-inline .cw-actions button:active {
+    transform: scale(0.96);
+}
+#codex-wave-inline .cw-start {
+    box-shadow: 0 6px 25px #ff550038;
+}
+#codex-wave-inline.cw-loading .cw-start:after {
+    content: '';
+    width: 12px;
+    height: 12px;
+    border: 2px solid #fff5;
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: cw-import-spin 1s linear infinite;
+}
+#codex-wave-inline .cw-settings-dialog[open] {
+    animation: cw-settings-reveal 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+#codex-wave-inline .cw-settings-dialog[open] .cw-option {
+    animation: cw-option-reveal 0.32s ease both;
+}
+#codex-wave-inline .cw-settings-dialog[open] .cw-option:nth-child(2) {
+    animation-delay: 35ms;
+}
+#codex-wave-inline .cw-settings-dialog[open] .cw-option:nth-child(3) {
+    animation-delay: 65ms;
+}
+#codex-wave-inline .cw-settings-dialog[open] .cw-option:nth-child(4) {
+    animation-delay: 90ms;
+}
+#codex-wave-inline .cw-settings-dialog [data-setting] {
+    transition:
+        transform 0.18s ease,
+        background-color 0.2s ease,
+        border-color 0.2s ease,
+        color 0.2s ease;
+}
+#codex-wave-inline .cw-settings-dialog [data-setting]:active {
+    transform: scale(0.95);
+}
+:is(#codex-wave-inline, #codex-playlist-import) dialog::backdrop {
+    animation: cw-backdrop-in 0.22s ease both;
+}
+:is(#codex-wave-inline, #codex-playlist-import) dialog[data-closing]::backdrop {
+    animation: cw-backdrop-out 0.18s ease both;
+}
+#codex-playlist-import {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    padding: 20px 24px;
+    margin: 0 0 34px;
+    background: #171717;
+    box-shadow: none;
+    border-color: #ffffff16;
+    border-radius: 12px;
+    animation: cw-card-enter 0.55s ease both;
+}
+#codex-playlist-import .ci-copy {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    min-width: 0;
+}
+#codex-playlist-import h3 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    line-height: 1.3;
+}
+#codex-playlist-import .ci-copy p {
+    margin: 0;
+    color: #aaa;
+    font-size: 12px;
+    line-height: 1.5;
+}
+#codex-playlist-import .ci-icon {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    border-radius: 12px;
+    background: #ffffff08;
+    color: #ff8853;
+}
+#codex-playlist-import .ci-icon svg {
+    width: 22px;
+    height: 22px;
+}
+#codex-playlist-import .cw-import-open {
+    margin: 0;
+    padding: 10px 16px;
+    border: 1px solid #ffffff30;
+    background: #ffffff08;
+    color: #eee;
+    border-radius: 8px;
+    white-space: nowrap;
+    transition:
+        background-color 0.2s,
+        transform 0.2s;
+}
+#codex-playlist-import .cw-import-open:hover {
+    background: #ffffff12;
+    transform: translateY(-1px);
+}
+#codex-playlist-import.ci-detached {
+    position: fixed;
+    inset: 0 auto auto 0;
+    width: 0;
+    height: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+}
+#codex-playlist-import.ci-detached > .ci-copy,
+#codex-playlist-import.ci-detached > .cw-import-open {
+    display: none;
+}
+#codex-playlist-import .cw-import-dialog[open] {
+    animation: cw-import-reveal 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes cw-flow {
+    0%,
+    100% {
+        transform: translate3d(-8%, -3%, 0) rotate(-25deg) scale(0.93);
+    }
+    25% {
+        transform: translate3d(12%, 7%, 0) rotate(4deg) scale(1.08, 0.92);
+    }
+    50% {
+        transform: translate3d(3%, -13%, 0) rotate(24deg) scale(0.9, 1.12);
+    }
+    75% {
+        transform: translate3d(-12%, 9%, 0) rotate(-4deg) scale(1.14, 0.94);
+    }
+}
+@keyframes cw-flow-reverse {
+    0%,
+    100% {
+        transform: translate3d(5%, 8%, 0) rotate(16deg) scale(1.05);
+    }
+    35% {
+        transform: translate3d(-14%, -12%, 0) rotate(-18deg) scale(0.9, 1.15);
+    }
+    70% {
+        transform: translate3d(10%, -2%, 0) rotate(30deg) scale(1.14, 0.9);
+    }
+}
+@keyframes cw-card-enter {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+@keyframes cw-settings-reveal {
+    from {
+        opacity: 0;
+        transform: translateX(55px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+@keyframes cw-option-reveal {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+@keyframes cw-import-reveal {
+    from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+@keyframes cw-backdrop-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+@keyframes cw-backdrop-out {
+    to {
+        opacity: 0;
+    }
+}
+@media (max-width: 600px) {
+    #codex-playlist-import {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 20px;
+    }
+    #codex-playlist-import .cw-import-open {
+        align-self: flex-start;
+    }
+    #codex-wave-inline .cw-hero .cw-content {
+        padding: 26px 22px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    #codex-wave-inline,
+    #codex-playlist-import,
+    :is(#codex-wave-inline, #codex-playlist-import) *,
+    :is(#codex-wave-inline, #codex-playlist-import) dialog::backdrop {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+#codex-wave-inline .cw-interface-language {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid #ffffff15;
+    padding: 0 0 18px;
+    margin-bottom: 24px;
+    color: #aaa;
+    font-size: 12px;
+}
+#codex-wave-inline .cw-interface-language select {
+    background: #292929;
+    border: 1px solid #ffffff25;
+    border-radius: 8px;
+    color: #eee;
+    padding: 8px 10px;
+    font: inherit;
+}
+html:has(#codex-wave-inline .cw-settings-dialog[open], #codex-playlist-import .cw-import-dialog[open]) {
+    overflow: hidden;
+}
+#codex-wave-inline .cw-settings-dialog .cw-advanced {
+    width: 100%;
+    align-self: stretch;
 }

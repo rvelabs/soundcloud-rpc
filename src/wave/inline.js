@@ -3,6 +3,44 @@
     const api = window.waveInline;
     if (!api) return;
     window.__soundcloudWaveInline = true;
+    let interfaceLanguage = window.__waveInitialLanguage || 'ru';
+    const systemLocale = window.__waveSystemLocale || navigator.language;
+    const resolvedLanguage = () =>
+        (interfaceLanguage === 'auto' ? systemLocale : interfaceLanguage).toLowerCase().startsWith('ru') ? 'ru' : 'en';
+    const t = (text, values = {}) => {
+        if (window.__waveTranslate)
+            return window.__waveTranslate(text, resolvedLanguage(), window.__waveEnglish || {}, values);
+        return String(text).replace(/\{(\w+)\}/g, (match, key) =>
+            values[key] === undefined ? match : String(values[key]),
+        );
+    };
+    const translatedMarkup = [];
+    const englishToOriginal = new Map(
+        Object.entries(window.__waveEnglish || {}).map(([original, english]) => [english, original]),
+    );
+    const originalText = (text) => {
+        const trimmed = text.trim();
+        const key = englishToOriginal.get(trimmed);
+        return /[А-Яа-яЁё]/.test(trimmed) ? trimmed : key;
+    };
+    const localizeMarkup = (container) => {
+        const walk = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        while (walk.nextNode()) {
+            const node = walk.currentNode,
+                original = node.nodeValue;
+            const key = originalText(original);
+            if (key)
+                translatedMarkup.push(() => {
+                    if (node.parentNode) node.nodeValue = original.replace(original.trim(), t(key));
+                });
+        }
+        for (const element of [container, ...container.querySelectorAll('*')])
+            for (const attr of ['aria-label', 'title', 'placeholder']) {
+                const original = element.getAttribute(attr);
+                const key = original && originalText(original);
+                if (key) translatedMarkup.push(() => element.setAttribute(attr, t(key)));
+            }
+    };
     const icon = (body) => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
     const icons = {
         play: icon('<path d="M8 5.4v13.2L18.5 12 8 5.4Z"/>'),
@@ -28,7 +66,7 @@
     };
     const root = document.createElement('section');
     root.id = 'codex-wave-inline';
-    root.setAttribute('aria-label', 'Моя волна');
+    root.setAttribute('aria-label', t('Моя волна'));
     root.innerHTML = `
       <div class="cw-hero">
         <div class="cw-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -37,7 +75,7 @@
           <div class="cw-top"><div><h2>Моя волна</h2><p>Музыка под ваш вкус. Выбирайте настроение — остальное подберёт волна.</p></div>
           <div class="cw-actions"><button class="cw-start" type="button" data-command="start">${icons.play}${icons.pause}<span>Слушать</span></button>
           <button class="cw-stop" type="button" data-command="stop">Завершить волну</button>
-          <button class="cw-settings-open" type="button" data-command="settings-open">Настроить</button><button class="cw-import-open" type="button" data-command="import-open">Импорт плейлиста</button></div></div>
+          <button class="cw-settings-open" type="button" data-command="settings-open">Настроить</button></div></div>
           <div class="cw-options" aria-label="Настройки подбора">
             <div class="cw-option"><span>Настроение</span><div role="group"><button data-setting="mood" data-value="any">Любое</button><button data-setting="mood" data-value="calm">Спокойное</button><button data-setting="mood" data-value="energetic">Бодрое</button><button data-setting="mood" data-value="happy">Весёлое</button><button data-setting="mood" data-value="sad">Грустное</button></div></div>
             <div class="cw-option"><span>Звучание</span><div role="group"><button data-setting="tone" data-value="any">Любое</button><button data-setting="tone" data-value="balanced">Сбалансированное</button><button data-setting="tone" data-value="bass">Басовое</button><button data-setting="tone" data-value="bright">Яркое</button></div></div>
@@ -68,9 +106,18 @@
         <div class="cw-import-results" aria-live="polite"></div>
         <div class="cw-import-footer"><span class="cw-import-summary"></span><div class="cw-import-footer-actions"><button class="cw-import-cancel" type="button" data-command="import-cancel" hidden>Отменить поиск</button><button class="cw-import-commit" type="button" data-command="import-commit" disabled>Создать в SoundCloud</button></div></div>
       </dialog>`;
+    const importCard = document.createElement('section');
+    importCard.id = 'codex-playlist-import';
+    importCard.setAttribute('aria-label', t('Импорт плейлистов'));
+    importCard.innerHTML =
+        '<div class="ci-copy"><span class="ci-icon" aria-hidden="true">' +
+        icons.shuffle +
+        '</span><div><h3>Ваша музыка — с вами</h3><p>Перенесите плейлист из Spotify, Яндекс Музыки или YouTube Music.</p></div></div><button class="cw-import-open" type="button" data-command="import-open">Перенести плейлист</button>';
+    const importDialog = root.querySelector('.cw-import-dialog');
+    importCard.append(importDialog);
     const settingsDialog = document.createElement('dialog');
     settingsDialog.className = 'cw-settings-dialog';
-    settingsDialog.setAttribute('aria-label', 'Настроить Мою волну');
+    settingsDialog.setAttribute('aria-label', t('Настроить Мою волну'));
     settingsDialog.innerHTML =
         '<div class="cw-settings-head"><h3>Настроить Мою волну</h3><button type="button" data-command="settings-reset" title="Сбросить настройки подбора" aria-label="Сбросить настройки подбора"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7V3m0 4h-4M20 7a8 8 0 1 0 0 10"/></svg></button><button type="button" data-command="settings-close" aria-label="Закрыть"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>';
     const options = root.querySelector('.cw-options');
@@ -82,9 +129,14 @@
     advanced.lastElementChild.append(group('tone'), group('tempo'));
     options.replaceChildren(...groups, advanced);
     settingsDialog.append(options);
+    const uiLanguage = document.createElement('label');
+    uiLanguage.className = 'cw-interface-language';
+    uiLanguage.innerHTML =
+        '<span>Язык интерфейса</span><select aria-label="Язык интерфейса"><option value="auto">Автоматически</option><option value="ru">Русский</option><option value="en">English</option></select>';
+    settingsDialog.insertBefore(uiLanguage, options);
     const languageHint = document.createElement('p');
     languageHint.className = 'cw-language-hint';
-    languageHint.textContent = 'Фильтр языка выбирает треки с явной пометкой языка или отсутствия вокала.';
+    languageHint.textContent = t('Фильтр языка выбирает треки с явной пометкой языка или отсутствия вокала.');
     settingsDialog.append(languageHint);
     const characterHint = document.createElement('p');
     characterHint.className = 'cw-language-hint';
@@ -94,12 +146,14 @@
     exclusions.innerHTML =
         '<summary>Исключённые исполнители <span></span></summary><p>Действует только в Моей волне. Ваши лайки и подписки сохраняются.</p><div></div>';
     settingsDialog.append(exclusions);
+    let excludedArtists = [];
     const renderExclusions = (artists) => {
+        excludedArtists = artists;
         exclusions.querySelector('span').textContent = artists.length ? '· ' + artists.length : '';
         const list = exclusions.querySelector('div');
         list.replaceChildren();
         if (!artists.length) {
-            list.textContent = 'Вы пока никого не исключили.';
+            list.textContent = t('Вы пока никого не исключили.');
             return;
         }
         for (const artist of artists) {
@@ -108,7 +162,7 @@
                 button = document.createElement('button');
             name.textContent = artist;
             button.type = 'button';
-            button.textContent = 'Вернуть';
+            button.textContent = t('Вернуть');
             button.dataset.command = 'restore-artist';
             button.dataset.artist = artist;
             row.append(name, button);
@@ -135,6 +189,7 @@
         language: 'any',
     };
     let active = false;
+    let heardCount = 0;
     let waveError = false;
     let playing = false;
     let candidate = null;
@@ -156,14 +211,18 @@
         importCompleted = 0;
     let importMatches = [];
     const importRows = new Map();
+    let lastImportProgress;
     const importMessage = (value) => {
         $('.cw-import-message').textContent = value;
     };
     const importError = (error) =>
-        String(error?.message || 'Не удалось завершить импорт.')
-            .replace(/^Error invoking remote method '[^']+':\s*/i, '')
-            .replace(/^Error:\s*/i, '');
+        t(
+            String(error?.message || 'Не удалось завершить импорт.')
+                .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+                .replace(/^Error:\s*/i, ''),
+        );
     const updateImportProgress = (phase, completed = 0, total = 0) => {
+        lastImportProgress = { phase, completed, total };
         const progress = $('.cw-import-progress'),
             meter = $('.cw-import-meter');
         progress.hidden = false;
@@ -171,15 +230,15 @@
         progress.classList.toggle('is-indeterminate', !total && !['done', 'error'].includes(phase));
         progress.classList.toggle('is-error', phase === 'error');
         const captions = {
-            source: 'Читаем плейлист',
-            matching: 'Ищем и проверяем треки',
-            checking: 'Проверяем доступность',
-            creating: 'Создаём плейлист',
-            adding: 'Добавляем музыку',
-            done: 'Готово',
-            error: 'Проверка остановлена',
+            source: t('Читаем плейлист'),
+            matching: t('Ищем и проверяем треки'),
+            checking: t('Проверяем доступность'),
+            creating: t('Создаём плейлист'),
+            adding: t('Добавляем музыку'),
+            done: t('Готово'),
+            error: t('Проверка остановлена'),
         };
-        $('.cw-import-caption').textContent = captions[phase] || 'Готовим импорт';
+        $('.cw-import-caption').textContent = captions[phase] || t('Готовим импорт');
         $('.cw-import-count').textContent = total ? `${Math.min(completed, total)} / ${total}` : '';
         const percent = total ? Math.min(100, Math.max(0, (completed / total) * 100)) : 0;
         meter.style.setProperty('--cw-import-progress', `${percent}%`);
@@ -189,14 +248,17 @@
     const updateImportSummary = () => {
         $('.cw-import-summary').textContent = importScanning
             ? importTotal
-                ? `Проверено ${importCompleted} из ${importTotal}`
-                : 'Готовим поиск…'
+                ? t('Проверено {done} из {total}', { done: importCompleted, total: importTotal })
+                : t('Готовим поиск…')
             : importMatches.length
-              ? `${importMatches.filter((item) => item.soundcloud).length} доступных совпадений из ${importMatches.length}`
+              ? t('{found} доступных совпадений из {total}', {
+                    found: importMatches.filter((item) => item.soundcloud).length,
+                    total: importMatches.length,
+                })
               : '';
         $('.cw-import-commit').textContent = importScanning
-            ? 'Создать из найденных'
-            : 'Добавить выбранные в SoundCloud';
+            ? t('Создать из найденных')
+            : t('Добавить выбранные в SoundCloud');
         $('.cw-import-commit').disabled = (importBusy && !importScanning) || !$('.cw-import-results input:checked');
     };
     const updateImportRow = (index) => {
@@ -209,12 +271,12 @@
         );
         nodes.source.textContent = `${entry.source.artist} — ${entry.source.title}`;
         nodes.found.textContent = entry.imported
-            ? 'Добавлено в плейлист'
+            ? t('Добавлено в плейлист')
             : entry.pending
-              ? 'Проверяем…'
+              ? t('Проверяем…')
               : entry.soundcloud
-                ? `SoundCloud: ${entry.soundcloud.artist} — ${entry.soundcloud.title} (${Math.round(entry.soundcloud.score * 100)}%) · Полный поток доступен`
-                : entry.error || 'В SoundCloud не найдено';
+                ? `SoundCloud: ${entry.soundcloud.artist} — ${entry.soundcloud.title} (${Math.round(entry.soundcloud.score * 100)}%) · ${t('Полный поток доступен')}`
+                : t(entry.error || '') || t('В SoundCloud не найдено');
     };
     const renderImport = () => {
         const container = $('.cw-import-results');
@@ -239,7 +301,10 @@
         container.append(fragment);
         updateImportSummary();
     };
-    const $ = (selector) => root.querySelector(selector);
+    localizeMarkup(root);
+    localizeMarkup(importCard);
+    translatedMarkup.forEach((render) => render());
+    const $ = (selector) => root.querySelector(selector) || importCard.querySelector(selector);
     const parseTime = (value) =>
         String(value || '0:00')
             .split(':')
@@ -248,7 +313,11 @@
     const isHome = () => ['/', '/discover'].includes(location.pathname.replace(/\/+$/, '') || '/');
     const detach = () => {
         homeMain = null;
-        if (active && document.body) {
+        if (importDialog.open || importBusy) {
+            importCard.classList.add('ci-detached');
+            if (importCard.parentElement !== document.body) document.body.append(importCard);
+        } else importCard.remove();
+        if ((active || settingsDialog.open) && document.body) {
             root.classList.add('cw-detached');
             if (root.parentElement !== document.body) document.body.appendChild(root);
         } else if (root.isConnected) root.remove();
@@ -276,10 +345,13 @@
         const target =
             personalized && main.contains(personalized) && !personalized.contains(root) ? personalized : null;
         const host = target?.parentElement || content;
-        const before = target || [...host.children].find((node) => node !== root) || null;
+        const before = target || [...host.children].find((node) => node !== root && node !== importCard) || null;
         root.classList.remove('cw-detached');
         root.dataset.placement = target ? 'personalized' : 'home';
-        if (root.parentElement !== host || root.nextElementSibling !== before) host.insertBefore(root, before);
+        importCard.classList.remove('ci-detached');
+        if (importCard.parentElement !== host || importCard.nextElementSibling !== before)
+            host.insertBefore(importCard, before);
+        if (root.parentElement !== host || root.nextElementSibling !== importCard) host.insertBefore(root, importCard);
     };
     let pending = false;
     const schedule = () => {
@@ -298,9 +370,10 @@
             records.every(
                 (record) =>
                     root.contains(record.target) ||
+                    importCard.contains(record.target) ||
                     !homeMain.contains(record.target) ||
                     [...record.addedNodes, ...record.removedNodes].every(
-                        (node) => node === root || node.nodeType !== 1,
+                        (node) => node === root || node === importCard || node.nodeType !== 1,
                     ),
             )
         )
@@ -309,11 +382,88 @@
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
     place();
-    const updateVisibility = (visible) => root.classList.toggle('cw-window-hidden', !visible);
-    api.on('visibility', updateVisibility);
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) updateVisibility(false);
+    let windowActive = false;
+    let inViewport = true;
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotion = () => {
+        const moving =
+            windowActive &&
+            !document.hidden &&
+            inViewport &&
+            !root.classList.contains('cw-detached') &&
+            !reducedMotion.matches;
+        root.classList.toggle('cw-motion', moving);
+        root.classList.toggle('cw-window-hidden', !windowActive || document.hidden);
+    };
+    const updateVisibility = (visible) => {
+        windowActive = Boolean(visible);
+        updateMotion();
+    };
+    const intersection = new IntersectionObserver(
+        (entries) => {
+            inViewport = entries[0]?.isIntersecting ?? false;
+            updateMotion();
+        },
+        { threshold: 0 },
+    );
+    intersection.observe(root);
+    reducedMotion.addEventListener('change', updateMotion);
+    window.addEventListener(
+        'pagehide',
+        () => {
+            intersection.disconnect();
+            reducedMotion.removeEventListener('change', updateMotion);
+            observer.disconnect();
+        },
+        { once: true },
+    );
+    const closeDialog = (dialog) => {
+        if (!dialog.open || dialog.dataset.closing) return;
+        if (reducedMotion.matches) {
+            dialog.close();
+            return;
+        }
+        dialog.dataset.closing = 'true';
+        const motion = dialog.animate(
+            [
+                { opacity: 1, transform: 'translateY(0)' },
+                { opacity: 0, transform: dialog === settingsDialog ? 'translateX(32px)' : 'translateY(12px)' },
+            ],
+            { duration: 180, easing: 'ease-in', fill: 'forwards' },
+        );
+        void motion.finished
+            .catch(() => {})
+            .finally(() => {
+                dialog.close();
+                delete dialog.dataset.closing;
+                motion.cancel();
+            });
+    };
+    settingsDialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        closeDialog(settingsDialog);
     });
+    importDialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        if (!importBusy) closeDialog(importDialog);
+        else importMessage(t('Дождитесь завершения текущего действия.'));
+    });
+    for (const dialog of [settingsDialog, importDialog])
+        dialog.addEventListener('click', (event) => {
+            if (event.target !== dialog) return;
+            const r = dialog.getBoundingClientRect();
+            if (
+                event.clientX >= r.left &&
+                event.clientX <= r.right &&
+                event.clientY >= r.top &&
+                event.clientY <= r.bottom
+            )
+                return;
+            if (dialog === importDialog && importBusy) return;
+            closeDialog(dialog);
+        });
+    api.on('visibility', updateVisibility);
+    document.addEventListener('visibilitychange', updateMotion);
     const renderControls = () => {
         const selectedLabels = [...root.querySelectorAll('[data-setting]')]
             .filter(
@@ -323,13 +473,13 @@
             )
             .map((button) => button.textContent.trim());
         presetSummary.textContent =
-            selectedLabels.filter(Boolean).join(' · ') || 'По вашему вкусу · все настройки открыты';
+            selectedLabels.filter(Boolean).join(' · ') || t('По вашему вкусу · все настройки открыты');
         languageHint.hidden = !controls.language || controls.language === 'any';
         characterHint.textContent =
             controls.discovery === 'favorites'
-                ? 'Любимое — ваши лайки и треки, которые вы слушали с интересом.'
+                ? t('Любимое — ваши лайки и треки, которые вы слушали с интересом.')
                 : controls.discovery === 'popular'
-                  ? 'Популярное — от 1000 прослушиваний в SoundCloud, с учётом вашего вкуса.'
+                  ? t('Популярное — от 1000 прослушиваний в SoundCloud, с учётом вашего вкуса.')
                   : '';
         characterHint.hidden = !characterHint.textContent;
         root.querySelectorAll('[data-setting]').forEach((button) => {
@@ -339,7 +489,7 @@
     };
     const renderLike = () => {
         const button = $('.cw-like');
-        const title = liked && likeKnown ? 'Убрать из понравившихся' : 'Добавить в понравившиеся';
+        const title = liked && likeKnown ? t('Убрать из понравившихся') : t('Добавить в понравившиеся');
         root.classList.toggle('cw-liked', liked && likeKnown);
         button.setAttribute('aria-pressed', String(liked && likeKnown));
         button.setAttribute('aria-label', title);
@@ -355,7 +505,7 @@
         document.documentElement.classList.toggle('codex-wave-active', active);
         $('.cw-player-wrap').inert = !active;
         $('.cw-player-wrap').setAttribute('aria-hidden', String(!active));
-        $('.cw-start span').textContent = active ? 'Волна включена' : 'Слушать';
+        $('.cw-start span').textContent = active ? t('Волна включена') : t('Слушать');
         $('.cw-start').setAttribute('aria-pressed', String(active));
         schedule();
     };
@@ -371,9 +521,9 @@
         }
         playing = Boolean(track.isPlaying);
         root.classList.toggle('cw-playing', playing);
-        $('.cw-play').setAttribute('aria-label', playing ? 'Пауза' : 'Воспроизвести');
-        $('.cw-play').title = playing ? 'Пауза' : 'Воспроизвести';
-        $('.cw-start span').textContent = active ? 'Волна включена' : 'Слушать';
+        $('.cw-play').setAttribute('aria-label', playing ? t('Пауза') : t('Воспроизвести'));
+        $('.cw-play').title = playing ? t('Пауза') : t('Воспроизвести');
+        $('.cw-start span').textContent = active ? t('Волна включена') : t('Слушать');
         durationSeconds = parseTime(track.duration);
         if ($('.cw-duration').textContent !== (track.duration || '0:00'))
             $('.cw-duration').textContent = track.duration || '0:00';
@@ -384,16 +534,16 @@
                 durationSeconds ? Math.round((parseTime(track.elapsed) / durationSeconds) * 1000) : 0,
             );
     };
-    root.addEventListener('click', (event) => {
+    const handleClick = (event) => {
         const button = event.target.closest('button');
-        if (!button || !root.contains(button)) return;
+        if (!button || (!root.contains(button) && !importCard.contains(button))) return;
         if (button.dataset.setting) {
             controls[button.dataset.setting] = button.dataset.value;
             renderControls();
             api.controls(controls);
             $('.cw-status').textContent = active
-                ? 'Подберём следующие треки с этой настройкой'
-                : 'Настройка применится при запуске волны';
+                ? t('Подберём следующие треки с этой настройкой')
+                : t('Настройка применится при запуске волны');
             return;
         }
         const command = button.dataset.command;
@@ -403,10 +553,10 @@
             void api
                 .copyDiagnostics()
                 .then(() => {
-                    diagnostics.querySelector('span').textContent = 'Отчёт скопирован';
+                    diagnostics.querySelector('span').textContent = t('Отчёт скопирован');
                 })
                 .catch(() => {
-                    diagnostics.querySelector('span').textContent = 'Не удалось скопировать отчёт';
+                    diagnostics.querySelector('span').textContent = t('Не удалось скопировать отчёт');
                 })
                 .finally(() => {
                     button.disabled = false;
@@ -418,7 +568,7 @@
             return;
         }
         if (command === 'settings-close') {
-            settingsDialog.close();
+            closeDialog(settingsDialog);
             return;
         }
         if (command === 'settings-reset') {
@@ -437,7 +587,7 @@
         }
         if (command === 'import-open') {
             if (!importer) {
-                $('.cw-status').textContent = 'Импорт недоступен в этой сборке.';
+                $('.cw-status').textContent = t('Импорт недоступен в этой сборке.');
                 return;
             }
             $('.cw-import-dialog').showModal();
@@ -445,8 +595,8 @@
             return;
         }
         if (command === 'import-close') {
-            if (!importBusy) $('.cw-import-dialog').close();
-            else importMessage('Дождитесь завершения текущего действия.');
+            if (!importBusy) closeDialog(importDialog);
+            else importMessage(t('Дождитесь завершения текущего действия.'));
             return;
         }
         if (command === 'import-scan') {
@@ -465,7 +615,7 @@
             $('.cw-import-cancel').disabled = false;
             $('.cw-import-title input').value = '';
             $('.cw-import-title input').disabled = true;
-            importMessage('Читаем плейлист…');
+            importMessage(t('Читаем плейлист…'));
             importScanPromise = importer
                 .scan(link)
                 .then((result) => {
@@ -477,8 +627,8 @@
                     $('.cw-import-title input').value = result.title || '';
                     $('.cw-import-title input').disabled = false;
                     importMessage(
-                        `${result.title}: проверьте совпадения перед добавлением.` +
-                            (result.partial ? ' Источник показал только часть треков.' : ''),
+                        t('{title}: проверьте совпадения перед добавлением.', { title: result.title }) +
+                            (result.partial ? t(' Источник показал только часть треков.') : ''),
                     );
                     updateImportProgress('done', importMatches.length, importMatches.length);
                 })
@@ -486,7 +636,7 @@
                     importMatches = importMatches.map((item) =>
                         item.pending ? { ...item, pending: false, error: 'Проверка остановлена.' } : item,
                     );
-                    importMessage(importError(error) + ' Найденные треки сохранены — их можно добавить в плейлист.');
+                    importMessage(importError(error) + t(' Найденные треки сохранены — их можно добавить в плейлист.'));
                     updateImportProgress('error', importCompleted, importTotal);
                 })
                 .finally(() => {
@@ -503,7 +653,7 @@
         if (command === 'import-cancel') {
             if (importScanning) {
                 button.disabled = true;
-                importMessage('Отменяем поиск…');
+                importMessage(t('Отменяем поиск…'));
                 importer.cancel();
             }
             return;
@@ -511,35 +661,42 @@
         if (command === 'import-commit') {
             if (importScanning) {
                 button.disabled = true;
-                importMessage('Останавливаем поиск и сохраняем найденную часть…');
+                importMessage(t('Останавливаем поиск и сохраняем найденную часть…'));
                 importer.cancel();
                 void importScanPromise.then(() => button.click());
                 return;
             }
             if (importBusy) return;
-            const indexes = [...root.querySelectorAll('.cw-import-results input:checked')].map((input) =>
+            const indexes = [...importCard.querySelectorAll('.cw-import-results input:checked')].map((input) =>
                 Number(input.dataset.index),
             );
             if (!indexes.length) {
-                importMessage('Выберите хотя бы один найденный трек.');
+                importMessage(t('Выберите хотя бы один найденный трек.'));
                 return;
             }
             importBusy = true;
             button.disabled = true;
             $('.cw-import-source button').disabled = true;
             updateImportProgress('checking', 0, indexes.length);
-            importMessage('Создаём плейлист в SoundCloud…');
+            importMessage(t('Создаём плейлист в SoundCloud…'));
             void importer
                 .commit({ indexes, title: $('.cw-import-title input').value.trim() })
                 .then((result) => {
                     importMessage(
-                        `Готово: добавлено ${result.added} треков в «${result.title}».` +
-                            (result.already ? ` Уже были в плейлисте: ${result.already}.` : '') +
-                            (result.failures.length ? ` Не удалось добавить ${result.failures.length}.` : '') +
-                            (result.unmatched
-                                ? ` Без совпадений или ещё не проверено: ${result.unmatched}. Найденная часть сохранена.`
+                        t('Готово: добавлено {count} треков в «{title}».', {
+                            count: result.added,
+                            title: result.title,
+                        }) +
+                            (result.already ? t(' Уже были в плейлисте: {count}.', { count: result.already }) : '') +
+                            (result.failures.length
+                                ? t(' Не удалось добавить {count}.', { count: result.failures.length })
                                 : '') +
-                            (result.duplicates ? ` Повторы пропущены: ${result.duplicates}.` : ''),
+                            (result.unmatched
+                                ? t(' Без совпадений или ещё не проверено: {count}. Найденная часть сохранена.', {
+                                      count: result.unmatched,
+                                  })
+                                : '') +
+                            (result.duplicates ? t(' Повторы пропущены: {count}.', { count: result.duplicates }) : ''),
                     );
                     const saved = new Set(result.successfulUrls || []);
                     importMatches = importMatches.map((item) =>
@@ -567,7 +724,7 @@
                 .excludeArtist(artist, command === 'exclude-artist')
                 .then(renderExclusions)
                 .catch((error) => {
-                    $('.cw-status').textContent = error.message || 'Не удалось изменить исключения';
+                    $('.cw-status').textContent = error.message || t('Не удалось изменить исключения');
                 })
                 .finally(() => {
                     button.disabled = false;
@@ -580,7 +737,7 @@
             void api
                 .dislike(candidate.url)
                 .catch((error) => {
-                    $('.cw-status').textContent = error.message || 'Не удалось сменить трек';
+                    $('.cw-status').textContent = error.message || t('Не удалось сменить трек');
                 })
                 .finally(() => {
                     button.disabled = false;
@@ -589,26 +746,27 @@
         }
         if (command === 'start') {
             if (!active || waveError) {
-                $('.cw-status').textContent = 'Ищем вашу музыку…';
+                $('.cw-status').textContent = t('Ищем вашу музыку…');
                 button.disabled = true;
                 void api
                     .start()
                     .catch((error) => {
-                        $('.cw-status').textContent = error.message || 'Не удалось запустить волну';
+                        $('.cw-status').textContent = error.message || t('Не удалось запустить волну');
                     })
                     .finally(() => {
                         button.disabled = false;
                     });
             } else
-                $('.cw-status').textContent =
-                    'Следующий трек готовится заранее. Воспроизведением управляет SoundCloud.';
+                $('.cw-status').textContent = t(
+                    'Следующий трек готовится заранее. Воспроизведением управляет SoundCloud.',
+                );
         } else if (command === 'like') {
             if (likePending || !candidate) return;
             const desired = likeKnown ? !liked : true;
             const requestId = ++likeRequestId;
             likePending = true;
             renderLike();
-            $('.cw-status').textContent = desired ? 'Добавляем трек в понравившиеся…' : 'Убираем лайк…';
+            $('.cw-status').textContent = desired ? t('Добавляем трек в понравившиеся…') : t('Убираем лайк…');
             void api
                 .like(candidate.url, desired)
                 .then((result) => {
@@ -617,12 +775,12 @@
                     likeKnown = true;
                     renderLike();
                     $('.cw-status').textContent = liked
-                        ? 'Трек добавлен в понравившиеся SoundCloud'
-                        : 'Лайк снят в SoundCloud';
+                        ? t('Трек добавлен в понравившиеся SoundCloud')
+                        : t('Лайк снят в SoundCloud');
                 })
                 .catch((error) => {
                     if (requestId === likeRequestId)
-                        $('.cw-status').textContent = error?.message || 'Не удалось изменить лайк в SoundCloud';
+                        $('.cw-status').textContent = error?.message || t('Не удалось изменить лайк в SoundCloud');
                 })
                 .finally(() => {
                     if (requestId === likeRequestId) {
@@ -645,18 +803,22 @@
                 api.control('volume', Number(slider.value));
             } else api.control(command);
         }
-    });
+    };
+    root.addEventListener('click', handleClick);
+    importCard.addEventListener('click', handleClick);
+
     const renderExplanation = (item) => {
         $('.cw-insight').hidden = !item || !active;
         $('.cw-reasons').textContent =
             item?.recommendationReasons
                 ?.filter((reason) => reason !== 'похож на пропущенное')
+                .map((reason) => t(reason))
                 .slice(0, 3)
-                .join(' · ') || 'Подбор по вашему вкусу и настройкам';
+                .join(' · ') || t('Подбор по вашему вкусу и настройкам');
         $('.cw-evidence').textContent =
             item?.bpm && item.bpmConfidence >= 0.65
-                ? [item.genre, 'BPM из метаданных: ' + item.bpm].filter(Boolean).join(' · ')
-                : [item?.genre, 'Темп без подтверждённого BPM оценивается по тегам'].filter(Boolean).join(' · ');
+                ? [item.genre, t('BPM из метаданных: ') + item.bpm].filter(Boolean).join(' · ')
+                : [item?.genre, t('Темп без подтверждённого BPM оценивается по тегам')].filter(Boolean).join(' · ');
     };
     $('.cw-timeline input').addEventListener('pointerdown', () => {
         internalSeek = true;
@@ -701,11 +863,14 @@
                 updateImportSummary();
             }
             if (importScanning) updateImportSummary();
-            importMessage(`${state.detail || 'Импорт'}${state.total ? ` · ${state.completed}/${state.total}` : ''}`);
+            importMessage(`${state.detail || t('Импорт')}${state.total ? ` · ${state.completed}/${state.total}` : ''}`);
         });
     api.on('active', updateActive);
     api.on('track', updateTrack);
     api.on('candidate', (item) => {
+        let palette = 0;
+        for (const char of item?.url || '') palette = (palette * 31 + char.charCodeAt(0)) | 0;
+        root.style.setProperty('--cw-hue', ((palette >>> 0) % 100) - 50 + 'deg');
         likeRequestId++;
         likePending = false;
         liked = false;
@@ -715,7 +880,7 @@
         renderLike();
         lastArtwork = '';
         $('.cw-art').style.backgroundImage = '';
-        $('.cw-title').textContent = item?.title || 'Подбираем трек…';
+        $('.cw-title').textContent = item?.title || t('Подбираем трек…');
         $('.cw-artist').textContent = item?.artist || '';
         $('.cw-tags').textContent = [item?.genre, ...(item?.tags || []), item?.bpm && `${item.bpm} BPM`]
             .filter(Boolean)
@@ -755,24 +920,62 @@
     });
     api.on('state', (state, message) => {
         waveError = state === 'error';
-        $('.cw-start span').textContent = waveError ? 'Повторить подбор' : active ? 'Волна включена' : 'Слушать';
+        root.classList.toggle('cw-loading', state === 'loading');
+        $('.cw-start span').textContent = waveError
+            ? t('Повторить подбор')
+            : active
+              ? t('Волна включена')
+              : t('Слушать');
         $('.cw-status').textContent =
             state === 'loading'
-                ? 'Ищем вашу музыку…'
+                ? t('Ищем вашу музыку…')
                 : state === 'playing'
-                  ? String(message || 'Следующий трек готовится заранее')
-                  : String(message || 'Не удалось запустить волну');
+                  ? String(t(message || t('Следующий трек готовится заранее')))
+                  : String(t(message || 'Не удалось запустить волну'));
     });
     api.on('stats', (stats) => {
-        if (stats?.heard) $('.cw-kicker').textContent = `МОЯ ВОЛНА · учтено ${stats.heard} прослушиваний`;
+        heardCount = stats?.heard || 0;
+        if (stats?.heard)
+            $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: stats.heard });
     });
     api.on('scroll', () => {
         schedule();
         setTimeout(() => root.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
     });
     api.on('route', schedule);
+    const applyInterfaceLanguage = (value) => {
+        interfaceLanguage = ['auto', 'ru', 'en'].includes(value) ? value : 'auto';
+        root.lang = importCard.lang = resolvedLanguage();
+        uiLanguage.querySelector('select').value = interfaceLanguage;
+        translatedMarkup.forEach((render) => render());
+        renderControls();
+        renderLike();
+        renderExplanation(candidate);
+        renderExclusions(excludedArtists);
+        renderImport();
+        if (lastImportProgress)
+            updateImportProgress(lastImportProgress.phase, lastImportProgress.completed, lastImportProgress.total);
+        if (heardCount)
+            $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: heardCount });
+        $('.cw-start span').textContent = t(waveError ? 'Повторить подбор' : active ? 'Волна включена' : 'Слушать');
+        $('.cw-status').textContent = t(
+            active ? 'Следующий трек готовится заранее' : 'Рекомендации SoundCloud + ваш локальный вкус',
+        );
+    };
+    uiLanguage.querySelector('select').addEventListener('change', async (event) => {
+        const value = event.target.value;
+        try {
+            if (api.setLanguage) await api.setLanguage(value);
+            applyInterfaceLanguage(value);
+        } catch {
+            uiLanguage.querySelector('select').value = interfaceLanguage;
+        }
+    });
+    api.on('interface-language', applyInterfaceLanguage);
     void api.ready().then((state) => {
         if (!state) return;
+        heardCount = state.stats?.heard || 0;
+        applyInterfaceLanguage(state.interfaceLanguage || interfaceLanguage);
         renderExclusions(state.excludedArtists || []);
         controls = { ...controls, ...state.controls };
         renderControls();

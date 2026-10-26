@@ -41,6 +41,20 @@ app.whenReady().then(async () => {
         assert.equal(state.inline, 1);
         assert.equal(state.genre, false);
         assert.equal(state.diagnostics, true);
+        await assert.rejects(page.webContents.executeJavaScript(`window.waveInline.setLanguage('unsupported')`));
+        await page.webContents.executeJavaScript(`window.waveInline.setLanguage('en')`);
+        page.webContents.reload();
+        let translated = false;
+        for (let attempt = 0; attempt < 200; attempt++) {
+            translated = await page.webContents
+                .executeJavaScript(
+                    `document.querySelector('#codex-wave-inline h2')?.textContent==='My Wave' && document.querySelector('.cw-interface-language select')?.value==='en'`,
+                )
+                .catch(() => false);
+            if (translated) break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        assert(translated, 'interface language survives a full page reload');
         const attached = new Set([
             window.webContents.id,
             ...window.getBrowserViews().map((view) => view.webContents.id),
