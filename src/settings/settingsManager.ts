@@ -35,6 +35,19 @@ export class SettingsManager {
             this.show();
         }
     }
+    public showUpdates(): void {
+        this.show();
+        const contents = this.view?.webContents;
+        if (!contents || contents.isDestroyed()) return;
+        const scroll = () => {
+            if (!contents.isDestroyed())
+                void contents
+                    .executeJavaScript("document.getElementById('updates-section')?.scrollIntoView({block:'start'})")
+                    .catch(() => {});
+        };
+        if (contents.isLoadingMainFrame()) contents.once('did-finish-load', scroll);
+        else scroll();
+    }
     private createView(): BrowserView {
         if (this.view) return this.view;
         this.view = new BrowserView({
@@ -837,13 +850,22 @@ export class SettingsManager {
                     </div>
                 </div>
                 <div class="description" data-i18n="uiScaleDescription">${this.translationService.translate('uiScaleDescription')}</div>
-                <div class="setting-item">
-                    <span data-i18n="enableAutoUpdater">${this.translationService.translate('enableAutoUpdater')}</span>
-                    <label class="toggle">
-                        <input type="checkbox" id="autoUpdaterEnabled" ${this.store.get('autoUpdaterEnabled', true) ? 'checked' : ''}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
+                <section id="updates-section" style="margin:20px 0;padding:16px;border:1px solid var(--border-color,#ffffff22);border-radius:12px;scroll-margin-top:20px">
+                    <h3 id="updates-title" style="font-size:16px;margin-bottom:12px">SoundCloud updates</h3>
+                    <label id="updates-mode-label" for="updateMode">Update mode</label>
+                    <select id="updateMode" class="textInput" style="width:100%;margin:8px 0"><option value="patch" id="update-mode-patch">Automatic: small fixes</option><option value="notify" id="update-mode-notify">Notify only</option><option value="off" id="update-mode-off">No automatic checks</option></select>
+                    <p class="description" id="updates-description"></p>
+                    <p class="description" id="updates-status" role="status" style="margin:12px 0">…</p>
+                    <progress id="updates-progress" max="100" value="0" hidden style="width:100%;height:6px;accent-color:#ff5500;margin-bottom:12px"></progress>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px">
+                        <button type="button" id="updates-check" class="button">Check now</button>
+                        <button type="button" id="updates-download" class="button" hidden>Download update</button>
+                        <button type="button" id="updates-install" class="button" hidden>Restart and install</button>
+                        <button type="button" id="updates-notes" class="button">What's new</button>
+                    </div>
+                    <p id="updates-worker-help" class="description" style="margin-top:12px" hidden></p>
+                    <button type="button" id="updates-worker-ack" class="button" hidden>Worker updated</button>
+                </section>
                 <div class="setting-item">
                     <span data-i18n="enableTrackParser">${this.translationService.translate('enableTrackParser')}</span>
                     <label class="toggle">
@@ -1519,9 +1541,27 @@ export class SettingsManager {
                 ipcRenderer.send('setting-changed', { key: 'trackParserEnabled', value: e.target.checked });
             });
 
-            document.getElementById('autoUpdaterEnabled')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'autoUpdaterEnabled', value: e.target.checked });
+            let latestUpdateState;
+            function renderUpdates(state){
+                const labels=state.labels;if(!labels)return;
+                latestUpdateState=state;
+                for(const [id,key]of [['updates-title','title'],['updates-mode-label','mode'],['updates-description','description'],['update-mode-patch','patch'],['update-mode-notify','notify'],['update-mode-off','off'],['updates-check','check'],['updates-download','download'],['updates-install','install'],['updates-notes','notes'],['updates-worker-help','workerHelp'],['updates-worker-ack','worker']])document.getElementById(id).textContent=labels[key];
+                document.getElementById('updateMode').value=state.mode;
+                document.getElementById('updates-status').textContent=state.message;
+                document.getElementById('updates-check').disabled=!state.installSupported||['checking','downloading','ready'].includes(state.phase);
+                document.getElementById('updates-download').hidden=!state.installSupported||!state.version||!['available','error'].includes(state.phase);
+                document.getElementById('updates-install').hidden=!state.installSupported||state.phase!=='ready';
+                const progress=document.getElementById('updates-progress');progress.hidden=state.phase!=='downloading';progress.value=state.percent||0;
+                document.getElementById('updates-worker-help').hidden=!state.workerNotice;document.getElementById('updates-worker-ack').hidden=!state.workerNotice;
+            }
+            ipcRenderer.on('updates:state',(_event,state)=>renderUpdates(state));
+            ipcRenderer.invoke('updates:status').then(renderUpdates).catch(()=>{});
+            ipcRenderer.on('settings-visibility',(_event,visible)=>{if(visible)ipcRenderer.invoke('updates:status').then(renderUpdates).catch(()=>{});});
+            for(const [id,channel]of [['updates-check','updates:check'],['updates-download','updates:download'],['updates-install','updates:install'],['updates-notes','updates:release-notes'],['updates-worker-ack','updates:worker-ack']])document.getElementById(id).addEventListener('click',async()=>{
+                const button=document.getElementById(id);button.disabled=true;
+                try{renderUpdates(await ipcRenderer.invoke(channel));}catch{document.getElementById('updates-status').textContent='Не удалось выполнить действие / Could not complete the action';}finally{button.disabled=id==='updates-check'&&latestUpdateState?(!latestUpdateState.installSupported||['checking','downloading','ready'].includes(latestUpdateState.phase)):false;}
             });
+            document.getElementById('updateMode').addEventListener('change',async(event)=>{try{renderUpdates(await ipcRenderer.invoke('updates:mode',event.target.value));}catch{ipcRenderer.invoke('updates:status').then(renderUpdates).catch(()=>{});}});
 
             document.getElementById('richPresencePreviewEnabled')?.addEventListener('change', (e) => {
                 const isEnabled = e.target.checked;

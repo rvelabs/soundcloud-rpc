@@ -4,6 +4,18 @@ const ipcRenderer = {
     on: (channel, listener) => window.headerAPI.on(channel, (...args) => listener(null, ...args)),
 };
 const platform = window.headerAPI.platform;
+function showUpdateBadge(state) {
+    const button = document.getElementById('update-badge');
+    button.hidden = !state.version || !['available', 'downloading', 'ready', 'error'].includes(state.phase);
+    button.textContent = state.badge;
+    button.title = state.message;
+}
+ipcRenderer.on('updates:state', (_event, state) => showUpdateBadge(state));
+ipcRenderer
+    .invoke('updates:status')
+    .then(showUpdateBadge)
+    .catch(() => {});
+document.getElementById('update-badge').addEventListener('click', () => ipcRenderer.send('updates:open'));
 let isMaximized = false;
 let canGoBack = false;
 let canGoForward = false;

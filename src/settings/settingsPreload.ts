@@ -9,6 +9,13 @@ const SEND_CHANNELS = new Set([
     'logout-account',
 ]);
 const INVOKE_CHANNELS = new Set([
+    'updates:status',
+    'updates:check',
+    'updates:download',
+    'updates:install',
+    'updates:mode',
+    'updates:release-notes',
+    'updates:worker-ack',
     'network:setup-accounts',
     'network:setup-deploy',
     'network:setup-cancel',
@@ -33,6 +40,7 @@ const INVOKE_CHANNELS = new Set([
     'get-accounts',
 ]);
 const ON_CHANNELS = new Set([
+    'updates:state',
     'settings-visibility',
     'network:setup-progress',
     'presence-preview-update',

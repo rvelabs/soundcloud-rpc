@@ -26,6 +26,13 @@
 Upgrading preserves your profile. The installer is currently unsigned, so Windows may show a publisher warning. SHA-256
 checksums are included with releases.
 
+## Updates
+
+From 0.28.3, patch releases such as 0.28.3 → 0.28.4 download in the background and install when you quit normally.
+Larger releases show a notification and wait for your choice. Playback is never interrupted by an automatic restart.
+Use **F1 → SoundCloud updates** to check, restart and install, or choose notifications only. Older clients need one
+manual upgrade to enable this. A deployed Cloudflare Worker is updated separately.
+
 ## What to expect
 
 Recommendations use SoundCloud related tracks and local ranking. This is an independent algorithm; it does not reproduce
@@ -93,6 +100,10 @@ sign-in cookies and tokens.
 Установите сборку из [Releases](https://github.com/rvelabs/soundcloud-rpc/releases/latest), войдите в SoundCloud и
 нажмите «Слушать» на главной. Для нового аккаунта сначала добавьте несколько лайков или включите любимую запись.
 Обновление сохраняет профиль; доверенной подписи Windows пока нет.
+
+С версии 0.28.3 небольшие исправления скачиваются в фоне и устанавливаются при обычном выходе из клиента. О крупных
+обновлениях клиент уведомит; перезапуск выбираете вы. Режим меняется в **F1 → Обновления SoundCloud**. Для старых
+сборок один раз установите новую версию вручную. Worker в Cloudflare обновляется отдельно.
 
 Алгоритм собственный, на основе похожих треков SoundCloud и ваших реакций. Поиска по словам жанра нет. Скорость зависит
 от сервиса, а точность темпа, настроения и языка — от метаданных. Импорт переносит найденные версии SoundCloud, не

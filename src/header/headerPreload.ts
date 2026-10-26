@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 const SEND_CHANNELS = new Set([
+    'updates:open',
     'cancel-refresh',
     'close-window',
     'maximize-window',
@@ -9,8 +10,14 @@ const SEND_CHANNELS = new Set([
     'refresh-page',
     'title-bar-double-click',
 ]);
-const INVOKE_CHANNELS = new Set(['get-navigation-controls-enabled', 'get-theme-colors', 'is-maximized']);
+const INVOKE_CHANNELS = new Set([
+    'get-navigation-controls-enabled',
+    'get-theme-colors',
+    'is-maximized',
+    'updates:status',
+]);
 const ON_CHANNELS = new Set([
+    'updates:state',
     'window-state-changed',
     'navigation-controls-toggle',
     'navigation-state-changed',

@@ -24,6 +24,30 @@ body {
     user-select: none;
     overflow: hidden;
 }
+#update-badge {
+    -webkit-app-region: no-drag;
+    max-width: 200px;
+    padding: 3px 10px;
+    margin-right: 8px;
+    border: 1px solid #ff773655;
+    background: #ff55001c;
+    color: var(--header-accent);
+    border-radius: 12px;
+    font:
+        600 11px/18px system-ui,
+        sans-serif;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    cursor: pointer;
+}
+#update-badge[hidden] {
+    display: none;
+}
+#update-badge:focus-visible {
+    outline: 2px solid var(--header-accent);
+    outline-offset: 1px;
+}
 :root {
     --header-bg: #121212;
     --header-text: #ffffff;

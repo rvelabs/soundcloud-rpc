@@ -1,6 +1,7 @@
 {
     "name": "soundcloud-rpc",
-    "version": "0.28.2",
+    "version": "0.28.3",
+    "workerProtocolRevision": 2,
     "description": "SoundCloud desktop client with personalized radio, playlist import, Discord Rich Presence and Last.fm",
     "author": {
         "name": "Richard Habitzreuter",
@@ -16,7 +17,7 @@
         "copy-header": "cpx \"src/header/**/*\" tsc/header && cpx \"src/wave/*.{html,css,js}\" tsc/wave",
         "dev": "tsc && npm run copy-header && electron ./tsc/main.js --dev",
         "build": "tsc && npm run copy-header && electron-builder --dir",
-        "build-win": "tsc && npm run copy-header && electron-builder -w nsis",
+        "build-win": "tsc && npm run copy-header && electron-builder -w nsis --publish never && node scripts/prepare-update-feed.cjs build",
         "build-win-ptb": "tsc && npm run copy-header && electron-builder -w portable",
         "build-mac": "tsc && npm run copy-header && electron-builder -m dmg",
         "build-linux-deb": "tsc && npm run copy-header && electron-builder -l deb",
@@ -28,7 +29,12 @@
         "appId": "dev.codex.soundcloud-wave",
         "productName": "SoundCloud",
         "asar": true,
-        "publish": null,
+        "publish": {
+            "provider": "github",
+            "owner": "rvelabs",
+            "repo": "soundcloud-rpc",
+            "releaseType": "release"
+        },
         "extraResources": [
             {
                 "from": "assets/icons",

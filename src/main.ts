@@ -46,6 +46,8 @@ import { SoundCloudRecommender } from './wave/recommendation/soundcloudAdapter';
 import { RelatedDiscovery } from './wave/relatedDiscovery';
 import { ListeningEvidence } from './wave/listeningEvidence';
 import { WindowTasks } from './utils/windowTasks';
+import { UpdateController, type UpdateMode, type UpdateState } from './updates/updateController';
+import { presentUpdate } from './updates/presentation';
 import { waveEnglish, translateWaveText } from './wave/i18n';
 import { PreparedQueue } from './wave/preparedQueue';
 import {
@@ -109,7 +111,7 @@ const store = new Store({
         navigationControlsEnabled: false,
         trackParserEnabled: true,
         richPresencePreviewEnabled: false,
-        autoUpdaterEnabled: false,
+        updateMode: 'patch',
         hidePromotions: true,
         hideEventsNearYou: true,
         hideArtistUpsells: true,
@@ -123,6 +125,7 @@ let isDarkTheme = store.get('theme') !== 'light';
 let mainWindow: BrowserWindow;
 let notificationManager: NotificationManager;
 let settingsManager: SettingsManager;
+let updateController: UpdateController | undefined;
 let proxyService: ProxyService;
 let presenceService: PresenceService;
 let lastFmService: LastFmService;
@@ -223,25 +226,77 @@ Object.defineProperty(app, 'isQuitting', {
 let displayWhenIdling = store.get('displayWhenIdling') as boolean;
 let displaySCSmallIcon = store.get('displaySCSmallIcon') as boolean;
 function setupUpdater() {
-    if (app.isPackaged) return;
-    if (!store.get('autoUpdaterEnabled', true)) {
-        console.log('Auto-updater disabled by user setting');
-        return;
-    }
-    if (process.platform === 'linux' && !process.env.APPIMAGE) {
-        console.log('Not running from AppImage, skipping auto-updater');
-        return;
-    }
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.on('update-available', () => {
-        queueToastNotification('Update Available');
+    if (updateController) return;
+    const supported =
+        app.isPackaged &&
+        process.platform === 'win32' &&
+        !process.env.PORTABLE_EXECUTABLE_DIR &&
+        existsSync(path.join(process.resourcesPath, 'app-update.yml'));
+    autoUpdater.setFeedURL({ provider: 'github', owner: 'rvelabs', repo: 'soundcloud-rpc', releaseType: 'release' });
+    const metadata = require('../package.json') as { workerProtocolRevision?: number };
+    const savedMode = store.get('updateMode', 'patch');
+    updateController = new UpdateController(autoUpdater, {
+        currentVersion: app.getVersion(),
+        mode: (['patch', 'notify', 'off'].includes(savedMode) ? savedMode : 'patch') as UpdateMode,
+        installSupported: supported,
+        canCheck: supported,
+        workerRevision: metadata.workerProtocolRevision || 2,
+        usesWorker: () => Boolean(store.get('cloudflareEndpoint', '')),
+        pendingWorker: () => Number(store.get('pendingWorkerUpdate', 0)),
+        setPendingWorker: (revision) => store.set('pendingWorkerUpdate', revision),
+        changed: broadcastUpdate,
+        notify: (state) => queueToastNotification(updateView(state).badge),
+        beforeInstall: () => {
+            isQuitting = true;
+            Object.assign(app, { isQuitting: true });
+        },
     });
-    autoUpdater.on('update-downloaded', () => {
-        queueToastNotification('Update Completed');
-    });
-    autoUpdater.checkForUpdates();
+    updateController.start();
 }
+function updateView(state = updateController!.snapshot()) {
+    const language = store.get('waveInterfaceLanguage', 'auto');
+    return presentUpdate(
+        state,
+        language === 'ru' || (language === 'auto' && app.getLocale().toLowerCase().startsWith('ru')),
+    );
+}
+function broadcastUpdate(state: UpdateState) {
+    const view = updateView(state);
+    for (const contents of [headerView?.webContents, settingsManager?.getView()?.webContents])
+        if (contents && !contents.isDestroyed()) contents.send('updates:state', view);
+}
+for (const channel of [
+    'updates:status',
+    'updates:check',
+    'updates:download',
+    'updates:install',
+    'updates:mode',
+    'updates:release-notes',
+    'updates:worker-ack',
+]) {
+    ipcMain.handle(channel, async (event, value: unknown) => {
+        if (
+            !settingsManager?.owns(event.sender) &&
+            !(channel === 'updates:status' && event.sender === headerView?.webContents)
+        )
+            throw new Error('Untrusted update action');
+        if (!updateController) throw new Error('Updater is not ready');
+        if (channel === 'updates:check') await updateController.check();
+        if (channel === 'updates:download') void updateController.download();
+        if (channel === 'updates:install') updateController.install();
+        if (channel === 'updates:mode') {
+            updateController.setMode(value);
+            store.set('updateMode', value);
+        }
+        if (channel === 'updates:worker-ack') updateController.acknowledgeWorker();
+        if (channel === 'updates:release-notes') await shell.openExternal(updateView().releaseUrl);
+        return updateView();
+    });
+}
+ipcMain.on('updates:open', (event) => {
+    if (event.sender !== headerView?.webContents) return;
+    settingsManager?.showUpdates();
+});
 function installDesktopFile() {
     if (process.platform !== 'linux' || !process.env.APPIMAGE) return;
     try {
@@ -524,6 +579,8 @@ async function init() {
     else Menu.setApplicationMenu(null);
     const windowState = windowStateManager({ defaultWidth: 800, defaultHeight: 800 });
     mainWindow = createBrowserWindow(windowState);
+    mainWindow.on('query-session-end', () => updateController?.systemShutdown());
+    mainWindow.on('session-end', () => updateController?.systemShutdown());
     windowState.manage(mainWindow);
     mainWindow.on('close', (event) => {
         const minimizeToTray = store.get('minimizeToTray', true);
@@ -2241,12 +2298,6 @@ async function init() {
             }
         } else if (key === 'uiScale') {
             if (contentView) clientContents.setZoomFactor(data.value);
-        } else if (key === 'autoUpdaterEnabled') {
-            if (data.value) {
-                setupUpdater();
-            } else {
-                console.log('Auto-updater disabled by user');
-            }
         } else if (key === 'customTheme') {
             if (data.value === 'none') {
                 themeService.removeCustomTheme();
@@ -2658,6 +2709,7 @@ app.on('activate', function () {
 });
 app.on('before-quit', () => {
     isQuitting = true;
+    updateController?.dispose();
     lastFmService?.dispose();
     webhookService?.dispose();
     presenceService?.dispose();

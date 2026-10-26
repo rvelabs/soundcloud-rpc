@@ -35,5 +35,8 @@ jobs:
             - uses: actions/upload-artifact@v4
               with:
                   name: soundcloud-windows
-                  path: build/*installer-win.exe
+                  path: |
+                      build/*installer-win.exe
+                      build/*.blockmap
+                      build/latest.yml
                   if-no-files-found: error
