@@ -57,6 +57,10 @@ authentication, connection and SoundCloud response errors without including keys
 reachable from your network;
 [ISP restrictions can also affect Workers](https://developers.cloudflare.com/support/troubleshooting/general-troubleshooting/service-disruption/).
 
+From 0.28.4, the check also fetches interface scripts from SoundCloud's CDN. Copied diagnostics include the open page's
+load errors and whether website, CDN and API requests actually use the Worker. Saving **Always through Worker** reloads
+the open SoundCloud page; automatic recovery waits while the player is active.
+
 For Workers deployed before 0.28.2, add `no_websocket_standard_binary_type` in the Worker's Cloudflare compatibility
 flags and save/deploy, or redeploy the updated Worker code. This fixes immediate closure after the first binary packet;
 updating the desktop app alone does not change an already deployed Worker. Keep the existing `RELAY_TOKEN` when

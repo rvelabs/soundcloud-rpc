@@ -7,29 +7,38 @@ describe('relay diagnosis at the failing stage', () => {
         vi.useFakeTimers();
         const fetcher = vi.fn(async (url: RequestInfo | URL) => {
             await new Promise((resolve) => setTimeout(resolve, 8000));
-            return String(url).includes('api-v2') ? new Response('', { status: 401 }) : new Response(html);
+            return String(url).includes('api-v2')
+                ? new Response('', { status: 401 })
+                : String(url).includes('sndcdn')
+                  ? new Response('globalThis.ready=true;')
+                  : new Response(html);
         });
         const probe = probeSoundCloud(fetcher as typeof fetch, { timeoutMs: 10000 });
-        await vi.advanceTimersByTimeAsync(16000);
-        expect((await probe).map((stage) => stage.outcome)).toEqual(['ok', 'ok']);
+        await vi.advanceTimersByTimeAsync(24000);
+        expect((await probe).map((stage) => stage.outcome)).toEqual(['ok', 'ok', 'ok']);
         expect(vi.getTimerCount()).toBe(0);
     });
     it('recognizes the page across streamed chunks and accepts API auth-required without credentials', async () => {
         const encoder = new TextEncoder();
-        const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
             expect(init?.credentials).toBe('omit');
-            if (fetcher.mock.calls.length === 2) return new Response('', { status: 401 });
+            if (String(url).includes('api-v2')) return new Response('', { status: 401 });
+            if (String(url).includes('sndcdn')) return new Response('globalThis.ready=true;');
             return new Response(
                 new ReadableStream({
                     start(controller) {
                         controller.enqueue(encoder.encode('<script src="https://a.snd'));
-                        controller.enqueue(encoder.encode('cdn.com/app.js"></script>'));
+                        controller.enqueue(encoder.encode('cdn.com/assets/app.js"></script>'));
                         controller.close();
                     },
                 }),
             );
         });
-        expect((await probeSoundCloud(fetcher as typeof fetch)).map((stage) => stage.outcome)).toEqual(['ok', 'ok']);
+        expect((await probeSoundCloud(fetcher as typeof fetch)).map((stage) => stage.outcome)).toEqual([
+            'ok',
+            'ok',
+            'ok',
+        ]);
     });
     it('reports a failed partial transfer without labeling it a wrong key or copying response data', async () => {
         let reads = 0;
@@ -80,12 +89,52 @@ describe('relay diagnosis at the failing stage', () => {
         const fetcher = vi
             .fn()
             .mockResolvedValueOnce(new Response(html))
+            .mockResolvedValueOnce(new Response('globalThis.ready=true;'))
             .mockResolvedValueOnce(new Response('', { status: 403 }));
-        expect((await probeSoundCloud(fetcher as typeof fetch))[1]).toMatchObject({
+        expect((await probeSoundCloud(fetcher as typeof fetch))[2]).toMatchObject({
             stage: 'api',
             outcome: 'http',
             httpStatus: 403,
         });
+    });
+    it('rejects a healthy HTML response when the interface CDN is blocked or returns a challenge', async () => {
+        for (const asset of [
+            () => new Response('', { status: 403 }),
+            () => new Response('<html>Access check</html>', { headers: { 'content-type': 'text/html' } }),
+            () => {
+                throw Error('net::ERR_CONNECTION_CLOSED');
+            },
+        ]) {
+            const fetcher = vi.fn(async (url: RequestInfo | URL) =>
+                String(url).includes('sndcdn') ? asset() : new Response(html),
+            );
+            const stages = await probeSoundCloud(fetcher as typeof fetch);
+            expect(stages.map((stage) => stage.stage)).toEqual(['website', 'assets']);
+            expect(stages[0].outcome).toBe('ok');
+            expect(stages[1].outcome).not.toBe('ok');
+            expect(stages[1].host).toBe('a-v2.sndcdn.com');
+            expect(fetcher).toHaveBeenCalledTimes(2);
+        }
+    });
+    it('samples bounded first-party bootstrap assets without following third-party script references', async () => {
+        const page =
+            html +
+            '<script src="https://untrusted.example/assets/track.js"></script><script src="https://a-v2.sndcdn.com/assets/last.js"></script>';
+        const fetcher = vi.fn(async (url: RequestInfo | URL) =>
+            String(url).includes('api-v2')
+                ? new Response('', { status: 401 })
+                : String(url).includes('sndcdn')
+                  ? new Response('x'.repeat(200000))
+                  : new Response(page),
+        );
+        const stages = await probeSoundCloud(fetcher as typeof fetch);
+        expect(stages.map((stage) => stage.outcome)).toEqual(['ok', 'ok', 'ok']);
+        expect(fetcher.mock.calls.map((args) => String(args[0]))).toEqual([
+            'https://soundcloud.com/discover',
+            'https://a-v2.sndcdn.com/assets/app.js',
+            'https://a-v2.sndcdn.com/assets/last.js',
+            'https://api-v2.soundcloud.com/',
+        ]);
     });
     it('distinguishes Worker authentication, network and upstream failures with safe error codes', () => {
         const report: RelayDiagnostic = {

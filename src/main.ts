@@ -2058,7 +2058,7 @@ async function init() {
             const applyNow = !store.get('proxyEnabled');
             connectionRecovery.save({ mode: 'auto', endpoint: result.endpoint, secret: result.secret });
             workerSetup.clear();
-            await connectionRecovery.configure();
+            await connectionRecovery.configure(true);
             return { endpoint: result.endpoint, name: result.name, applied: applyNow };
         } finally {
             networkSettingsBusy = false;
@@ -2083,7 +2083,7 @@ async function init() {
         try {
             connectionRecovery.save(input);
             await proxyService.apply();
-            await connectionRecovery.configure();
+            await connectionRecovery.configure(true);
             return connectionRecovery.getStatus();
         } finally {
             networkSettingsBusy = false;
@@ -2100,12 +2100,13 @@ async function init() {
             networkSettingsBusy = false;
         }
     });
-    ipcMain.handle('network:copy-diagnostics', (event) => {
+    ipcMain.handle('network:copy-diagnostics', async (event) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Дождитесь окончания проверки подключения.');
         const diagnostic = connectionRecovery.getDiagnostics();
         if (!diagnostic) return 'Сначала нажмите «Проверить Worker».';
-        clipboard.writeText(JSON.stringify({ version: app.getVersion(), relay: diagnostic }, null, 2));
+        const connection = await connectionRecovery.getPageDiagnostics();
+        clipboard.writeText(JSON.stringify({ version: app.getVersion(), relay: diagnostic, connection }, null, 2));
         return 'Диагностика подключения скопирована. Она не содержит ключей, cookies и токенов.';
     });
     presenceService = new PresenceService(store, translationService);

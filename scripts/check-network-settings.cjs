@@ -75,6 +75,7 @@ app.whenReady().then(async () => {
         );
         service.testRelay = realTest;
         for (const [name, value] of Object.entries({
+            'updates:status': {},
             'get-current-track': null,
             'get-custom-themes': [],
             'get-current-custom-theme': null,

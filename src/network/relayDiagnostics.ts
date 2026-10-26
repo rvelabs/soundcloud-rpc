@@ -10,12 +10,13 @@ export interface TunnelDiagnostic {
     networkCode?: string;
 }
 export interface ProbeStage {
-    stage: 'website' | 'api';
+    stage: 'website' | 'assets' | 'api';
     outcome: 'ok' | 'http' | 'unexpected-page' | 'network' | 'timeout' | 'cancelled';
     elapsedMs: number;
     bytesRead: number;
     httpStatus?: number;
     networkCode?: string;
+    host?: string;
 }
 export interface RelayDiagnostic {
     checkedAt: string;
@@ -28,7 +29,14 @@ export interface RelayDiagnostic {
 }
 export function networkErrorCode(error: unknown): string | undefined {
     const value = error as { code?: unknown; message?: unknown } | null;
-    const text = typeof value?.code === 'string' ? value.code : typeof value?.message === 'string' ? value.message : '';
+    const text =
+        typeof error === 'string'
+            ? error
+            : typeof value?.code === 'string'
+              ? value.code
+              : typeof value?.message === 'string'
+                ? value.message
+                : '';
     return /\b(?:ERR_[A-Z0-9_]+|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|CERT_[A-Z0-9_]+|UNABLE_TO_VERIFY_LEAF_SIGNATURE)\b/.exec(
         text,
     )?.[0];
@@ -38,7 +46,8 @@ export async function probeSoundCloud(
     options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<ProbeStage[]> {
     const stages: ProbeStage[] = [];
-    for (const stage of ['website', 'api'] as const) {
+    let assets: string[] = [];
+    for (const stage of ['website', 'assets', 'api'] as const) {
         const began = Date.now(),
             controller = new AbortController();
         const result: ProbeStage = { stage, outcome: 'network', elapsedMs: 0, bytesRead: 0 };
@@ -59,37 +68,65 @@ export async function probeSoundCloud(
             let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
             try {
                 if (controller.signal.aborted) return result;
-                const response = await fetcher(
-                    stage === 'website' ? 'https://soundcloud.com/discover' : 'https://api-v2.soundcloud.com/',
-                    {
+                const urls =
+                    stage === 'assets'
+                        ? assets
+                        : [stage === 'website' ? 'https://soundcloud.com/discover' : 'https://api-v2.soundcloud.com/'];
+                if (!urls.length) {
+                    result.outcome = 'unexpected-page';
+                    return result;
+                }
+                for (const url of urls) {
+                    result.host = new URL(url).hostname;
+                    const response = await fetcher(url, {
                         signal: controller.signal,
                         credentials: 'omit',
                         cache: 'no-store',
-                    },
-                );
-                if (controller.signal.aborted) {
-                    void response.body?.cancel().catch(() => {});
-                    return result;
+                    });
+                    if (controller.signal.aborted) {
+                        void response.body?.cancel().catch(() => {});
+                        return result;
+                    }
+                    result.httpStatus = response.status;
+                    const valid = stage !== 'api' ? response.ok : [200, 401, 404].includes(response.status);
+                    if (!valid || stage === 'api') {
+                        result.outcome = valid ? 'ok' : 'http';
+                        void response.body?.cancel().catch(() => {});
+                        return result;
+                    }
+                    reader = response.body?.getReader();
+                    const decoder = new TextDecoder();
+                    let text = '',
+                        bytes = 0;
+                    const limit = stage === 'assets' ? 64 * 1024 : 512 * 1024;
+                    while (reader && bytes < limit) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        result.bytesRead += value.byteLength;
+                        bytes += value.byteLength;
+                        text += decoder.decode(value, { stream: true });
+                    }
+                    text += decoder.decode();
+                    if (controller.signal.aborted) return result;
+                    if (stage === 'website') {
+                        assets = bootstrapAssets(text);
+                        result.outcome = assets.length ? 'ok' : 'unexpected-page';
+                    } else {
+                        const contentType = response.headers.get('content-type') || '';
+                        result.outcome =
+                            bytes > 0 &&
+                            !/text\/html/i.test(contentType) &&
+                            !/^\s*(?:<!doctype|<html|<head|<body)/i.test(text)
+                                ? 'ok'
+                                : 'unexpected-page';
+                    }
+                    if (reader) {
+                        void reader.cancel().catch(() => {});
+                        reader.releaseLock();
+                        reader = undefined;
+                    }
+                    if (result.outcome !== 'ok') return result;
                 }
-                result.httpStatus = response.status;
-                const valid = stage === 'website' ? response.ok : [200, 401, 404].includes(response.status);
-                if (!valid || stage === 'api') {
-                    result.outcome = valid ? 'ok' : 'http';
-                    void response.body?.cancel().catch(() => {});
-                    return result;
-                }
-                reader = response.body?.getReader();
-                const decoder = new TextDecoder();
-                let html = '';
-                while (reader && result.bytesRead < 512 * 1024) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    result.bytesRead += value.byteLength;
-                    html += decoder.decode(value, { stream: true });
-                }
-                html += decoder.decode();
-                if (!controller.signal.aborted)
-                    result.outcome = html.includes('sndcdn.com') && html.includes('<script') ? 'ok' : 'unexpected-page';
             } catch (error) {
                 if (!controller.signal.aborted) {
                     result.outcome = 'network';
@@ -115,9 +152,29 @@ export async function probeSoundCloud(
     }
     return stages;
 }
+function bootstrapAssets(html: string): string[] {
+    const urls = new Set<string>();
+    for (const match of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+        try {
+            const url = new URL(match[1], 'https://soundcloud.com/');
+            if (
+                url.protocol === 'https:' &&
+                !url.username &&
+                !url.password &&
+                !url.port &&
+                /(?:^|\.)sndcdn\.com$/.test(url.hostname) &&
+                /\/assets\/[^?#]+\.js$/.test(url.pathname)
+            )
+                urls.add(url.href);
+        } catch {}
+    }
+    const all = [...urls];
+    return all.length > 1 ? [all[0], all[all.length - 1]] : all;
+}
 export function describeRelayDiagnostic(report?: RelayDiagnostic): string {
     if (!report) return 'Проверка Worker ещё не выполнялась.';
-    if (report.success) return 'Worker доступен: сайт и API SoundCloud отвечают, передача данных проверена.';
+    if (report.success)
+        return 'Worker доступен: HTML, скрипты интерфейса и API SoundCloud отвечают. Это проверка подключения, а не состояния открытой страницы.';
     const setup = report.setupFailure;
     if (setup === 'missing-endpoint') return 'Сначала сохраните HTTPS-адрес Worker.';
     if (setup === 'invalid-endpoint')
@@ -151,7 +208,11 @@ export function describeRelayDiagnostic(report?: RelayDiagnostic): string {
             'Через туннель получен HTTP ' +
             failed.httpStatus +
             ' от ' +
-            (failed.stage === 'api' ? 'API SoundCloud' : 'сайта SoundCloud') +
+            (failed.stage === 'api'
+                ? 'API SoundCloud'
+                : failed.stage === 'assets'
+                  ? 'CDN интерфейса SoundCloud'
+                  : 'сайта SoundCloud') +
             '. Проверьте доступность сервиса из региона Worker.'
         );
     if (failed?.outcome === 'unexpected-page')
@@ -162,7 +223,7 @@ export function describeRelayDiagnostic(report?: RelayDiagnostic): string {
     if (opened)
         return (
             'Worker открыл туннель, но загрузка ' +
-            (failed?.stage === 'api' ? 'API' : 'страницы') +
+            (failed?.stage === 'api' ? 'API' : failed?.stage === 'assets' ? 'скриптов интерфейса' : 'страницы') +
             ' SoundCloud прервалась. Возможен тайм-аут или ограничение сети; скопируйте диагностику.'
         );
     return (
