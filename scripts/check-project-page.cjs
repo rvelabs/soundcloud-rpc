@@ -36,6 +36,15 @@ app.whenReady().then(async () => {
             assert.equal(state.schema['@type'], 'SoftwareApplication');
             assert.equal(state.canonical, 'https://rvelabs.github.io/soundcloud-rpc/');
             assert.equal(state.download, 'https://github.com/rvelabs/soundcloud-rpc/releases/latest');
+            for (const language of ['ru', 'en']) {
+                const localized = await win.webContents.executeJavaScript(`(()=>{
+                    document.querySelector('[data-site-language="${language}"]').click();
+                    return {lang:document.documentElement.lang,heading:document.querySelector('h1').textContent,icon:document.querySelector('link[rel="icon"]').getAttribute('href')};
+                })()`);
+                assert.equal(localized.lang, language);
+                assert(localized.heading.includes(language === 'ru' ? 'Ваш SoundCloud.' : 'Your SoundCloud.'));
+                assert.equal(localized.icon, './favicon.ico');
+            }
             fs.writeFileSync(
                 path.join(out, `project-page-${name}.png`),
                 frame || (await win.webContents.capturePage()).toPNG(),
