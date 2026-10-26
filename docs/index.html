@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <link rel="icon" type="image/x-icon" href="./favicon.ico" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <title>SoundCloud Desktop для Windows — Моя волна и импорт плейлистов | rvelabs</title>
         <meta
             name="description"
@@ -42,6 +42,7 @@
             }
             * {
                 box-sizing: border-box;
+                min-width: 0;
             }
             html {
                 scroll-behavior: smooth;
@@ -51,10 +52,12 @@
                 background: #111;
                 color: #f5f5f5;
                 font:
-                    16px/1.65 system-ui,
+                    1rem/1.65 system-ui,
                     -apple-system,
                     'Segoe UI',
                     sans-serif;
+                overflow-wrap: break-word;
+                -webkit-text-size-adjust: 100%;
             }
             a {
                 color: inherit;
@@ -64,6 +67,7 @@
                 color: #ff8b50;
             }
             a:focus-visible,
+            button:focus-visible,
             summary:focus-visible {
                 outline: 3px solid #ff8b50;
                 outline-offset: 5px;
@@ -73,7 +77,8 @@
             footer {
                 max-width: 1120px;
                 margin: auto;
-                padding: 0 28px;
+                padding-left: max(clamp(16px, 4vw, 28px), env(safe-area-inset-left));
+                padding-right: max(clamp(16px, 4vw, 28px), env(safe-area-inset-right));
             }
             nav {
                 display: flex;
@@ -84,9 +89,14 @@
                 gap: 20px;
             }
             .brand {
-                font-size: 18px;
+                font-size: 1.125rem;
                 font-weight: 750;
                 text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 7px;
+                min-height: 44px;
             }
             .brand i {
                 color: var(--orange);
@@ -95,35 +105,44 @@
             nav > div {
                 display: flex;
                 gap: 24px;
-                font-size: 14px;
+                font-size: 0.875rem;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            nav > div > a {
+                display: inline-flex;
+                align-items: center;
+                min-height: 44px;
             }
             .hero {
                 position: relative;
                 padding: 100px 0 90px;
                 overflow: hidden;
+                isolation: isolate;
             }
-            .hero:before {
-                content: '';
+            .hero-glow {
                 position: absolute;
                 z-index: -1;
-                width: 650px;
-                height: 520px;
-                right: -200px;
-                top: -70px;
+                width: min(700px, 130%);
+                height: 600px;
+                right: -20%;
+                top: -100px;
                 background:
                     radial-gradient(ellipse at 35% 50%, #782c7799, transparent 60%),
                     radial-gradient(ellipse at 70% 65%, #bf531566, transparent 60%);
                 filter: blur(45px);
+                pointer-events: none;
+                contain: strict;
             }
             .eyebrow {
                 color: #ff9965;
                 text-transform: uppercase;
-                font-size: 12px;
+                font-size: 0.75rem;
                 letter-spacing: 0.17em;
                 font-weight: 700;
             }
             h1 {
-                font-size: clamp(42px, 6vw, 72px);
+                font-size: clamp(2rem, 6vw, 4.5rem);
                 line-height: 1.07;
                 letter-spacing: -0.045em;
                 max-width: 800px;
@@ -135,7 +154,7 @@
             .lead {
                 max-width: 630px;
                 color: #bbb;
-                font-size: 19px;
+                font-size: 1.1875rem;
             }
             .actions {
                 display: flex;
@@ -154,6 +173,12 @@
                 font-weight: 650;
                 text-decoration: none;
                 color: white;
+                min-height: 50px;
+                text-align: center;
+                transition:
+                    background 180ms,
+                    border-color 180ms,
+                    transform 180ms;
             }
             .button:hover {
                 color: white;
@@ -164,24 +189,24 @@
                 border-color: #ffffff30;
             }
             .note {
-                font-size: 13px;
+                font-size: 0.8125rem;
                 color: var(--muted);
             }
             section {
                 padding: 42px 0;
             }
             h2 {
-                font-size: 30px;
+                font-size: clamp(1.5rem, 4vw, 1.875rem);
                 letter-spacing: -0.03em;
                 margin: 0 0 22px;
             }
             h3 {
-                font-size: 19px;
+                font-size: 1.1875rem;
                 margin: 0 0 10px;
             }
             .grid {
                 display: grid;
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
                 gap: 18px;
             }
             .card {
@@ -189,17 +214,20 @@
                 border-radius: 14px;
                 padding: 25px;
                 background: #1a1a1a;
+                transition:
+                    border-color 220ms,
+                    box-shadow 220ms;
             }
             .card .index {
                 color: #ff9965;
                 display: block;
                 margin-bottom: 20px;
-                font-size: 13px;
+                font-size: 0.8125rem;
             }
             .card p {
                 margin-bottom: 0;
                 color: var(--muted);
-                font-size: 15px;
+                font-size: 0.9375rem;
             }
             .flow {
                 padding: 28px;
@@ -221,6 +249,9 @@
             summary {
                 cursor: pointer;
                 font-weight: 650;
+                min-height: 44px;
+                padding: 9px 0;
+                line-height: 1.5;
             }
             details p {
                 color: var(--muted);
@@ -233,7 +264,7 @@
                 color: #bbb;
             }
             .english h2 {
-                font-size: 24px;
+                font-size: 1.5rem;
                 color: white;
             }
             .english p {
@@ -241,9 +272,9 @@
             }
             footer {
                 padding-top: 36px;
-                padding-bottom: 35px;
+                padding-bottom: max(35px, env(safe-area-inset-bottom));
                 color: var(--muted);
-                font-size: 13px;
+                font-size: 0.8125rem;
             }
             footer > div {
                 border-top: 1px solid var(--border);
@@ -254,25 +285,18 @@
             }
             footer a {
                 color: #ddd;
+                display: inline-block;
+                padding: 10px 0;
             }
             @media (max-width: 720px) {
-                .grid {
-                    grid-template-columns: 1fr;
-                }
                 .hero {
                     padding: 60px 0 45px;
-                }
-                header,
-                main,
-                footer {
-                    padding-left: 20px;
-                    padding-right: 20px;
                 }
                 nav > div {
                     gap: 14px;
                 }
                 .lead {
-                    font-size: 17px;
+                    font-size: 1.0625rem;
                 }
                 footer > div {
                     flex-direction: column;
@@ -285,6 +309,11 @@
                 html {
                     scroll-behavior: auto;
                 }
+                *,
+                *:before,
+                *:after {
+                    transition: none !important;
+                }
             }
             .site-language {
                 display: inline-flex;
@@ -296,8 +325,13 @@
                 border-radius: 5px;
                 color: #aaa;
                 cursor: pointer;
-                padding: 4px 6px;
+                padding: 8px;
+                min-width: 44px;
+                min-height: 44px;
                 font: inherit;
+                transition:
+                    color 180ms,
+                    background 180ms;
             }
             .site-language button[aria-pressed='true'] {
                 background: #ffffff16;
@@ -306,10 +340,51 @@
             @media (max-width: 720px) {
                 nav {
                     flex-wrap: wrap;
+                    gap: 8px;
+                    padding: 16px 0;
                 }
                 nav > div {
                     flex-wrap: wrap;
+                    justify-content: space-between;
+                    width: 100%;
+                    gap: 6px 12px;
+                    font-size: 0.8125rem;
                 }
+            }
+            @media (max-width: 480px) {
+                .hero {
+                    padding: 48px 0 35px;
+                }
+                h1 {
+                    font-size: clamp(2rem, 8.8vw, 2.75rem);
+                }
+                .actions {
+                    flex-direction: column;
+                }
+                .card,
+                .flow,
+                .english {
+                    padding: 22px;
+                }
+                section {
+                    padding: 30px 0;
+                }
+                .eyebrow {
+                    letter-spacing: 0.1em;
+                    font-size: 0.6875rem;
+                }
+            }
+            @media (hover: hover) and (pointer: fine) {
+                .button:hover {
+                    transform: translateY(-2px);
+                }
+                .card:hover {
+                    border-color: #ff996560;
+                    box-shadow: 0 12px 36px #0003;
+                }
+            }
+            .button:active {
+                transform: scale(0.98);
             }
         </style>
     </head>
@@ -328,6 +403,7 @@
         </header>
         <main>
             <section class="hero" aria-labelledby="title">
+                <div class="hero-glow" aria-hidden="true"></div>
                 <div class="eyebrow">Windows · Open source · Бесплатно</div>
                 <h1 id="title">Ваш SoundCloud.<br /><span>Ваша музыка.</span></h1>
                 <p class="lead">
@@ -448,5 +524,6 @@
             </div>
         </footer>
         <script src="./language.js" defer></script>
+        <script src="./animations.js" defer></script>
     </body>
 </html>
