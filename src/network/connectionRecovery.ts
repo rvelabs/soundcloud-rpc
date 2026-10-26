@@ -1,16 +1,9 @@
 import { safeStorage, session, type Session, type WebContents } from 'electron';
 import type ElectronStore from 'electron-store';
 import { CloudflareGateway } from './cloudflareGateway';
-import { relayTarget, workerEndpoint } from './relayTargets';
+import { relayPac, relayTarget, workerEndpoint } from './relayTargets';
 import { RecoveryPolicy } from './recoveryPolicy';
 import { probeSoundCloud, describeRelayDiagnostic, networkErrorCode, type RelayDiagnostic } from './relayDiagnostics';
-const pac = (port: number) =>
-    'data:application/x-ns-proxy-autoconfig;base64,' +
-    Buffer.from(
-        'function FindProxyForURL(url,host){if(host==="soundcloud.com"||dnsDomainIs(host,".soundcloud.com")||host==="sndcdn.com"||dnsDomainIs(host,".sndcdn.com"))return "PROXY 127.0.0.1:' +
-            port +
-            '";return "DIRECT";}',
-    ).toString('base64');
 export class ConnectionRecovery {
     private gateway = new CloudflareGateway();
     private port = 0;
@@ -24,7 +17,14 @@ export class ConnectionRecovery {
     private relayProbeAbort?: AbortController;
     private diagnostic?: RelayDiagnostic;
     private bootstrapFailed = false;
-    private pageFailures: { host: string; type: string; error?: string; httpStatus?: number }[] = [];
+    private pageFailures: {
+        host: string;
+        type: string;
+        workerAllowed: boolean;
+        count: number;
+        error?: string;
+        httpStatus?: number;
+    }[] = [];
     private mainStatus?: number;
     private mainError?: string;
     constructor(
@@ -54,36 +54,32 @@ export class ConnectionRecovery {
             }
         });
         const networkSession = contents.session;
-        networkSession.webRequest.onErrorOccurred(
-            { urls: ['https://*.soundcloud.com/*', 'https://soundcloud.com/*', 'https://*.sndcdn.com/*'] },
-            (details) => {
-                if (details.webContentsId !== contents.id || /ERR_ABORTED|ERR_BLOCKED_BY_CLIENT/.test(details.error))
-                    return;
-                this.recordFailure(details.url, details.resourceType, { error: networkErrorCode(details.error) });
-                if (this.criticalResource(details.url, details.resourceType) && !/ERR_CERT_/.test(details.error)) {
-                    if (details.resourceType === 'script' || details.resourceType === 'stylesheet')
-                        this.bootstrapFailed = true;
-                    void this.recover();
-                }
-            },
-        );
-        networkSession.webRequest.onCompleted(
-            { urls: ['https://*.soundcloud.com/*', 'https://soundcloud.com/*', 'https://*.sndcdn.com/*'] },
-            (details) => {
-                if (details.webContentsId !== contents.id || details.statusCode < 400) return;
-                this.recordFailure(details.url, details.resourceType, { httpStatus: details.statusCode });
-                if (
-                    this.criticalResource(details.url, details.resourceType) &&
-                    (details.resourceType === 'script' ||
-                        details.resourceType === 'stylesheet' ||
-                        [403, 451, 500, 502, 503, 504].includes(details.statusCode))
-                ) {
-                    if (details.resourceType === 'script' || details.resourceType === 'stylesheet')
-                        this.bootstrapFailed = true;
-                    void this.recover();
-                }
-            },
-        );
+        networkSession.webRequest.onErrorOccurred({ urls: ['https://*/*'] }, (details) => {
+            if (details.webContentsId !== contents.id || /ERR_ABORTED/.test(details.error)) return;
+            this.recordFailure(details.url, details.resourceType, { error: networkErrorCode(details.error) });
+            if (
+                this.criticalResource(details.url, details.resourceType) &&
+                !/ERR_CERT_|ERR_BLOCKED_BY_CLIENT/.test(details.error)
+            ) {
+                if (details.resourceType === 'script' || details.resourceType === 'stylesheet')
+                    this.bootstrapFailed = true;
+                void this.recover();
+            }
+        });
+        networkSession.webRequest.onCompleted({ urls: ['https://*/*'] }, (details) => {
+            if (details.webContentsId !== contents.id || details.statusCode < 400) return;
+            this.recordFailure(details.url, details.resourceType, { httpStatus: details.statusCode });
+            if (
+                this.criticalResource(details.url, details.resourceType) &&
+                (details.resourceType === 'script' ||
+                    details.resourceType === 'stylesheet' ||
+                    [403, 451, 500, 502, 503, 504].includes(details.statusCode))
+            ) {
+                if (details.resourceType === 'script' || details.resourceType === 'stylesheet')
+                    this.bootstrapFailed = true;
+                void this.recover();
+            }
+        });
         contents.once('destroyed', () => {
             this.generation++;
             this.relayProbeAbort?.abort();
@@ -107,14 +103,29 @@ export class ConnectionRecovery {
         return (
             relayTarget(host) &&
             (host === 'api-v2.soundcloud.com' ||
+                host === 'api-auth.soundcloud.com' ||
                 type === 'media' ||
-                ((type === 'script' || type === 'stylesheet') && new URL(url).pathname.startsWith('/assets/')))
+                type === 'script' ||
+                type === 'stylesheet' ||
+                (type === 'subFrame' && host === 'secure.soundcloud.com'))
         );
     }
     private recordFailure(url: string, type: string, failure: { error?: string; httpStatus?: number }): void {
         const host = new URL(url).hostname;
-        if (!relayTarget(host)) return;
-        this.pageFailures.push({ host, type, ...failure });
+        const workerAllowed = relayTarget(host);
+        if (!workerAllowed && !['script', 'stylesheet', 'subFrame', 'xhr'].includes(type)) return;
+        const previous = this.pageFailures.find(
+            (item) =>
+                item.host === host &&
+                item.type === type &&
+                item.error === failure.error &&
+                item.httpStatus === failure.httpStatus,
+        );
+        if (previous) {
+            previous.count++;
+            return;
+        }
+        this.pageFailures.push({ host, type, workerAllowed, count: 1, ...failure });
         if (this.pageFailures.length > 20) this.pageFailures.shift();
     }
     private async pageState(): Promise<{ readyState: string; appShell: boolean; errorPage: boolean } | null> {
@@ -139,7 +150,14 @@ export class ConnectionRecovery {
         const state = await this.pageState();
         const routes: Record<string, string> = {};
         if (!this.contents.isDestroyed()) {
-            const lookups = ['soundcloud.com', 'a-v2.sndcdn.com', 'api-v2.soundcloud.com'].map(async (host) => {
+            const lookups = [
+                'soundcloud.com',
+                'a-v2.sndcdn.com',
+                'style.sndcdn.com',
+                'api-v2.soundcloud.com',
+                'api-auth.soundcloud.com',
+                'cf-hls-media.sndcdn.com',
+            ].map(async (host) => {
                 routes[host] = 'unavailable';
                 try {
                     const value = await this.contents.session.resolveProxy('https://' + host);
@@ -265,7 +283,7 @@ export class ConnectionRecovery {
                     .catch(() => false)),
             activate: async () => {
                 if (generation !== this.generation || this.contents.isDestroyed()) return;
-                await this.contents.session.setProxy({ mode: 'pac_script', pacScript: pac(this.port) });
+                await this.contents.session.setProxy({ mode: 'pac_script', pacScript: relayPac(this.port) });
                 await this.contents.session.closeAllConnections();
                 this.routed = true;
                 this.status = 'SoundCloud подключён через Cloudflare';
@@ -277,7 +295,7 @@ export class ConnectionRecovery {
             const available = await this.testRelay();
             if (generation !== this.generation || this.contents.isDestroyed()) return;
             if (available) {
-                await this.contents.session.setProxy({ mode: 'pac_script', pacScript: pac(this.port) });
+                await this.contents.session.setProxy({ mode: 'pac_script', pacScript: relayPac(this.port) });
                 await this.contents.session.closeAllConnections();
                 this.routed = true;
                 this.status = 'SoundCloud подключён через Cloudflare';
@@ -382,7 +400,7 @@ export class ConnectionRecovery {
             }
             if (generation !== this.generation) return false;
             const probeSession = session.fromPartition('wave-connection-relay');
-            await probeSession.setProxy({ mode: 'pac_script', pacScript: pac(this.port) });
+            await probeSession.setProxy({ mode: 'pac_script', pacScript: relayPac(this.port) });
             await probeSession.closeAllConnections();
             report.success = await this.probe(probeSession, report);
             if (generation !== this.generation) report.success = false;
@@ -403,6 +421,6 @@ export class ConnectionRecovery {
             signal: report ? this.relayProbeAbort?.signal : undefined,
         });
         if (report) report.stages = stages;
-        return stages.length === 3 && stages.every((stage) => stage.outcome === 'ok');
+        return stages.length === 4 && stages.every((stage) => stage.outcome === 'ok');
     }
 }

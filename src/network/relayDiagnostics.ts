@@ -10,7 +10,7 @@ export interface TunnelDiagnostic {
     networkCode?: string;
 }
 export interface ProbeStage {
-    stage: 'website' | 'assets' | 'api';
+    stage: 'website' | 'assets' | 'api' | 'auth';
     outcome: 'ok' | 'http' | 'unexpected-page' | 'network' | 'timeout' | 'cancelled';
     elapsedMs: number;
     bytesRead: number;
@@ -47,7 +47,7 @@ export async function probeSoundCloud(
 ): Promise<ProbeStage[]> {
     const stages: ProbeStage[] = [];
     let assets: string[] = [];
-    for (const stage of ['website', 'assets', 'api'] as const) {
+    for (const stage of ['website', 'assets', 'api', 'auth'] as const) {
         const began = Date.now(),
             controller = new AbortController();
         const result: ProbeStage = { stage, outcome: 'network', elapsedMs: 0, bytesRead: 0 };
@@ -71,7 +71,13 @@ export async function probeSoundCloud(
                 const urls =
                     stage === 'assets'
                         ? assets
-                        : [stage === 'website' ? 'https://soundcloud.com/discover' : 'https://api-v2.soundcloud.com/'];
+                        : [
+                              stage === 'website'
+                                  ? 'https://soundcloud.com/discover'
+                                  : stage === 'auth'
+                                    ? 'https://api-auth.soundcloud.com/'
+                                    : 'https://api-v2.soundcloud.com/',
+                          ];
                 if (!urls.length) {
                     result.outcome = 'unexpected-page';
                     return result;
@@ -88,8 +94,11 @@ export async function probeSoundCloud(
                         return result;
                     }
                     result.httpStatus = response.status;
-                    const valid = stage !== 'api' ? response.ok : [200, 401, 404].includes(response.status);
-                    if (!valid || stage === 'api') {
+                    const endpoint = stage === 'api' || stage === 'auth';
+                    const valid = endpoint
+                        ? [200, 401, 404, ...(stage === 'auth' ? [405] : [])].includes(response.status)
+                        : response.ok;
+                    if (!valid || endpoint) {
                         result.outcome = valid ? 'ok' : 'http';
                         void response.body?.cancel().catch(() => {});
                         return result;
@@ -169,12 +178,33 @@ function bootstrapAssets(html: string): string[] {
         } catch {}
     }
     const all = [...urls];
-    return all.length > 1 ? [all[0], all[all.length - 1]] : all;
+    if (!all.length) return [];
+    const selected = all.length > 1 ? [all[0], all[all.length - 1]] : all;
+    for (const tag of html.matchAll(/<link\b[^>]*>/gi)) {
+        if (!/\brel\s*=\s*["'][^"']*\bstylesheet\b[^"']*["']/i.test(tag[0])) continue;
+        const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(tag[0])?.[1];
+        if (!href) continue;
+        try {
+            const url = new URL(href.replace(/&amp;/g, '&'), 'https://soundcloud.com/');
+            if (
+                url.protocol === 'https:' &&
+                !url.username &&
+                !url.password &&
+                !url.port &&
+                /(?:^|\.)sndcdn\.com$/.test(url.hostname) &&
+                url.pathname.endsWith('.css')
+            ) {
+                selected.push(url.href);
+                break;
+            }
+        } catch {}
+    }
+    return selected;
 }
 export function describeRelayDiagnostic(report?: RelayDiagnostic): string {
     if (!report) return 'Проверка Worker ещё не выполнялась.';
     if (report.success)
-        return 'Worker доступен: HTML, скрипты интерфейса и API SoundCloud отвечают. Это проверка подключения, а не состояния открытой страницы.';
+        return 'Worker доступен: HTML, ресурсы интерфейса, API и узел авторизации SoundCloud отвечают. Это проверка подключения, а не входа в аккаунт или состояния открытой страницы.';
     const setup = report.setupFailure;
     if (setup === 'missing-endpoint') return 'Сначала сохраните HTTPS-адрес Worker.';
     if (setup === 'invalid-endpoint')
@@ -210,9 +240,11 @@ export function describeRelayDiagnostic(report?: RelayDiagnostic): string {
             ' от ' +
             (failed.stage === 'api'
                 ? 'API SoundCloud'
-                : failed.stage === 'assets'
-                  ? 'CDN интерфейса SoundCloud'
-                  : 'сайта SoundCloud') +
+                : failed.stage === 'auth'
+                  ? 'узла авторизации SoundCloud'
+                  : failed.stage === 'assets'
+                    ? 'CDN интерфейса SoundCloud'
+                    : 'сайта SoundCloud') +
             '. Проверьте доступность сервиса из региона Worker.'
         );
     if (failed?.outcome === 'unexpected-page')
@@ -223,7 +255,13 @@ export function describeRelayDiagnostic(report?: RelayDiagnostic): string {
     if (opened)
         return (
             'Worker открыл туннель, но загрузка ' +
-            (failed?.stage === 'api' ? 'API' : failed?.stage === 'assets' ? 'скриптов интерфейса' : 'страницы') +
+            (failed?.stage === 'api'
+                ? 'API'
+                : failed?.stage === 'auth'
+                  ? 'узла авторизации'
+                  : failed?.stage === 'assets'
+                    ? 'ресурсов интерфейса'
+                    : 'страницы') +
             ' SoundCloud прервалась. Возможен тайм-аут или ограничение сети; скопируйте диагностику.'
         );
     return (

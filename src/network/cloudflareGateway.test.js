@@ -6,9 +6,47 @@ import { PassThrough, Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import { randomBytes } from 'node:crypto';
 import { CloudflareGateway } from './cloudflareGateway';
-import { bridgeSocket, createRelayHandler } from '../../cloudflare/soundcloud-relay/protocol.mjs';
+import { relayTarget, relayPac } from './relayTargets';
+import { runInNewContext } from 'node:vm';
+import { allowedHost, bridgeSocket, createRelayHandler } from '../../cloudflare/soundcloud-relay/protocol.mjs';
 const token = 'a'.repeat(48);
 describe('Cloudflare transport', () => {
+    it('keeps Chromium routing, the gateway and the deployed Worker aligned for every service destination', () => {
+        const script = Buffer.from(relayPac(54322).split(',')[1], 'base64').toString();
+        const route = runInNewContext(script + ';FindProxyForURL');
+        const allowed = [
+            'soundcloud.com',
+            'api.soundcloud.com',
+            'api-auth.soundcloud.com',
+            'secure.soundcloud.com',
+            'api-v2.soundcloud.com',
+            'a-v2.sndcdn.com',
+            'style.sndcdn.com',
+            'secure.sndcdn.com',
+            'i1.sndcdn.com',
+            'cf-hls-media.sndcdn.com',
+            'cf-media.sndcdn.com',
+        ];
+        const denied = [
+            'localhost',
+            '127.0.0.1',
+            '::1',
+            'cloudflare-dns.com',
+            'cloudfront.net',
+            'soundcloud.com.evil.test',
+            'evilsoundcloud.com',
+            'api..soundcloud.com',
+            '-.sndcdn.com',
+        ];
+        for (const host of [...allowed, ...denied]) {
+            const expected = allowed.includes(host);
+            expect(relayTarget(host)).toBe(expected);
+            expect(allowedHost(host)).toBe(expected);
+            expect(route('https://' + host, host)).toBe(expected ? 'PROXY 127.0.0.1:54322' : 'DIRECT');
+        }
+        expect(() => relayPac(0)).toThrow();
+        expect(() => relayPac(65536)).toThrow();
+    });
     it('preserves the Worker HTTP refusal for diagnosis without recording the bearer key', async () => {
         const server = createServer();
         server.on('upgrade', (_request, socket) =>

@@ -45,7 +45,7 @@ app.whenReady().then(async () => {
                 '-subj',
                 '/CN=soundcloud.com',
                 '-addext',
-                'subjectAltName=DNS:soundcloud.com,DNS:a-v2.sndcdn.com,DNS:api-v2.soundcloud.com',
+                'subjectAltName=DNS:soundcloud.com,DNS:a-v2.sndcdn.com,DNS:api-v2.soundcloud.com,DNS:api-auth.soundcloud.com,DNS:style.sndcdn.com,DNS:localhost',
             ],
             { stdio: 'ignore' },
         );
@@ -53,6 +53,7 @@ app.whenReady().then(async () => {
             key = fs.readFileSync(keyPath),
             pinned = new X509Certificate(cert);
         let playing = false,
+            failMode = 'script',
             documents = 0;
         const listen = (server) =>
             new Promise((resolve) => {
@@ -67,12 +68,18 @@ app.whenReady().then(async () => {
                     response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
                     return response.end(
                         '<!doctype html><div id="app"></div>' +
+                            '<link rel="stylesheet" href="https://style.sndcdn.com/css/app.css">' +
+                            '<script src="https://localhost:' +
+                            tls.address().port +
+                            '/one.js"></script><script src="https://localhost:' +
+                            tls.address().port +
+                            '/two.js"></script>' +
                             (playing ? '<div class="playControls__play playing"></div>' : '') +
                             '<script src="https://a-v2.sndcdn.com/assets/app.js" onerror="document.getElementById(\'app\').textContent=\'Sorry! Something went wrong\'"></script>',
                     );
                 }
                 if (url.hostname === 'a-v2.sndcdn.com') {
-                    if (!relay) {
+                    if (!relay && failMode === 'script') {
                         response.writeHead(503);
                         return response.end();
                     }
@@ -81,14 +88,26 @@ app.whenReady().then(async () => {
                         'document.getElementById("app").className="header";document.getElementById("app").textContent="SoundCloud loaded";',
                     );
                 }
-                response.writeHead(url.hostname === 'api-v2.soundcloud.com' ? 401 : 404);
+                if (url.hostname === 'style.sndcdn.com') {
+                    response.writeHead(!relay && failMode === 'style' ? 503 : 200, { 'content-type': 'text/css' });
+                    return response.end('body{}');
+                }
+                response.writeHead(
+                    ['api-v2.soundcloud.com', 'api-auth.soundcloud.com'].includes(url.hostname) ? 401 : 404,
+                );
                 response.end();
             });
             const tlsPort = await listen(tls),
                 server = createHttpServer();
             server.on('connect', (request, socket, head) => {
                 assert(
-                    ['soundcloud.com:443', 'a-v2.sndcdn.com:443', 'api-v2.soundcloud.com:443'].includes(request.url),
+                    [
+                        'soundcloud.com:443',
+                        'a-v2.sndcdn.com:443',
+                        'api-v2.soundcloud.com:443',
+                        'api-auth.soundcloud.com:443',
+                        'style.sndcdn.com:443',
+                    ].includes(request.url),
                 );
                 const upstream = connect(tlsPort, '127.0.0.1', () => {
                     socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
@@ -117,7 +136,14 @@ app.whenReady().then(async () => {
             target.setCertificateVerifyProc((request, callback) => {
                 try {
                     callback(
-                        ['soundcloud.com', 'a-v2.sndcdn.com', 'api-v2.soundcloud.com'].includes(request.hostname) &&
+                        [
+                            'soundcloud.com',
+                            'a-v2.sndcdn.com',
+                            'api-v2.soundcloud.com',
+                            'api-auth.soundcloud.com',
+                            'style.sndcdn.com',
+                            'localhost',
+                        ].includes(request.hostname) &&
                             new X509Certificate(request.certificate.data).raw.equals(pinned.raw)
                             ? 0
                             : -3,
@@ -151,7 +177,7 @@ app.whenReady().then(async () => {
         assert.equal(await recovery.testRelay(), true);
         assert.deepEqual(
             recovery.getDiagnostics().stages.map((s) => s.stage),
-            ['website', 'assets', 'api'],
+            ['website', 'assets', 'api', 'auth'],
         );
         await contents.session.cookies.set({
             url: 'https://soundcloud.com',
@@ -190,6 +216,23 @@ app.whenReady().then(async () => {
         await contents.loadURL('https://soundcloud.com/discover');
         await awaitShell();
         assert.equal(recovery.routed, true, 'A failed renderer bootstrap triggers automatic recovery');
+        assert(
+            (await recovery.getPageDiagnostics()).page.failures.some(
+                (item) => item.host === 'localhost' && item.workerAllowed === false,
+            ),
+            'External resource failures remain visible without allowing those destinations',
+        );
+        store.set('cloudflareMode', 'off');
+        await recovery.configure();
+        await directRoute(contents.session);
+        failMode = 'style';
+        store.set('cloudflareMode', 'auto');
+        await recovery.configure();
+        await contents.loadURL('https://soundcloud.com/discover');
+        for (let i = 0; i < 200 && !recovery.routed; i++) await wait(20);
+        assert.equal(recovery.routed, true, 'A stylesheet outside /assets/ must trigger recovery');
+        await awaitShell();
+        failMode = 'script';
         store.set('cloudflareMode', 'off');
         await recovery.configure();
         await directRoute(contents.session);
@@ -208,6 +251,8 @@ app.whenReady().then(async () => {
             blockedCdnDetected: true,
             workerProbeIncludesAssets: true,
             automaticRecovery: true,
+            cssOutsideAssetsRecovery: true,
+            externalFailuresVisible: true,
             saveReloadsBrokenPage: true,
             activePlayerPreserved: true,
             cookiesPreserved: true,

@@ -7,22 +7,22 @@ describe('relay diagnosis at the failing stage', () => {
         vi.useFakeTimers();
         const fetcher = vi.fn(async (url: RequestInfo | URL) => {
             await new Promise((resolve) => setTimeout(resolve, 8000));
-            return String(url).includes('api-v2')
+            return String(url).includes('api-')
                 ? new Response('', { status: 401 })
                 : String(url).includes('sndcdn')
                   ? new Response('globalThis.ready=true;')
                   : new Response(html);
         });
         const probe = probeSoundCloud(fetcher as typeof fetch, { timeoutMs: 10000 });
-        await vi.advanceTimersByTimeAsync(24000);
-        expect((await probe).map((stage) => stage.outcome)).toEqual(['ok', 'ok', 'ok']);
+        await vi.advanceTimersByTimeAsync(32000);
+        expect((await probe).map((stage) => stage.outcome)).toEqual(['ok', 'ok', 'ok', 'ok']);
         expect(vi.getTimerCount()).toBe(0);
     });
     it('recognizes the page across streamed chunks and accepts API auth-required without credentials', async () => {
         const encoder = new TextEncoder();
         const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
             expect(init?.credentials).toBe('omit');
-            if (String(url).includes('api-v2')) return new Response('', { status: 401 });
+            if (String(url).includes('api-')) return new Response('', { status: 401 });
             if (String(url).includes('sndcdn')) return new Response('globalThis.ready=true;');
             return new Response(
                 new ReadableStream({
@@ -35,6 +35,7 @@ describe('relay diagnosis at the failing stage', () => {
             );
         });
         expect((await probeSoundCloud(fetcher as typeof fetch)).map((stage) => stage.outcome)).toEqual([
+            'ok',
             'ok',
             'ok',
             'ok',
@@ -121,19 +122,64 @@ describe('relay diagnosis at the failing stage', () => {
             html +
             '<script src="https://untrusted.example/assets/track.js"></script><script src="https://a-v2.sndcdn.com/assets/last.js"></script>';
         const fetcher = vi.fn(async (url: RequestInfo | URL) =>
-            String(url).includes('api-v2')
+            String(url).includes('api-')
                 ? new Response('', { status: 401 })
                 : String(url).includes('sndcdn')
                   ? new Response('x'.repeat(200000))
                   : new Response(page),
         );
         const stages = await probeSoundCloud(fetcher as typeof fetch);
-        expect(stages.map((stage) => stage.outcome)).toEqual(['ok', 'ok', 'ok']);
+        expect(stages.map((stage) => stage.outcome)).toEqual(['ok', 'ok', 'ok', 'ok']);
         expect(fetcher.mock.calls.map((args) => String(args[0]))).toEqual([
             'https://soundcloud.com/discover',
             'https://a-v2.sndcdn.com/assets/app.js',
             'https://a-v2.sndcdn.com/assets/last.js',
             'https://api-v2.soundcloud.com/',
+            'https://api-auth.soundcloud.com/',
+        ]);
+    });
+    it('checks CSS outside the asset directory and identifies an unavailable authentication service', async () => {
+        let cssBlocked = true;
+        const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+            const host = new URL(String(url)).hostname;
+            if (host === 'soundcloud.com')
+                return new Response(html + '<link href="https://style.sndcdn.com/css/app.css" rel="stylesheet">');
+            if (host === 'style.sndcdn.com') return new Response('body{}', { status: cssBlocked ? 503 : 200 });
+            if (host === 'api-auth.soundcloud.com') return new Response('', { status: cssBlocked ? 405 : 503 });
+            if (host === 'api-v2.soundcloud.com') return new Response('', { status: 401 });
+            return new Response('globalThis.ready=true;');
+        });
+        const css = await probeSoundCloud(fetcher as typeof fetch);
+        expect(css[css.length - 1]).toMatchObject({
+            stage: 'assets',
+            host: 'style.sndcdn.com',
+            outcome: 'http',
+            httpStatus: 503,
+        });
+        cssBlocked = false;
+        const auth = await probeSoundCloud(fetcher as typeof fetch);
+        expect(auth[auth.length - 1]).toMatchObject({
+            stage: 'auth',
+            host: 'api-auth.soundcloud.com',
+            outcome: 'http',
+            httpStatus: 503,
+        });
+    });
+    it('accepts method-required on the unauthenticated auth endpoint', async () => {
+        const fetcher = vi.fn(async (url: RequestInfo | URL) =>
+            String(url).includes('api-auth')
+                ? new Response('', { status: 405 })
+                : String(url).includes('api-v2')
+                  ? new Response('', { status: 401 })
+                  : String(url).includes('sndcdn')
+                    ? new Response('globalThis.ready=true;')
+                    : new Response(html),
+        );
+        expect((await probeSoundCloud(fetcher as typeof fetch)).map((stage) => stage.outcome)).toEqual([
+            'ok',
+            'ok',
+            'ok',
+            'ok',
         ]);
     });
     it('distinguishes Worker authentication, network and upstream failures with safe error codes', () => {

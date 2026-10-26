@@ -1,6 +1,17 @@
+const relayPattern = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:soundcloud\.com|sndcdn\.com)$/;
 export function relayTarget(host: string): boolean {
     const name = host.toLowerCase();
-    return /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:soundcloud\.com|sndcdn\.com)$/.test(name);
+    return relayPattern.test(name);
+}
+export function relayPac(port: number): string {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid relay port');
+    const script =
+        'function FindProxyForURL(url,host){return new RegExp(' +
+        JSON.stringify(relayPattern.source) +
+        ',"i").test(host)?"PROXY 127.0.0.1:' +
+        port +
+        '":"DIRECT";}';
+    return 'data:application/x-ns-proxy-autoconfig;base64,' + Buffer.from(script).toString('base64');
 }
 export function workerEndpoint(value: string): string {
     const url = new URL(value.trim());

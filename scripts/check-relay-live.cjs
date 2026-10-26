@@ -37,7 +37,14 @@ app.whenReady().then(async () => {
                 return;
             }
             if (
-                !['soundcloud.com', 'api-v2.soundcloud.com', 'a-v2.sndcdn.com'].includes(host) ||
+                ![
+                    'soundcloud.com',
+                    'api-v2.soundcloud.com',
+                    'api-auth.soundcloud.com',
+                    'a-v2.sndcdn.com',
+                    'style.sndcdn.com',
+                    'secure.sndcdn.com',
+                ].includes(host) ||
                 request.headers.authorization !== 'Bearer ' + token
             ) {
                 socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
@@ -181,4 +188,4 @@ app.whenReady().then(async () => {
 setTimeout(() => {
     console.error('relay-live deadline');
     app.exit(1);
-}, 40000).unref();
+}, 55000).unref();
