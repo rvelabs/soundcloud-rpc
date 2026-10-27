@@ -564,6 +564,7 @@ function setupWindowControls() {
 let headerView: BrowserView | null;
 let contentView: BrowserView;
 const windowIpc = new IpcRegistry(ipcMain, (event, channel) => {
+    if (isQuitting) return false;
     if (/^(wave-inline:|playlist-import:|soundcloud:)/.test(channel)) return isTrustedSoundCloudSender(event);
     return settingsManager?.owns(event.sender) === true || headerView?.webContents === event.sender;
 });
