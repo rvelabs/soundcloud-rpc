@@ -383,6 +383,7 @@ svg {
     transform: rotate(-9deg);
     overflow: hidden;
     box-shadow: 1px 2px 0 #c8490a;
+    transition: transform 800ms var(--ease);
 }
 .sleeve-top,
 .sleeve-bottom {
@@ -438,6 +439,7 @@ svg {
     background: none;
     border-radius: 50%;
     touch-action: manipulation;
+    transition: transform 800ms var(--ease);
 }
 .vinyl {
     position: absolute;
@@ -447,7 +449,7 @@ svg {
     box-shadow:
         5px 18px 23px #29251d27,
         inset 0 0 0 2px #343431;
-    animation: record-spin 35s linear infinite;
+    animation: record-spin 24s linear infinite;
     will-change: transform;
     display: grid;
     place-items: center;
@@ -1876,6 +1878,14 @@ h3 {
     }
     .download-note {
         font-size: 8px;
+    }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    .record-art:hover .sleeve {
+        transform: translate(-4px, 2px) rotate(-11deg);
+    }
+    .record-art:hover .record-toggle {
+        transform: translate(5px, -3px);
     }
 }
 @media (prefers-reduced-motion: reduce) {

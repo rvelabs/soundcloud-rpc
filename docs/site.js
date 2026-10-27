@@ -15,7 +15,7 @@
         recordPause: 'Pause the record animation',
         recordPlay: 'Resume the record animation',
         recordCaption: 'THE MUSIC DOESN’T HAVE TO END',
-        demoNote: 'Tap the record · animation only, no audio',
+        demoNote: 'Automatic rotation · visual demo, no audio',
         baseline: 'A FAMILIAR PLAYER. A DIFFERENT NEXT TRACK.',
         learnMore: 'Learn more',
         waveKicker: 'PERSONAL RADIO',
@@ -119,11 +119,20 @@
     const record = document.querySelector('.record-art');
     const recordButton = document.querySelector('.record-toggle');
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    const reveals = new Set();
     let language = 'ru',
         source = 'spotify',
-        visible = true,
-        focused = document.hasFocus();
-    let enabled = !reduce.matches;
+        visible = !('IntersectionObserver' in window),
+        focused = true,
+        entrancePlayed = false;
+    let enabled = true;
+    const trackAnimation = (animation) => {
+        reveals.add(animation);
+        animation.finished.then(
+            () => reveals.delete(animation),
+            () => reveals.delete(animation),
+        );
+    };
     const motionAllowed = () => !reduce.matches && !document.hidden && focused && visible;
     const syncMotion = () => {
         record.classList.toggle('is-still', !motionAllowed());
@@ -139,8 +148,32 @@
                   ? russianLabels.recordPlay
                   : attributes.get(recordButton),
         );
+        if (enabled && motionAllowed() && !entrancePlayed) {
+            entrancePlayed = true;
+            trackAnimation(
+                recordButton.animate(
+                    [
+                        { opacity: 0.4, transform: 'translate(-18%, 5%) rotate(-6deg)' },
+                        { opacity: 1, transform: 'none' },
+                    ],
+                    { duration: 1100, easing: 'cubic-bezier(.22,1,.36,1)' },
+                ),
+            );
+            trackAnimation(
+                record
+                    .querySelector('.sleeve')
+                    .animate([{ transform: 'translateX(14px) rotate(-14deg)' }, { transform: 'rotate(-9deg)' }], {
+                        duration: 1200,
+                        easing: 'cubic-bezier(.22,1,.36,1)',
+                    }),
+            );
+        }
         for (const animation of reveals) {
-            if (document.hidden) animation.pause();
+            if (reduce.matches || ['idle', 'finished'].includes(animation.playState)) {
+                animation.cancel();
+                reveals.delete(animation);
+            } else if (document.hidden || !focused || (!visible && animation.effect?.target.closest('.record-art')))
+                animation.pause();
             else animation.play();
         }
     };
@@ -150,12 +183,14 @@
         const text = document.querySelector('[data-source-copy]');
         text.textContent = sources[source].copy[index];
         if (!reduce.matches && !document.hidden)
-            text.animate(
-                [
-                    { opacity: 0.2, transform: 'translateY(5px)' },
-                    { opacity: 1, transform: 'none' },
-                ],
-                { duration: 260, easing: 'ease-out' },
+            trackAnimation(
+                text.animate(
+                    [
+                        { opacity: 0.2, transform: 'translateY(5px)' },
+                        { opacity: 1, transform: 'none' },
+                    ],
+                    { duration: 260, easing: 'ease-out' },
+                ),
             );
         for (const button of document.querySelectorAll('[data-source]'))
             button.setAttribute('aria-pressed', String(button.dataset.source === source));
@@ -182,7 +217,6 @@
             localStorage.setItem('soundcloud-site-language', language);
         } catch {}
     };
-    const reveals = new Set();
     for (const button of document.querySelectorAll('[data-site-language]'))
         button.addEventListener('click', () => setLanguage(button.dataset.siteLanguage));
     for (const button of document.querySelectorAll('[data-source]'))
@@ -215,11 +249,7 @@
                         ],
                         { duration: 650, easing: 'cubic-bezier(.22,1,.36,1)' },
                     );
-                    reveals.add(animation);
-                    animation.finished.then(
-                        () => reveals.delete(animation),
-                        () => reveals.delete(animation),
-                    );
+                    trackAnimation(animation);
                 }
             },
             { threshold: 0.08 },
@@ -234,17 +264,17 @@
         focused = true;
         syncMotion();
     });
-    document.addEventListener('visibilitychange', syncMotion);
-    reduce.addEventListener('change', () => {
-        if (reduce.matches) for (const animation of reveals) animation.cancel();
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) focused = true;
         syncMotion();
     });
+    reduce.addEventListener('change', syncMotion);
     addEventListener('pagehide', () => {
         focused = false;
         syncMotion();
     });
     addEventListener('pageshow', () => {
-        focused = document.hasFocus();
+        focused = true;
         syncMotion();
     });
     let selected;

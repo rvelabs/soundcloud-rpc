@@ -32,10 +32,34 @@ app.whenReady().then(async () => {
         await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
             features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
         });
-        await wc.executeJavaScript(
-            "if(document.querySelector('.record-toggle').getAttribute('aria-pressed')==='false')document.querySelector('.record-toggle').click()",
-        );
         await wc.executeJavaScript('document.fonts.ready.then(()=>true)');
+        await wc.executeJavaScript(
+            'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
+        );
+        const recordRunning = () =>
+            wc.executeJavaScript(
+                "document.querySelector('.vinyl').getAnimations().some(a=>a.animationName==='record-spin' && a.playState==='running')",
+            );
+        assert(await recordRunning(), 'record starts before any interaction, without document focus');
+        assert.equal(
+            await wc.executeJavaScript("document.querySelector('.record-toggle').getAttribute('aria-pressed')"),
+            'true',
+        );
+        await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+        });
+        await wc.executeJavaScript(
+            'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
+        );
+        assert.equal(
+            await wc.executeJavaScript("document.getAnimations().filter(a=>a.playState==='running').length"),
+            0,
+        );
+        await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+        });
+        await new Promise((resolve) => setTimeout(resolve, 140));
+        assert(await recordRunning(), 'restoring motion resumes rotation without a click');
         checkpoint('loaded');
         for (const width of [320, 360, 375, 390, 393, 412, 430, 768, 844, 1024, 1200, 1440]) {
             checkpoint('viewport-' + width);
@@ -99,6 +123,8 @@ app.whenReady().then(async () => {
         if (process.env.WAVE_EXPORT_SOCIAL === '1')
             fs.writeFileSync(path.join(root, 'docs/images/social-cover.png'), image);
         const result = {
+            autoStartWithoutClick: true,
+            resumeAfterReducedMotion: true,
             viewportChecks: 24,
             languageSwitch: true,
             focusPause: true,

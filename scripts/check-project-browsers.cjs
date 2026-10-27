@@ -53,6 +53,25 @@ const server = http.createServer(async (req, res) => {
                     });
                     await page.goto(url);
                     await page.evaluate(() => document.fonts.ready);
+                    await page.locator('.record-toggle').scrollIntoViewIfNeeded();
+                    await page.waitForFunction(() =>
+                        document
+                            .querySelector('.vinyl')
+                            .getAnimations()
+                            .some(
+                                (a) =>
+                                    a.animationName === 'record-spin' &&
+                                    a.playState === 'running' &&
+                                    a.currentTime > 40,
+                            ),
+                    );
+                    assert.equal(await page.locator('.record-toggle').getAttribute('aria-pressed'), 'true');
+                    await page.waitForFunction(() =>
+                        document
+                            .querySelector('.record-toggle')
+                            .getAnimations()
+                            .every((a) => a.playState !== 'running'),
+                    );
                     for (const language of ['ru', 'en']) {
                         await page.locator(`[data-site-language="${language}"]`).click();
                         const layout = await page.evaluate(() => ({
@@ -150,15 +169,13 @@ const server = http.createServer(async (req, res) => {
                         if (!['Desktop Chrome', 'iPhone 13'].includes(preset)) break;
                         await page.locator(selector).scrollIntoViewIfNeeded();
                         await page.waitForTimeout(700);
-                        await page
-                            .locator(selector)
-                            .screenshot({
-                                path: path.join(
-                                    out,
-                                    `${engine.name()}-${preset.replaceAll(' ', '-')}-${selector.replace(/[.#]/g, '')}.png`,
-                                ),
-                                animations: 'disabled',
-                            });
+                        await page.locator(selector).screenshot({
+                            path: path.join(
+                                out,
+                                `${engine.name()}-${preset.replaceAll(' ', '-')}-${selector.replace(/[.#]/g, '')}.png`,
+                            ),
+                            animations: 'disabled',
+                        });
                     }
                     assert.deepEqual(errors, [], preset + ': browser errors');
                     results.push({
@@ -167,6 +184,7 @@ const server = http.createServer(async (req, res) => {
                         languages: ['ru', 'en'],
                         layout: true,
                         recordControl: true,
+                        autoStartWithoutClick: true,
                         platformGuide: true,
                         keyboardFAQ: true,
                         reducedMotion: true,
