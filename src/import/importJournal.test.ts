@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { ImportJournal } from './importJournal';
 describe('resumable playlist matching', () => {
+    it('does not reuse a cached recording for a different source duration', () => {
+        const values = new Map<string, unknown>();
+        const journal = new ImportJournal(
+            {
+                get: (key) => values.get(key),
+                set: (key, value) => {
+                    values.set(key, value);
+                },
+            },
+            'one',
+        );
+        const source = { artist: 'Artist', title: 'Title', durationSeconds: 180 };
+        const soundcloud = {
+            url: 'https://soundcloud.com/artist/title',
+            artist: 'Artist',
+            title: 'Title',
+            score: 1,
+            sourceQuery: 'Artist Title',
+        };
+        journal.remember({ source, soundcloud });
+        expect(journal.cached({ ...source, durationSeconds: 180.2 })).toEqual(soundcloud);
+        expect(journal.cached({ ...source, durationSeconds: 360 })).toBeUndefined();
+        expect(journal.cached({ artist: source.artist, title: source.title })).toBeUndefined();
+    });
     it('restores partial progress and selections per account without hiding failures', () => {
         const values = new Map<string, unknown>();
         const store = {

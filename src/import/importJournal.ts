@@ -19,6 +19,9 @@ const trackKey = (track: SourceTrack) =>
             JSON.stringify([
                 track.artist.normalize('NFKC').toLowerCase().trim(),
                 track.title.normalize('NFKC').toLowerCase().trim(),
+                Number.isFinite(track.durationSeconds) && track.durationSeconds! > 0
+                    ? Math.round(track.durationSeconds!)
+                    : null,
             ]),
         )
         .digest('hex');
