@@ -39,6 +39,56 @@ const server = http.createServer(async (req, res) => {
         ]) {
             const browser = await engine.launch({ headless: true });
             try {
+                for (const [locale, expected] of [
+                    ['ru', 'ru'],
+                    ['ru-RU', 'ru'],
+                    ['ru-KZ', 'ru'],
+                    ['en-US', 'en'],
+                    ['uk-UA', 'en'],
+                    ['de-DE', 'en'],
+                    ['fr-FR', 'en'],
+                    ['ja-JP', 'en'],
+                ]) {
+                    const context = await browser.newContext({ locale });
+                    const previous = expected === 'ru' ? 'en' : 'ru';
+                    await context.addInitScript(
+                        (saved) => localStorage.setItem('soundcloud-site-language', saved),
+                        previous,
+                    );
+                    const page = await context.newPage();
+                    const errors = [];
+                    page.on('pageerror', (error) => errors.push(error.message));
+                    await page.goto(url);
+                    assert.equal(
+                        await page.locator('html').getAttribute('lang'),
+                        expected,
+                        locale + ': initial language',
+                    );
+                    assert((await page.locator('h1').textContent()).includes(expected === 'ru' ? 'Хватит' : 'Off'));
+                    await page.locator(`[data-site-language="${previous}"]`).click();
+                    assert.equal(
+                        await page.locator('html').getAttribute('lang'),
+                        previous,
+                        'manual switch still works',
+                    );
+                    await page.reload();
+                    assert.equal(
+                        await page.locator('html').getAttribute('lang'),
+                        expected,
+                        'reload follows primary browser language',
+                    );
+                    assert.deepEqual(errors, []);
+                    results.push({
+                        engine: engine.name(),
+                        locale,
+                        expected,
+                        savedChoiceIgnored: true,
+                        reload: true,
+                        passed: true,
+                    });
+                    await context.close();
+                }
+                if (process.argv.includes('--languages-only')) continue;
                 for (const preset of presets) {
                     const context = await browser.newContext({
                         ...devices[preset],
@@ -235,7 +285,13 @@ const server = http.createServer(async (req, res) => {
                 await browser.close();
             }
         }
-        await fs.writeFile(path.join(out, 'browser-results.json'), JSON.stringify(results, null, 2));
+        await fs.writeFile(
+            path.join(
+                out,
+                process.argv.includes('--languages-only') ? 'language-results.json' : 'browser-results.json',
+            ),
+            JSON.stringify(results, null, 2),
+        );
         console.log(JSON.stringify(results));
     } finally {
         server.close();

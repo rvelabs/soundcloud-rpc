@@ -194,9 +194,6 @@
             language === 'en' ? 'SoundCloud Desktop — get off repeat' : 'SoundCloud Desktop — хватит слушать по кругу';
         updateSource();
         syncMotion();
-        try {
-            localStorage.setItem('soundcloud-site-language', language);
-        } catch {}
     };
     for (const button of document.querySelectorAll('[data-site-language]'))
         button.addEventListener('click', () => setLanguage(button.dataset.siteLanguage));
@@ -236,9 +233,5 @@
     document.addEventListener('visibilitychange', syncMotion);
     reduce.addEventListener('change', syncMotion);
     addEventListener('pageshow', syncMotion);
-    let selected;
-    try {
-        selected = localStorage.getItem('soundcloud-site-language');
-    } catch {}
-    setLanguage(selected || (navigator.language?.toLowerCase().startsWith('ru') ? 'ru' : 'en'));
+    setLanguage(/^ru(?:-|$)/i.test(navigator.language || '') ? 'ru' : 'en');
 })();
