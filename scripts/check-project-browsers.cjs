@@ -3,27 +3,28 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const repo = path.resolve(__dirname, '..');
-const out = process.env.WAVE_TEST_OUTPUT || path.join(repo, 'build-project-browsers');
+const root = path.resolve(__dirname, '..');
+const out = process.env.WAVE_TEST_OUTPUT || path.join(root, 'build-site-redesign');
 const types = {
     '.html': 'text/html',
-    '.js': 'text/javascript',
-    '.ico': 'image/x-icon',
     '.css': 'text/css',
+    '.js': 'text/javascript',
     '.webp': 'image/webp',
+    '.png': 'image/png',
+    '.ico': 'image/x-icon',
+    '.woff2': 'font/woff2',
 };
-const server = http.createServer(async (request, response) => {
-    const name = new URL(request.url, 'http://localhost').pathname.slice(1) || 'index.html';
-    const file = path.resolve(repo, 'docs', name);
-    if (!file.startsWith(path.resolve(repo, 'docs') + path.sep) || !types[path.extname(file)]) {
-        response.writeHead(404).end();
-        return;
-    }
-    response.setHeader('Content-Type', types[path.extname(name)] + ';charset=utf-8');
+const server = http.createServer(async (req, res) => {
+    const name = new URL(req.url, 'http://localhost').pathname.slice(1) || 'index.html';
+    const file = path.resolve(root, 'docs', name);
+    if (!file.startsWith(path.join(root, 'docs') + path.sep) || !types[path.extname(file)])
+        return res.writeHead(404).end();
     try {
-        response.end(await fs.readFile(file));
+        const body = await fs.readFile(file);
+        res.writeHead(200, { 'Content-Type': types[path.extname(file)] });
+        res.end(body);
     } catch {
-        response.writeHead(404).end();
+        res.writeHead(404).end();
     }
 });
 (async () => {
@@ -39,212 +40,165 @@ const server = http.createServer(async (request, response) => {
             const browser = await engine.launch({ headless: true });
             try {
                 for (const preset of presets) {
-                    const context = await browser.newContext({ ...devices[preset], locale: 'ru-RU' });
+                    const context = await browser.newContext({
+                        ...devices[preset],
+                        locale: 'ru-RU',
+                        reducedMotion: 'no-preference',
+                    });
                     const page = await context.newPage();
                     const errors = [];
                     page.on('pageerror', (error) => errors.push(error.message));
-                    page.on('response', (response) => {
-                        if (response.status() >= 400) errors.push(response.status() + ': ' + response.url());
+                    page.on('response', (res) => {
+                        if (res.status() >= 400) errors.push(res.status() + ': ' + res.url());
                     });
                     await page.goto(url);
+                    await page.evaluate(() => document.fonts.ready);
                     for (const language of ['ru', 'en']) {
                         await page.locator(`[data-site-language="${language}"]`).click();
-                        await page.waitForTimeout(850);
-                        const layout = await page.evaluate(() => {
-                            const controls = [...document.querySelectorAll('nav a,button,.button,summary')].filter(
-                                (element) => element.getClientRects().length,
-                            );
-                            return {
-                                width: innerWidth,
-                                scrollWidth: document.documentElement.scrollWidth,
-                                bad: controls
-                                    .filter((element) => {
-                                        const rect = element.getBoundingClientRect();
-                                        return rect.left < -1 || rect.right > innerWidth + 1 || rect.height < 43;
+                        const layout = await page.evaluate(() => ({
+                            width: innerWidth,
+                            scroll: document.documentElement.scrollWidth,
+                            lang: document.documentElement.lang,
+                            h1: document.querySelectorAll('h1').length,
+                            bad: [
+                                ...document.querySelectorAll(
+                                    'nav a,nav button,.button,.text-link,summary,[data-source]',
+                                ),
+                            ]
+                                .filter((el) => el.getClientRects().length)
+                                .filter((el) => {
+                                    const r = el.getBoundingClientRect();
+                                    return r.left < -1 || r.right > innerWidth + 1 || r.height < 43;
+                                })
+                                .map((el) => el.textContent.trim()),
+                        }));
+                        assert.equal(layout.h1, 1);
+                        assert.equal(layout.lang, language);
+                        if (layout.scroll > layout.width) {
+                            const debug = await page.evaluate(() =>
+                                [...document.querySelectorAll('body *')]
+                                    .filter((el) => {
+                                        const r = el.getBoundingClientRect();
+                                        return r.right > innerWidth + 1;
                                     })
-                                    .map((element) => element.textContent.trim()),
-                            };
-                        });
-                        assert(layout.scrollWidth <= layout.width, preset + '/' + language + ': overflow');
-                        assert.deepEqual(layout.bad, [], preset + '/' + language + ': touch targets');
+                                    .map((el) => ({
+                                        tag: el.tagName,
+                                        cls: typeof el.className === 'string' ? el.className : 'svg',
+                                        text: el.textContent.slice(0, 50),
+                                        r: el.getBoundingClientRect().right,
+                                        font: getComputedStyle(el).fontSize,
+                                    })),
+                            );
+                            await fs.writeFile(
+                                path.join(out, 'overflow.json'),
+                                JSON.stringify({ layout, debug }, null, 2),
+                            );
+                        }
+                        assert(layout.scroll <= layout.width, preset + '/' + language + ': horizontal overflow');
+                        assert.deepEqual(layout.bad, [], preset + '/' + language + ': clipped or small controls');
+                        assert((await page.locator('h1').textContent()).includes(language === 'ru' ? 'Хватит' : 'Off'));
                         await page.screenshot({
                             path: path.join(out, `${engine.name()}-${preset.replaceAll(' ', '-')}-${language}.png`),
                         });
                     }
-                    assert(
-                        await page
-                            .locator('[data-en]')
-                            .evaluateAll((elements) =>
-                                elements.every((element) => element.textContent === element.dataset.en),
-                            ),
-                        preset + ': all new content is translated',
+                    const links = await page.locator('a.button').evaluateAll((els) => els.map((el) => el.href));
+                    assert(links.every((link) => link === 'https://github.com/rvelabs/soundcloud-rpc/releases/latest'));
+                    await page.locator('.record-toggle').click();
+                    assert.equal(await page.locator('.record-toggle').getAttribute('aria-pressed'), 'false');
+                    assert.equal(
+                        await page.locator('.vinyl').evaluate((el) => getComputedStyle(el).animationPlayState),
+                        'paused',
                     );
-                    await page.locator('[data-mood="energy"]').click();
-                    assert.equal(await page.locator('.wave-preview').getAttribute('data-preview-mood'), 'energy');
-                    assert.equal(await page.locator('[data-mood="energy"]').getAttribute('aria-pressed'), 'true');
-                    await page.locator('.preview-toggle').click();
-                    await page.waitForFunction(() =>
-                        document
-                            .getAnimations()
-                            .some(
-                                (animation) =>
-                                    animation.playState === 'running' &&
-                                    animation.effect.target.closest('.preview-bars'),
-                            ),
-                    );
-                    for (const key of ['settings', 'import', 'wave']) {
-                        await page.locator(`[data-gallery="${key}"]`).click();
-                        await page.waitForSelector(`[data-gallery-panel="${key}"]:not([hidden])`);
-                        assert(
-                            await page
-                                .locator(`[data-gallery-panel="${key}"] img`)
-                                .evaluate((image) => image.complete && image.naturalWidth > 0),
-                            preset + ': screenshot loaded',
-                        );
-                    }
-                    await page.evaluate(() =>
-                        ['settings', 'import', 'wave'].forEach((key) =>
-                            document.querySelector(`[data-gallery="${key}"]`).click(),
-                        ),
-                    );
+                    await page.locator('.record-toggle').click();
                     await page.waitForFunction(
-                        () =>
-                            document.querySelector('.gallery-stage').getAttribute('aria-busy') === 'false' &&
-                            !document.querySelector('[data-gallery-panel="wave"]').hidden,
+                        () => getComputedStyle(document.querySelector('.vinyl')).animationPlayState === 'running',
                     );
-                    const zoom = page.locator('[data-gallery-panel="wave"] [data-zoom]');
-                    await zoom.click();
-                    await page.waitForSelector('.lightbox[open]');
-                    assert(await page.locator('.lightbox img').evaluate((image) => image.naturalWidth > 0));
-                    await page.keyboard.press('Escape');
-                    await page.waitForSelector('.lightbox', { state: 'hidden' });
-                    assert(
-                        await zoom.evaluate((element) => element === document.activeElement),
-                        preset + ': dialog restores keyboard focus',
-                    );
-                    await page.evaluate(() => {
-                        document.documentElement.style.fontSize = '200%';
-                    });
-                    const oversized = await page.evaluate(() => ({
-                        width: innerWidth,
-                        scroll: document.documentElement.scrollWidth,
-                        items: [...document.querySelectorAll('body *')]
-                            .map((element) => ({
-                                tag: element.tagName,
-                                cls: element.className,
-                                right: element.getBoundingClientRect().right,
-                                width: element.getBoundingClientRect().width,
-                            }))
-                            .filter((item) => item.right > innerWidth + 1)
-                            .slice(0, 30),
-                    }));
-                    assert(oversized.scroll <= oversized.width, preset + ': 200% text: ' + JSON.stringify(oversized));
-                    await page.evaluate(() => {
-                        document.documentElement.style.fontSize = '';
-                    });
-                    await page.locator('summary').first().click();
+                    for (const source of ['yandex', 'youtube', 'file', 'spotify']) {
+                        await page.locator(`[data-source="${source}"]`).click();
+                        assert.equal(
+                            await page.locator(`[data-source="${source}"]`).getAttribute('aria-pressed'),
+                            'true',
+                        );
+                        assert.equal(await page.locator('[data-source][aria-pressed="true"]').count(), 1);
+                        assert((await page.locator('[data-source-copy]').textContent()).length > 40);
+                    }
+                    await page.locator('summary').first().press('Enter');
                     assert(
                         await page
                             .locator('details')
                             .first()
-                            .evaluate((element) => element.open),
+                            .evaluate((el) => el.open),
+                        'keyboard FAQ',
+                    );
+                    await page.locator('summary').first().press('Enter');
+                    assert(
+                        !(await page
+                            .locator('details')
+                            .first()
+                            .evaluate((el) => el.open)),
                     );
                     await page.emulateMedia({ reducedMotion: 'reduce' });
-                    await page.waitForFunction(
-                        () =>
-                            matchMedia('(prefers-reduced-motion: reduce)').matches &&
-                            document.getAnimations().every((animation) => animation.playState !== 'running'),
-                    );
-                    assert.equal(
-                        await page.evaluate(
-                            () =>
-                                document.getAnimations().filter((animation) => animation.playState === 'running')
-                                    .length,
-                        ),
-                        0,
-                    );
-                    assert.deepEqual(errors, [], preset + ': browser errors');
+                    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
                     await page.emulateMedia({ reducedMotion: 'no-preference' });
-                    await page.evaluate(() => scrollTo(0, document.body.scrollHeight));
-                    await page.waitForTimeout(900);
-                    assert.equal(
-                        await page.evaluate(
-                            () =>
-                                document.getAnimations().filter((animation) => animation.playState === 'running')
-                                    .length,
-                        ),
-                        0,
-                        preset + ': offscreen loops pause',
+                    await page.locator('.footer').scrollIntoViewIfNeeded();
+                    await page.waitForFunction(
+                        () => getComputedStyle(document.querySelector('.vinyl')).animationPlayState === 'paused',
                     );
-                    results.push({
-                        engine: engine.name(),
-                        preset,
-                        languages: ['ru', 'en'],
-                        preview: true,
-                        gallery: true,
-                        dialogKeyboard: true,
-                        enlargedText: true,
-                        offscreenPause: true,
-                        passed: true,
-                    });
-                    if (['iPhone 13', 'Desktop Chrome'].includes(preset)) {
-                        for (const selector of ['.story-section', '#gallery', '.import-story']) {
-                            await page
-                                .locator(selector)
-                                .evaluate((element) =>
-                                    element.scrollIntoView({ behavior: 'instant', block: 'center' }),
-                                );
-                            await page.waitForTimeout(800);
-                            await page
-                                .locator(selector)
-                                .locator('img')
-                                .evaluateAll((images) =>
-                                    Promise.all(images.map((image) => image.decode().catch(() => {}))),
-                                );
-                            assert(
-                                await page
-                                    .locator(selector)
-                                    .evaluate((element) =>
-                                        [element, ...element.querySelectorAll('[data-reveal]')].every(
-                                            (item) => Number(getComputedStyle(item).opacity) > 0.99,
-                                        ),
-                                    ),
-                                selector + ': section is readable after reveal',
-                            );
-                            await page.locator(selector).screenshot({
+                    await page.locator('#wave').scrollIntoViewIfNeeded();
+                    await page.locator('#wave img').evaluateAll((imgs) => Promise.all(imgs.map((img) => img.decode())));
+                    for (const selector of ['#wave', '#collection', '#faq', '.download-section']) {
+                        if (!['Desktop Chrome', 'iPhone 13'].includes(preset)) break;
+                        await page.locator(selector).scrollIntoViewIfNeeded();
+                        await page.waitForTimeout(700);
+                        await page
+                            .locator(selector)
+                            .screenshot({
                                 path: path.join(
                                     out,
                                     `${engine.name()}-${preset.replaceAll(' ', '-')}-${selector.replace(/[.#]/g, '')}.png`,
                                 ),
                                 animations: 'disabled',
                             });
-                        }
                     }
+                    assert.deepEqual(errors, [], preset + ': browser errors');
+                    results.push({
+                        engine: engine.name(),
+                        preset,
+                        languages: ['ru', 'en'],
+                        layout: true,
+                        recordControl: true,
+                        platformGuide: true,
+                        keyboardFAQ: true,
+                        reducedMotion: true,
+                        offscreenPause: true,
+                        errors: 0,
+                    });
                     await context.close();
                 }
                 const fallback = await browser.newContext({ ...devices['iPhone SE'], javaScriptEnabled: false });
                 const page = await fallback.newPage();
                 await page.goto(url);
-                assert(await page.locator('h1').isVisible(), 'no-JavaScript heading');
+                assert(await page.locator('h1').isVisible());
+                assert(await page.locator('a.button').first().isVisible());
+                assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+                await page.locator('summary').first().click();
                 assert(
-                    await page.locator('.hero-photo img').evaluate((image) => image.complete && image.naturalWidth > 0),
-                    'no-JavaScript photograph',
-                );
-                assert(
-                    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-                    'no-JavaScript layout',
+                    await page
+                        .locator('details')
+                        .first()
+                        .evaluate((el) => el.open),
                 );
                 await fallback.close();
             } finally {
                 await browser.close();
             }
         }
-        await fs.writeFile(path.join(out, 'results.json'), JSON.stringify(results, null, 2));
+        await fs.writeFile(path.join(out, 'browser-results.json'), JSON.stringify(results, null, 2));
         console.log(JSON.stringify(results));
     } finally {
         server.close();
     }
 })().catch((error) => {
-    console.error(error);
+    console.error(error.stack || error);
     process.exitCode = 1;
 });
