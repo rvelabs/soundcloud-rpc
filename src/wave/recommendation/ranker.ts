@@ -40,6 +40,14 @@ function matchesGenre(track: Track, requested: string): boolean {
     return !track.genre && !track.tags?.length && wanted.every((word) => hint.includes(word));
 }
 function fitsSettings(track: Track, controls: Controls, context: Context): boolean {
+    if (
+        controls.mood === 'any' &&
+        !context.activity &&
+        controls.tempo === 'any' &&
+        (!controls.language || controls.language === 'any') &&
+        controls.discovery !== 'popular'
+    )
+        return true;
     const tags = tokensOf(track);
     const mood = effectiveMood(controls, context);
     const evidence = moodEvidence(track, mood);
@@ -194,6 +202,13 @@ export function recommend(
     const recentIds = new Set([
         ...(context.recentTrackIds || []).slice(0, cooldown),
         ...(context.reservedTrackIds || []),
+        ...(!favoriteMode
+            ? events
+                  .filter(
+                      (event) => ['play', 'complete', 'skip'].includes(event.kind) && context.now - event.at < 86400000,
+                  )
+                  .map((event) => event.track.id)
+            : []),
     ]);
     const unique = new Map<string, Track>();
     for (const candidate of candidates)
@@ -210,8 +225,7 @@ export function recommend(
         if (profile.dislikedIds.has(track.id) || recentIds.has(track.id) || blockedRecordings.has(key)) return false;
         if (favoriteMode && !favorites.has(track.id)) return false;
         if (
-            controls.discovery !== 'familiar' &&
-            !favoriteMode &&
+            ['new', 'popular'].includes(controls.discovery) &&
             (profile.heardIds.has(track.id) || profile.likedIds.has(track.id) || knownRecordings.has(key))
         )
             return false;
@@ -259,10 +273,19 @@ export function recommend(
     const chosen: Recommendation[] = [];
     const usedArtists = new Set((context.recentArtists || []).slice(0, 2).map(normalize));
     while (scored.length && chosen.length < limit) {
-        const highest = Math.max(...scored.map((e) => e.score));
-        const eligible = scored.filter((entry) => entry.score >= highest - 3);
+        let group = scored;
+        if (controls.discovery === 'balanced') {
+            const wantKnown = (chosen.length + (context.sequenceOffset || 0)) % 3 === 2;
+            const mixed = scored.filter((entry) => {
+                const known = profile.heardIds.has(entry.track.id) || knownRecordings.has(recordingKey(entry.track));
+                return known === wantKnown;
+            });
+            if (mixed.length) group = mixed;
+        }
+        const highest = Math.max(...group.map((e) => e.score));
+        const eligible = group.filter((entry) => entry.score >= highest - 3);
         const diverse = eligible.filter((entry) => !usedArtists.has(normalize(entry.track.artist)));
-        const options = diverse.length ? diverse : scored;
+        const options = diverse.length ? diverse : group;
         let next = options[0],
             best = -Infinity;
         for (const entry of options) {

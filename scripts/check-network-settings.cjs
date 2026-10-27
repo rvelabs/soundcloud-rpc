@@ -114,6 +114,8 @@ app.whenReady().then(async () => {
         });
         ipcMain.handle('network:setup-cancel', () => {});
         const settings = new SettingsManager(win, store, new TranslationService());
+        assert.equal(settings.getView(), null);
+        settings.toggle();
         const view = win.getBrowserViews().find((v) => v !== main);
         view.webContents.on('console-message', (_e, level, message) => {
             if (level >= 3 && /Uncaught|SyntaxError/.test(message)) errors.push(message);
@@ -171,7 +173,6 @@ app.whenReady().then(async () => {
         assert(deployed.status.includes('Готово'));
         assert.deepEqual(errors, []);
         await service.configure();
-        settings.toggle();
         win.showInactive();
         await wait(400);
         await view.webContents.executeJavaScript(

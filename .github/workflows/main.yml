@@ -21,6 +21,8 @@ jobs:
             - run: npm test
             - run: npm run test:worker
             - run: npm run test:import
+            - run: npm run test:runtime
+            - run: npm run test:assets
     package:
         if: github.event_name == 'workflow_dispatch'
         needs: verify
@@ -33,6 +35,7 @@ jobs:
                   cache: npm
             - run: npm ci
             - run: npm run build-win
+            - run: node scripts/check-package.cjs build/win-unpacked
             - uses: actions/upload-artifact@v4
               with:
                   name: soundcloud-windows

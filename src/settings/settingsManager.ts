@@ -1,3 +1,5 @@
+import { escapeHtml } from '../utils/html';
+import { readFileSync } from 'node:fs';
 import { BrowserView, BrowserWindow, type WebContents } from 'electron';
 import type ElectronStore from 'electron-store';
 import { TranslationService } from '../services/translationService';
@@ -11,7 +13,10 @@ export class SettingsManager {
     private store: ElectronStore;
     private translationService: TranslationService;
     private devMode = process.argv.includes('--dev');
-    private useMacOptimizations = process.platform === 'darwin';
+    private colors: ThemeColors | null = null;
+    private customCSS = '';
+    private idleMs = 30000;
+    private idleTimer?: ReturnType<typeof setTimeout>;
     constructor(parentWindow: BrowserWindow, store: ElectronStore, translationService: TranslationService) {
         this.parentWindow = parentWindow;
         this.store = store;
@@ -21,9 +26,7 @@ export class SettingsManager {
                 this.updateBounds();
             }
         });
-        if (!this.useMacOptimizations) {
-            this.createView();
-        }
+        this.parentWindow.once('closed', () => this.dispose());
     }
     public owns(contents: WebContents): boolean {
         return this.view?.webContents === contents;
@@ -65,21 +68,29 @@ export class SettingsManager {
             },
         });
         this.parentWindow.addBrowserView(this.view);
+        this.view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+        this.view.webContents.on('will-navigate', (event) => event.preventDefault());
         this.view.setBounds({ x: 0, y: -10000, width: 0, height: 0 });
-        this.view.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(this.getHtml())}`);
+        void this.view.webContents
+            .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(this.getHtml())}`)
+            .catch(() => {});
         this.view.webContents.on('console-message', (_, __, message) => {
-            if (message === 'hidePanel') {
+            if (message === 'hidePanel' && !this.isVisible) {
                 this.isVisible = false;
-                if (this.useMacOptimizations) {
-                    this.teardownView();
-                } else if (this.view) {
+                if (this.view) {
                     this.view.setBounds({ x: 0, y: -10000, width: 0, height: 0 });
                 }
+                clearTimeout(this.idleTimer);
+                this.idleTimer = setTimeout(() => {
+                    if (!this.isVisible) this.teardownView();
+                }, this.idleMs);
+                this.idleTimer.unref();
             }
         });
         return this.view;
     }
     private teardownView(): void {
+        clearTimeout(this.idleTimer);
         if (!this.view) return;
         try {
             this.parentWindow.removeBrowserView(this.view);
@@ -105,713 +116,7 @@ export class SettingsManager {
         const theme = this.store.get('theme', 'dark');
         return `
         <style>
-            @font-face {
-                font-family: 'SC-Font';
-                src: url('https://assets.web.soundcloud.cloud/_next/static/media/a34f9d1faa5f3315-s.p.woff2') format('woff2');
-                font-weight: bold;
-                font-style: normal;
-                font-display: swap;
-            }
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-                font-family: 'SC-Font', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                -webkit-font-smoothing: antialiased;
-            }
-            body {
-                background-color: rgba(var(--bg-primary-rgb), 0.1);
-                backdrop-filter: blur(10px);
-                -webkit-backdrop-filter: blur(10px);
-                color: var(--text-primary);
-                padding: 20px;
-                padding-right: 28px;
-                overflow-y: scroll !important;
-                letter-spacing: 0.01em;
-                position: relative;
-                opacity: 0;
-                transform: translateX(20px);
-                transition: 
-                    opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                    backdrop-filter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                will-change: transform, opacity;
-            }
-            body.visible {
-                opacity: 1;
-                transform: translateX(0);
-            }
-            body.is-scrollable {
-                padding-right: 20px;
-            }
-            ::-webkit-scrollbar {
-                -webkit-appearance: none;
-                width: 8px;
-                height: 8px;
-                background-color: var(--scrollbar-bg);
-                display: block !important;
-                opacity: 1 !important;
-                visibility: visible !important;
-            }
-            
-            ::-webkit-scrollbar-track {
-                background-color: transparent;
-                opacity: 1 !important;
-                visibility: visible !important;
-            }
-            
-            ::-webkit-scrollbar-thumb {
-                background-color: var(--scrollbar-thumb);
-                border-radius: 4px;
-                transition: background-color 0.3s;
-                min-height: 40px;
-                opacity: 1 !important;
-                visibility: visible !important;
-            }
-            
-            ::-webkit-scrollbar-thumb:hover {
-                background-color: var(--scrollbar-thumb-hover);
-            }
-            
-            ::-webkit-scrollbar-corner {
-                background-color: transparent;
-            }
-            ::-webkit-scrollbar-button {
-                display: none;
-            }
-            .close-btn {
-                position: absolute;
-                top: 5px;
-                right: 28px;
-                width: 32px;
-                height: 32px;
-                border-radius: 4px;
-                border: none;
-                background: transparent;
-                color: var(--text-primary);
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: background-color 0.2s;
-            }
-            body.is-scrollable .close-btn {
-                right: 20px;
-            }
-            .close-btn:hover {
-                background-color: var(--bg-hover);
-            }
-            .close-btn svg {
-                width: 16px;
-                height: 16px;
-                fill: currentColor;
-            }
-            :root {
-                --bg-primary: #303030;
-                --bg-primary-rgb: 48, 48, 48;
-                --bg-secondary: rgba(43, 43, 43, 0.7);
-                --bg-hover: rgba(64, 64, 64, 0.8);
-                --text-primary: #ffffff;
-                --text-secondary: rgba(255, 255, 255, 0.7);
-                --accent: rgba(255, 255, 255, 0.9);
-                --accent-hover: #ffffff;
-                --accent-muted: rgba(255, 255, 255, 0.6);
-                --link-color: #5bb7ff;
-                --link-hover: #7cc5ff;
-                --border: rgba(255, 255, 255, 0.1);
-                --scrollbar-bg: rgba(255, 255, 255, 0.05);
-                --scrollbar-thumb: rgba(255, 255, 255, 0.2);
-                --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
-            }
-            html.theme-light {
-                --bg-primary: #ffffff;
-                --bg-primary-rgb: 255, 255, 255;
-                --bg-secondary: rgba(245, 245, 245, 0.7);
-                --bg-hover: rgba(234, 234, 234, 0.8);
-                --text-primary: #333333;
-                --text-secondary: rgba(0, 0, 0, 0.7);
-                --accent: rgba(0, 0, 0, 0.9);
-                --accent-hover: #000000;
-                --accent-muted: rgba(0, 0, 0, 0.6);
-                --link-color: #0088ff;
-                --link-hover: #0066cc;
-                --border: rgba(0, 0, 0, 0.1);
-                --scrollbar-bg: rgba(0, 0, 0, 0.05);
-                --scrollbar-thumb: rgba(0, 0, 0, 0.2);
-                --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
-            }
-            .settings-panel {
-                padding-top: 32px;
-                max-width: 100%;
-                display: flex;
-                flex-direction: column;
-                gap: 14px;
-            }
-            .setting-group {
-                background: var(--bg-secondary);
-                border-radius: 8px;
-                padding: 15px;
-                transition: background 0.2s;
-            }
-            .setting-group:hover {
-                background: var(--bg-hover);
-            }
-            h2 {
-                font-size: 16px;
-                font-weight: 600;
-                color: var(--text-primary);
-                margin-bottom: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                line-height: 1;
-            }
-            h2 svg {
-                width: 18px;
-                height: 18px;
-                fill: var(--text-primary);
-                display: block;
-                flex-shrink: 0;
-            }
-            .setting-item {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 5px 0;
-            }
-            .setting-item span {
-                color: var(--text-primary);
-                font-size: 14px;
-            }
-            .description {
-                font-size: 12px;
-                color: var(--text-secondary);
-                margin-top: 10px;
-            }
-            .input-group {
-                display: flex;
-                flex-direction: column;
-                margin-top: 10px;
-            }
-            .input-group .textInput {
-                margin-bottom: 10px;
-            }
-            .input-group .textInput:last-child {
-                margin-bottom: 0;
-            }
-            .toggle {
-                position: relative;
-                width: 44px;
-                height: 24px;
-                flex-shrink: 0;
-            }
-            .toggle input {
-                opacity: 0;
-                width: 0;
-                height: 0;
-            }
-            .slider {
-                position: absolute;
-                cursor: pointer;
-                inset: 0;
-                background: var(--bg-primary);
-                border: 1px solid var(--border);
-                transition: .2s;
-                border-radius: 24px;
-            }
-            .slider:before {
-                content: "";
-                position: absolute;
-                height: 18px;
-                width: 18px;
-                left: 2px;
-                bottom: 2px;
-                background: var(--text-secondary);
-                transition: .2s;
-                border-radius: 50%;
-            }
-            input:checked + .slider {
-                background: var(--accent);
-                border-color: var(--accent);
-            }
-            input:checked + .slider:before {
-                transform: translateX(20px);
-                background: var(--bg-primary);
-            }
-            .input-with-unit {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-            .input-with-unit .textInput {
-                width: 80px;
-                margin: 0;
-            }
-            .unit-symbol {
-                color: var(--text-secondary);
-                font-size: 14px;
-                font-weight: 500;
-                flex-shrink: 0;
-            }
-            .textInput {
-                width: 100%;
-                padding: 10px 12px;
-                background: var(--bg-primary);
-                border: 1px solid var(--border);
-                border-radius: 4px;
-                color: var(--text-primary);
-                font-size: 14px;
-                transition: border-color 0.2s;
-            }
-            .textInput:focus {
-                outline: none;
-                border-color: var(--accent-muted);
-            }
-            .button {
-                width: 100%;
-                padding: 12px;
-                background: var(--accent);
-                color: var(--bg-primary);
-                border: none;
-                border-radius: 4px;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: background 0.2s;
-            }
-            .button:hover {
-                background: var(--accent-hover);
-            }
-            .link {
-                color: var(--accent-muted);
-                text-decoration: none;
-                font-size: 12px;
-            }
-            .link:hover {
-                color: var(--accent);
-                text-decoration: none;
-            }
-            #createLastFmApiKey {
-                color: var(--link-color);
-            }
-            #createLastFmApiKey:hover {
-                color: var(--link-hover);
-            }
-            body::-webkit-scrollbar {
-                width: 8px;
-            }
-            
-            @media screen and (min-width: 0\\0) {
-                body {
-                    overflow-y: auto;
-                }
-            }
-
-            .webhook-example-container {
-                margin-top: 8px;
-            }
-            .example-toggle {
-                display: flex;
-                align-items: center;
-                cursor: pointer;
-                padding: 8px 0;
-                font-size: 12px;
-                color: var(--accent);
-                user-select: none;
-            }
-            .example-toggle:hover {
-                color: var(--accent-hover);
-            }
-            .example-toggle-text {
-                margin-right: 6px;
-            }
-            .example-toggle-icon {
-                width: 16px;
-                height: 16px;
-                fill: currentColor;
-                transition: transform 0.2s ease;
-                transform: rotate(-90deg);
-            }
-            .example-toggle.expanded .example-toggle-icon {
-                transform: rotate(0deg);
-            }
-            .example-content {
-                margin-top: 8px;
-                padding: 12px;
-                background: var(--bg-secondary);
-                border-radius: 6px;
-                border: 1px solid var(--border);
-            }
-            .example-json {
-                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-                font-size: 11px;
-                color: var(--text-primary);
-                margin: 0;
-                white-space: pre-wrap;
-                line-height: 1.4;
-            }
-            .theme-selector {
-                min-width: 150px;
-                padding: 8px 12px;
-                background: var(--bg-primary);
-                border: 1px solid var(--border);
-                border-radius: 4px;
-                color: var(--text-primary);
-                font-size: 14px;
-                cursor: pointer;
-                transition: border-color 0.2s;
-            }
-            .theme-selector:focus {
-                outline: none;
-                border-color: var(--accent-muted);
-            }
-            .theme-controls {
-                display: flex;
-                gap: 8px;
-                margin-top: 10px;
-            }
-            .theme-button {
-                flex: 1;
-                padding: 10px 12px;
-                background: var(--bg-secondary);
-                border: 1px solid var(--border);
-                border-radius: 4px;
-                color: var(--text-primary);
-                font-size: 13px;
-                cursor: pointer;
-                transition: all 0.2s;
-            }
-            .theme-button:hover {
-                background: var(--bg-hover);
-                border-color: var(--accent-muted);
-            }
-
-            .plugin-list {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-                margin-top: 10px;
-            }
-            .plugin-card {
-                background: var(--bg-primary);
-                border: 1px solid var(--border);
-                border-radius: 6px;
-                padding: 10px 12px;
-                transition: border-color 0.2s;
-            }
-            .plugin-card:hover {
-                border-color: var(--accent-muted);
-            }
-            .plugin-header {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-            }
-            .plugin-header > span {
-                display: flex;
-                flex-direction: row;
-                align-items: center;
-                gap: 6px;
-            }
-            .plugin-name {
-                font-size: 14px;
-                font-weight: 600;
-                color: var(--text-primary);
-                line-height: 1;
-            }
-            .plugin-name.has-homepage {
-                cursor: pointer;
-                transition: color 0.2s;
-            }
-            .plugin-name.has-homepage:hover {
-                color: var(--link-color);
-                text-decoration: underline;
-            }
-            .plugin-version {
-                font-size: 11px;
-                color: var(--text-secondary);
-                line-height: 1;
-            }
-            .plugin-desc {
-                font-size: 12px;
-                color: var(--text-secondary);
-                margin-top: 4px;
-            }
-            .plugin-author {
-                font-size: 11px;
-                color: var(--text-secondary);
-                margin-top: 2px;
-            }
-            .no-plugins {
-                font-size: 13px;
-                color: var(--text-secondary);
-                text-align: center;
-                padding: 12px 0;
-            }
-
-            .preview-container {
-                margin-top: 12px;
-                animation: slideIn 0.3s ease;
-            }
-            
-            @keyframes slideIn {
-                from {
-                    opacity: 0;
-                    transform: translateY(-10px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-
-            .preview-panel {
-                background: var(--bg-secondary);
-                border: 1px solid var(--border);
-                border-radius: 8px;
-                padding: 16px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            }
-
-            .preview-header-inline {
-                margin-bottom: 12px;
-                padding-bottom: 8px;
-                border-bottom: 1px solid var(--border);
-            }
-
-            .preview-title-inline {
-                font-size: 14px;
-                font-weight: 600;
-                color: var(--accent);
-            }
-
-            .discord-preview {
-                font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-                background: var(--bg-primary);
-                border-radius: 8px;
-                padding: 16px;
-                border: 1px solid var(--border);
-            }
-
-            .user-info-preview {
-                display: flex;
-                align-items: center;
-                margin-bottom: 12px;
-            }
-
-            .user-avatar-preview {
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
-                background: var(--bg-secondary);
-                margin-right: 12px;
-                position: relative;
-                background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="gray"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>');
-                background-size: 20px;
-                background-position: center;
-                background-repeat: no-repeat;
-            }
-
-            .status-indicator-preview {
-                position: absolute;
-                bottom: -2px;
-                right: -2px;
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                background: #43b581;
-                border: 2px solid var(--bg-primary);
-            }
-
-            .user-details-preview {
-                flex: 1;
-            }
-
-            .username-preview {
-                font-size: 16px;
-                font-weight: 600;
-                color: var(--text-primary);
-                margin-bottom: 2px;
-            }
-
-            .user-tag-preview {
-                font-size: 14px;
-                color: var(--text-secondary);
-            }
-
-            .activity-section-preview {
-                margin-top: 8px;
-            }
-
-            .activity-header-preview {
-                font-size: 12px;
-                font-weight: 700;
-                text-transform: uppercase;
-                color: var(--text-secondary);
-                margin-bottom: 8px;
-                letter-spacing: 0.025em;
-                display: flex;
-                align-items: center;
-                gap: 4px;
-            }
-
-            .activity-content-preview {
-                display: inline-block;
-                width: 100%;
-                animation: fadeInPreview 0.3s ease;
-            }
-
-            .activity-row-preview {
-                display: flex;
-                width: 100%;
-                vertical-align: top;
-            }
-
-            .activity-image-preview {
-                width: 60px;
-                height: 60px;
-                border-radius: 8px;
-                background: var(--bg-secondary);
-                position: relative;
-                overflow: hidden;
-                display: inline-block;
-                vertical-align: top;
-                margin-right: 12px;
-            }
-
-            .activity-image-preview img {
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                border-radius: 8px;
-            }
-
-            .small-icon-preview {
-                position: absolute;
-                bottom: -4px;
-                right: -4px;
-                width: 24px;
-                height: 24px;
-                border-radius: 50%;
-                background: var(--bg-primary);
-                border: 2px solid var(--bg-primary);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            .soundcloud-icon-preview {
-                width: 16px;
-                height: 16px;
-                fill: #ff5500;
-            }
-
-            .activity-details-preview {
-                display: inline-block;
-                vertical-align: top;
-                width: calc(100% - 72px);
-                min-width: 0;
-            }
-
-            @keyframes fadeInPreview {
-                from {
-                    opacity: 0;
-                    transform: translateY(5px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-
-            .activity-name-preview {
-                font-size: 14px;
-                font-weight: 600;
-                color: var(--text-primary);
-                margin-bottom: 2px;
-                word-wrap: break-word;
-            }
-
-            .activity-details-text-preview {
-                font-size: 14px;
-                color: var(--text-primary);
-                margin-bottom: 1px;
-                word-wrap: break-word;
-            }
-
-            .activity-state-preview {
-                font-size: 14px;
-                color: var(--text-primary);
-                margin-bottom: 4px;
-                word-wrap: break-word;
-            }
-
-            .progress-bar-container-preview {
-                margin: 8px 0;
-            }
-
-            .progress-bar-preview {
-                width: 100%;
-                height: 4px;
-                background: var(--bg-secondary);
-                border-radius: 2px;
-                overflow: hidden;
-                position: relative;
-            }
-
-            .progress-bar-fill-preview {
-                height: 100%;
-                background: #5865f2;
-                border-radius: 2px;
-                transition: width 0.3s ease;
-                width: 0%;
-            }
-
-            .time-display-preview {
-                display: flex;
-                justify-content: space-between;
-                font-size: 11px;
-                color: var(--text-secondary);
-                margin-top: 4px;
-            }
-
-            .activity-buttons-preview {
-                display: flex;
-                gap: 8px;
-                margin-top: 8px;
-            }
-
-            .activity-button-preview {
-                flex: 1;
-                padding: 8px 16px;
-                background: var(--bg-secondary);
-                border: 1px solid var(--border);
-                border-radius: 4px;
-                color: var(--text-primary);
-                font-size: 12px;
-                font-weight: 500;
-                cursor: pointer;
-                transition: all 0.15s ease;
-                text-decoration: none;
-                text-align: center;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 4px;
-            }
-
-            .activity-button-preview:hover {
-                background: var(--bg-hover);
-                border-color: var(--accent-muted);
-            }
-
-            .no-activity-preview {
-                text-align: center;
-                color: var(--text-secondary);
-                font-size: 14px;
-                padding: 24px 16px;
-                font-style: italic;
-            }
+            ${readFileSync(join(__dirname, 'settings.css'), 'utf8')}
         </style>
         <button class="close-btn" id="close-settings" title="${this.translationService.translate('closeSettings')}" data-i18n-title="closeSettings">
             <svg viewBox="0 0 24 24">
@@ -952,8 +257,8 @@ export class SettingsManager {
                     </label>
                 </div>
                 <div class="input-group" id="proxyFields" style="display: ${this.store.get('proxyEnabled') ? 'block' : 'none'}">
-                    <input type="text" class="textInput" id="proxyHost" placeholder="${this.translationService.translate('proxyHost')}" data-i18n-placeholder="proxyHost" value="${this.store.get('proxyHost') || ''}">
-                    <input type="text" class="textInput" id="proxyPort" placeholder="${this.translationService.translate('proxyPort')}" data-i18n-placeholder="proxyPort" value="${this.store.get('proxyPort') || ''}">
+                    <input type="text" class="textInput" id="proxyHost" placeholder="${this.translationService.translate('proxyHost')}" data-i18n-placeholder="proxyHost" value="${escapeHtml(this.store.get('proxyHost') || '')}">
+                    <input type="text" class="textInput" id="proxyPort" placeholder="${this.translationService.translate('proxyPort')}" data-i18n-placeholder="proxyPort" value="${escapeHtml(this.store.get('proxyPort') || '')}">
                 </div>
             </div>
 
@@ -1004,8 +309,8 @@ export class SettingsManager {
                     </label>
                 </div>
                 <div class="input-group" id="lastFmFields" style="display: ${this.store.get('lastFmEnabled') ? 'block' : 'none'}">
-                    <input type="text" class="textInput" id="lastFmApiKey" placeholder="${this.translationService.translate('lastFmApiKey')}" data-i18n-placeholder="lastFmApiKey" value="${this.store.get('lastFmApiKey') || ''}">
-                    <input type="password" class="textInput" id="lastFmSecret" placeholder="${this.translationService.translate('lastFmApiSecret')}" data-i18n-placeholder="lastFmApiSecret" value="${this.store.get('lastFmSecret') || ''}">
+                    <input type="text" class="textInput" id="lastFmApiKey" placeholder="${this.translationService.translate('lastFmApiKey')}" data-i18n-placeholder="lastFmApiKey" value="${escapeHtml(this.store.get('lastFmApiKey') || '')}">
+                    <input type="password" class="textInput" id="lastFmSecret" placeholder="${this.translationService.translate('lastFmApiSecret')}" data-i18n-placeholder="lastFmApiSecret" value="${escapeHtml(this.store.get('lastFmSecret') || '')}">
                 </div>
                 <div class="description">
                     <a href="#" id="createLastFmApiKey" class="link" data-i18n="createApiKeyLastFm">${this.translationService.translate('createApiKeyLastFm')}</a>
@@ -1028,11 +333,11 @@ export class SettingsManager {
                     </label>
                 </div>
                 <div class="input-group" id="webhookFields" style="display: ${this.store.get('webhookEnabled') ? 'block' : 'none'}">
-                    <input type="url" class="textInput" id="webhookUrl" placeholder="${this.translationService.translate('webhookUrl')}" data-i18n-placeholder="webhookUrl" value="${this.store.get('webhookUrl') || ''}">
+                    <input type="url" class="textInput" id="webhookUrl" placeholder="${this.translationService.translate('webhookUrl')}" data-i18n-placeholder="webhookUrl" value="${escapeHtml(this.store.get('webhookUrl') || '')}">
                     <div class="setting-item">
                         <span data-i18n="webhookTrigger">${this.translationService.translate('webhookTrigger')}</span>
                         <div class="input-with-unit">
-                            <input type="number" id="webhookTriggerPercentage" class="textInput" style="width: 80px;" min="0" max="100" step="1" value="${this.store.get('webhookTriggerPercentage') || 50}">
+                            <input type="number" id="webhookTriggerPercentage" class="textInput" style="width: 80px;" min="0" max="100" step="1" value="${this.store.get('webhookTriggerPercentage', 50)}">
                             <span class="unit-symbol">%</span>
                         </div>
                     </div>
@@ -1171,715 +476,30 @@ export class SettingsManager {
         <script>
             ${this.getJavaScript()}
         </script>
-        <script>
-            document.addEventListener('DOMContentLoaded', () => {
-                document.body.classList.remove('visible');
-            });
-            document.getElementById('close-settings').addEventListener('click', (e) => {
-                e.preventDefault();
-                document.body.classList.remove('visible');
-                setTimeout(() => {
-                    ipcRenderer.send('toggle-settings');
-                }, 300);
-            });
-            window.addEventListener('message', (event) => {
-                if (event.data === 'hidePanel') {
-                    console.log('hidePanel');
-                }
-            });
-        </script>`;
+`;
     }
     private getJavaScript(): string {
-        return `
-            const ipcRenderer = {
-                send: (channel, ...args) => window.settingsAPI.send(channel, ...args),
-                invoke: (channel, ...args) => window.settingsAPI.invoke(channel, ...args),
-                on: (channel, listener) => window.settingsAPI.on(channel, (...args) => listener(null, ...args)),
-            };
-            const shell = {
-                openExternal: (url) => window.settingsAPI.openExternal(url),
-                openPath: (targetPath) => window.settingsAPI.openPath(targetPath),
-            };
-            async function loadCustomThemes() {
-                try {
-                    const themes = await ipcRenderer.invoke('get-custom-themes');
-                    const currentTheme = await ipcRenderer.invoke('get-current-custom-theme');
-                    const selector = document.getElementById('customThemeSelector');
-                    if (!selector) return;
-                    
-                    while (selector.children.length > 1) {
-                        selector.removeChild(selector.lastChild);
-                    }
-                    
-                    themes.forEach(theme => {
-                        const option = document.createElement('option');
-                        option.value = theme.name;
-                        option.textContent = theme.name;
-                        selector.appendChild(option);
-                    });
-                    
-                    selector.value = currentTheme || 'none';
-                } catch (error) {
-                    console.error('Failed to load custom themes:', error);
-                }
-            }
-
-            async function loadPlugins() {
-                try {
-                    const plugins = await ipcRenderer.invoke('get-plugins');
-                    const list = document.getElementById('pluginList');
-                    if (!list) return;
-                    
-                    list.innerHTML = '';
-
-                    if (!plugins || plugins.length === 0) {
-                        list.innerHTML = '<div class="no-plugins" data-i18n="noPluginsFound">No plugins found</div>';
-                        return;
-                    }
-
-                    plugins.forEach(p => {
-                        const card = document.createElement('div');
-                        card.className = 'plugin-card';
-                        const hasHomepage = p.metadata.homepage && p.metadata.homepage.trim() !== '';
-                        const nameClass = hasHomepage ? 'plugin-name has-homepage' : 'plugin-name';
-
-                        const header = document.createElement('div');
-                        header.className = 'plugin-header';
-
-                        const spanWrapper = document.createElement('span');
-                        const nameEl = document.createElement('span');
-                        nameEl.className = nameClass;
-                        nameEl.textContent = p.metadata.name || p.id;
-                        if (hasHomepage) {
-                            nameEl.dataset.homepage = p.metadata.homepage;
-                            nameEl.title = 'Open homepage';
-                            nameEl.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                ipcRenderer.send('show-plugin-homepage-dialog', nameEl.dataset.homepage);
-                            });
-                        }
-                        spanWrapper.appendChild(nameEl);
-
-                        const versionEl = document.createElement('span');
-                        versionEl.className = 'plugin-version';
-                        versionEl.textContent = 'v' + (p.metadata.version || '?');
-                        spanWrapper.appendChild(versionEl);
-                        header.appendChild(spanWrapper);
-
-                        const toggle = document.createElement('label');
-                        toggle.className = 'toggle';
-                        const checkbox = document.createElement('input');
-                        checkbox.type = 'checkbox';
-                        checkbox.dataset.pluginId = p.id;
-                        checkbox.checked = p.enabled;
-                        checkbox.addEventListener('change', async (e) => {
-                            const enabled = e.target.checked;
-                            await ipcRenderer.invoke('set-plugin-enabled', p.id, enabled);
-                        });
-                        const slider = document.createElement('span');
-                        slider.className = 'slider';
-                        toggle.appendChild(checkbox);
-                        toggle.appendChild(slider);
-                        header.appendChild(toggle);
-                        card.appendChild(header);
-
-                        if (p.metadata.description) {
-                            const descEl = document.createElement('div');
-                            descEl.className = 'plugin-desc';
-                            descEl.textContent = p.metadata.description;
-                            card.appendChild(descEl);
-                        }
-
-                        if (p.metadata.author && p.metadata.author !== 'Unknown') {
-                            const authorEl = document.createElement('div');
-                            authorEl.className = 'plugin-author';
-                            authorEl.textContent = 'by ' + p.metadata.author;
-                            card.appendChild(authorEl);
-                        }
-
-                        list.appendChild(card);
-                    });
-                } catch (error) {
-                    console.error('Failed to load plugins:', error);
-                }
-            }
-
-            async function loadAccounts() {
-                try {
-                    const data = await ipcRenderer.invoke('get-accounts');
-                    const selector = document.getElementById('accountSelector');
-                    if (!selector) return;
-                    
-                    selector.innerHTML = '';
-                    data.accounts.forEach(acc => {
-                        const option = document.createElement('option');
-                        option.value = acc.id;
-                        option.textContent = acc.name;
-                        selector.appendChild(option);
-                    });
-                    selector.value = data.currentAccountId || 'default';
-                } catch(e) { 
-                    console.error('Failed to load accounts:', e); 
-                }
-            }
-            document.addEventListener('DOMContentLoaded', () => {
-                loadCustomThemes();
-                loadPlugins();
-                loadAccounts();
-            });
-            ipcRenderer.on('accounts-updated', loadAccounts);
-
-            const accSelector = document.getElementById('accountSelector');
-            if (accSelector) {
-                accSelector.addEventListener('change', (e) => {
-                    ipcRenderer.send('switch-account', e.target.value);
-                });
-            }
-
-            const addBtn = document.getElementById('addAccountBtn');
-            if (addBtn) {
-                addBtn.addEventListener('click', () => {
-                    ipcRenderer.send('add-account');
-                });
-            }
-
-            const logoutBtn = document.getElementById('logoutBtn');
-            if (logoutBtn) {
-                logoutBtn.addEventListener('click', () => {
-                    ipcRenderer.send('logout-account');
-                });
-            }
-            document.getElementById('customThemeSelector')?.addEventListener('change', async (e) => {
-                const themeName = e.target.value;
-                try {
-                    await ipcRenderer.invoke('apply-custom-theme', themeName);
-                    ipcRenderer.send('setting-changed', { key: 'customTheme', value: themeName });
-                } catch (error) {
-                    console.error('Failed to apply custom theme:', error);
-                }
-            });
-
-            document.getElementById('openThemesFolder')?.addEventListener('click', async () => {
-                try {
-                    const themesPath = await ipcRenderer.invoke('get-themes-folder-path');
-                    shell.openPath(themesPath);
-                } catch (error) {
-                    console.error('Failed to open themes folder:', error);
-                }
-            });
-
-            document.getElementById('refreshThemes')?.addEventListener('click', async () => {
-                try {
-                    await ipcRenderer.invoke('refresh-custom-themes');
-                    await loadCustomThemes();
-                } catch (error) {
-                    console.error('Failed to refresh themes:', error);
-                }
-            });
-
-            function escapeHtml(str) {
-                if (typeof str !== 'string') return '';
-                return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
-            }
-
-            document.getElementById('openPluginsFolder')?.addEventListener('click', async () => {
-                try {
-                    const pluginsPath = await ipcRenderer.invoke('get-plugins-folder-path');
-                    shell.openPath(pluginsPath);
-                } catch (error) {
-                    console.error('Failed to open plugins folder:', error);
-                }
-            });
-
-            document.getElementById('refreshPlugins')?.addEventListener('click', async () => {
-                try {
-                    await ipcRenderer.invoke('refresh-plugins');
-                    await loadPlugins();
-                } catch (error) {
-                    console.error('Failed to refresh plugins:', error);
-                }
-            });
-            document.getElementById('hidePromotions')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'hidePromotions', value: e.target.checked });
-            });
-
-            document.getElementById('hideEventsNearYou')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'hideEventsNearYou', value: e.target.checked });
-            });
-
-            document.getElementById('hideArtistUpsells')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'hideArtistUpsells', value: e.target.checked });
-            });
-
-            const setupStatus=document.getElementById('cloudflareSetupStatus');
-            const setupError=error=>String(error.message||error).replace(/^Error invoking remote method '[^']+': /,'');
-            const setupBusy=busy=>{for(const id of ['cloudflareAccounts','cloudflareDeploy','cloudflareSetupCancel','cloudflareSave','cloudflareTest','cloudflareApiToken','cloudflareEndpoint','cloudflareSecret','cloudflareMode'])document.getElementById(id).disabled=busy;document.getElementById('cloudflareAccount').disabled=busy;};
-            ipcRenderer.on('network:setup-progress',(_event,message)=>{setupStatus.textContent=String(message)});
-            document.getElementById('cloudflareTokenPage').addEventListener('click',()=>{void shell.openExternal('https://dash.cloudflare.com/profile/api-tokens')});
-            document.getElementById('cloudflareAccounts').addEventListener('click',async()=>{
-                setupBusy(true);setupStatus.textContent='Получаем аккаунты Cloudflare…';
-                const input=document.getElementById('cloudflareApiToken');
-                try{const token=input.value;input.value='';const accounts=await ipcRenderer.invoke('network:setup-accounts',token);
-                    const select=document.getElementById('cloudflareAccount');select.replaceChildren();
-                    for(const account of accounts){const option=document.createElement('option');option.value=account.id;option.textContent=account.name;select.append(option)}
-                    document.getElementById('cloudflareAccountFields').hidden=false;setupStatus.textContent='Выберите аккаунт и нажмите «Создать Worker». Токен будет забыт через 10 минут.';
-                }catch(error){document.getElementById('cloudflareAccountFields').hidden=true;setupStatus.textContent=setupError(error)}finally{setupBusy(false)}
-            });
-            document.getElementById('cloudflareSetupCancel').addEventListener('click',async()=>{
-                try{await ipcRenderer.invoke('network:setup-cancel');document.getElementById('cloudflareApiToken').value='';document.getElementById('cloudflareAccountFields').hidden=true;setupStatus.textContent='Токен удалён из памяти.';}catch(error){setupStatus.textContent=setupError(error)}
-            });
-            document.getElementById('cloudflareDeploy').addEventListener('click',async()=>{
-                setupBusy(true);setupStatus.textContent='Создаём Worker…';
-                try{const result=await ipcRenderer.invoke('network:setup-deploy',document.getElementById('cloudflareAccount').value);
-                    document.getElementById('cloudflareEndpoint').value=result.endpoint;document.getElementById('cloudflareMode').value='auto';
-                    const key=document.getElementById('cloudflareSecret');key.value='';key.placeholder=result.updated?'Адрес и ключ сохранены':'Ключ создан и сохранён автоматически';
-                    document.getElementById('cloudflareAccountFields').hidden=true;
-                    setupStatus.textContent=(result.updated?'Worker обновлён: ':'Готово: ')+result.endpoint+'. '+(result.applied?'Автоматический режим настроен.':'Настройки сохранены. Обычный прокси имеет приоритет; выключите его для использования Worker.');
-                    document.getElementById('cloudflareStatus').textContent='Адрес и ключ сохранены. Нажмите «Проверить Worker». Первое подключение может занять время, пока обновляется DNS.';
-                }catch(error){setupStatus.textContent=setupError(error)}finally{setupBusy(false)}
-            });
-            document.getElementById('cloudflareFiles')?.addEventListener('click',()=>{void ipcRenderer.invoke('network:files')});
-            for(const [id,channel] of [['cloudflareSave','network:save'],['cloudflareTest','network:test'],['cloudflareCopyDiagnostics','network:copy-diagnostics']]){
-                document.getElementById(id)?.addEventListener('click',async()=>{
-                    const button=document.getElementById(id),status=document.getElementById('cloudflareStatus');button.disabled=true;status.textContent='Проверяем подключение…';
-                    try{status.textContent=await ipcRenderer.invoke(channel,...(channel==='network:save'?[{mode:document.getElementById('cloudflareMode').value,endpoint:document.getElementById('cloudflareEndpoint').value,secret:document.getElementById('cloudflareSecret').value}]:[]));
-                        if(channel==='network:save')document.getElementById('cloudflareSecret').value='';
-                    }catch(error){status.textContent=String(error.message||error).replace(/^Error invoking remote method '[^']+': /,'')}
-                    finally{button.disabled=false}
-                });
-            }
-            document.getElementById('proxyEnabled')?.addEventListener('change', (e) => {
-                const isEnabled = e.target.checked;
-                document.getElementById('proxyFields').style.display = isEnabled ? 'block' : 'none';
-                ipcRenderer.send('setting-changed', { key: 'proxyEnabled', value: isEnabled });
-            });
-
-            document.getElementById('proxyHost')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'proxyHost', value: e.target.value });
-            });
-
-            document.getElementById('proxyPort')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'proxyPort', value: e.target.value });
-            });
-
-            document.getElementById('lastFmEnabled')?.addEventListener('change', (e) => {
-                const isEnabled = e.target.checked;
-                document.getElementById('lastFmFields').style.display = isEnabled ? 'block' : 'none';
-                ipcRenderer.send('setting-changed', { key: 'lastFmEnabled', value: isEnabled });
-            });
-
-            document.getElementById('lastFmApiKey')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'lastFmApiKey', value: e.target.value });
-            });
-
-            document.getElementById('lastFmSecret')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'lastFmSecret', value: e.target.value });
-            });
-
-            document.getElementById('createLastFmApiKey')?.addEventListener('click', (e) => {
-                e.preventDefault();
-                shell.openExternal('https://www.last.fm/api/account/create');
-            });
-
-            document.getElementById('webhookEnabled')?.addEventListener('change', (e) => {
-                const isEnabled = e.target.checked;
-                document.getElementById('webhookFields').style.display = isEnabled ? 'block' : 'none';
-                document.getElementById('webhookFields2').style.display = isEnabled ? 'block' : 'none';
-                ipcRenderer.send('setting-changed', { key: 'webhookEnabled', value: isEnabled });
-            });
-
-            document.getElementById('webhookUrl')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'webhookUrl', value: e.target.value });
-            });
-
-            document.getElementById('webhookTriggerPercentage')?.addEventListener('input', (e) => {
-                let value = parseInt(e.target.value);
-                if (value < 0) value = 0;
-                if (value > 100) value = 100;
-                if (isNaN(value)) value = 50;
-                
-                e.target.value = value;
-                ipcRenderer.send('setting-changed', { key: 'webhookTriggerPercentage', value: value });
-            });
-
-            document.getElementById('webhookExampleToggle')?.addEventListener('click', (e) => {
-                const toggle = e.currentTarget;
-                const content = document.getElementById('webhookExampleContent');
-                const isExpanded = content.style.display === 'block';
-                
-                if (isExpanded) {
-                    content.style.display = 'none';
-                    toggle.classList.remove('expanded');
-                } else {
-                    content.style.display = 'block';
-                    toggle.classList.add('expanded');
-                }
-            });
-
-            document.getElementById('darkMode')?.addEventListener('change', (e) => {
-                const isDark = e.target.checked;
-                ipcRenderer.send('setting-changed', { key: 'theme', value: isDark ? 'dark' : 'light' });
-                document.documentElement.classList.toggle('theme-light', !isDark);
-                document.documentElement.classList.toggle('theme-dark', isDark);
-            });
-
-            document.getElementById('minimizeToTray')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'minimizeToTray', value: e.target.checked });
-            });
-
-            document.getElementById('navigationControlsEnabled')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'navigationControlsEnabled', value: e.target.checked });
-            });
-
-            document.getElementById('uiScale')?.addEventListener('input', (e) => {
-                const value = parseFloat(e.target.value);
-                document.getElementById('uiScaleValue').textContent = Math.round(value * 100) + '%';
-                ipcRenderer.send('setting-changed', { key: 'uiScale', value: value });
-            });
-
-            document.getElementById('trackParserEnabled')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'trackParserEnabled', value: e.target.checked });
-            });
-
-            let latestUpdateState;
-            function renderUpdates(state){
-                const labels=state.labels;if(!labels)return;
-                latestUpdateState=state;
-                for(const [id,key]of [['updates-title','title'],['updates-mode-label','mode'],['updates-description','description'],['update-mode-patch','patch'],['update-mode-notify','notify'],['update-mode-off','off'],['updates-check','check'],['updates-download','download'],['updates-install','install'],['updates-notes','notes'],['updates-worker-help','workerHelp'],['updates-worker-ack','worker']])document.getElementById(id).textContent=labels[key];
-                document.getElementById('updateMode').value=state.mode;
-                document.getElementById('updates-status').textContent=state.message;
-                document.getElementById('updates-check').disabled=!state.installSupported||['checking','downloading','ready'].includes(state.phase);
-                document.getElementById('updates-download').hidden=!state.installSupported||!state.version||!['available','error'].includes(state.phase);
-                document.getElementById('updates-install').hidden=!state.installSupported||state.phase!=='ready';
-                const progress=document.getElementById('updates-progress');progress.hidden=state.phase!=='downloading';progress.value=state.percent||0;
-                document.getElementById('updates-worker-help').hidden=!state.workerNotice;document.getElementById('updates-worker-ack').hidden=!state.workerNotice;
-            }
-            ipcRenderer.on('updates:state',(_event,state)=>renderUpdates(state));
-            ipcRenderer.invoke('updates:status').then(renderUpdates).catch(()=>{});
-            ipcRenderer.on('settings-visibility',(_event,visible)=>{if(visible)ipcRenderer.invoke('updates:status').then(renderUpdates).catch(()=>{});});
-            for(const [id,channel]of [['updates-check','updates:check'],['updates-download','updates:download'],['updates-install','updates:install'],['updates-notes','updates:release-notes'],['updates-worker-ack','updates:worker-ack']])document.getElementById(id).addEventListener('click',async()=>{
-                const button=document.getElementById(id);button.disabled=true;
-                try{renderUpdates(await ipcRenderer.invoke(channel));}catch{document.getElementById('updates-status').textContent='Не удалось выполнить действие / Could not complete the action';}finally{button.disabled=id==='updates-check'&&latestUpdateState?(!latestUpdateState.installSupported||['checking','downloading','ready'].includes(latestUpdateState.phase)):false;}
-            });
-            document.getElementById('updateMode').addEventListener('change',async(event)=>{try{renderUpdates(await ipcRenderer.invoke('updates:mode',event.target.value));}catch{ipcRenderer.invoke('updates:status').then(renderUpdates).catch(()=>{});}});
-
-            document.getElementById('richPresencePreviewEnabled')?.addEventListener('change', (e) => {
-                const isEnabled = e.target.checked;
-                const container = document.getElementById('presencePreviewContainer');
-                if (container) {
-                    container.style.display = isEnabled ? 'block' : 'none';
-                }
-                ipcRenderer.send('setting-changed', { key: 'richPresencePreviewEnabled', value: isEnabled });
-                updatePreview(currentTrack);
-            });
-
-            document.getElementById('displayWhenIdling')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'displayWhenIdling', value: e.target.checked });
-            });
-
-            document.getElementById('displaySCSmallIcon')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'displaySCSmallIcon', value: e.target.checked });
-            });
-
-            document.getElementById('adBlocker')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'adBlocker', value: e.target.checked });
-            });
-
-            document.getElementById('discordRichPresence')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'discordRichPresence', value: e.target.checked });
-            });
-
-            document.getElementById('displayButtons')?.addEventListener('change', (e) => {
-                ipcRenderer.send('setting-changed', { key: 'displayButtons', value: e.target.checked });
-            });
-
-            document.getElementById('useArtistInStatusLineToggle')?.addEventListener('change', (e) => {
-                const useState = e.target.checked;
-                ipcRenderer.send('setting-changed', { key: 'statusDisplayType', value: useState ? 1 : 0 });
-            });
-
-            document.getElementById('applyChanges')?.addEventListener('click', () => {
-                ipcRenderer.send('apply-changes');
-            });
-            let currentTrack = null;
-            let panelVisible = false;
-            let progressInterval = null;
-
-            function parseTimeToMs(time) {
-                if (!time) return 0;
-                const isNegative = time.trim().startsWith('-');
-                const raw = isNegative ? time.trim().slice(1) : time.trim();
-                const parts = raw.split(':').map(p => Number(p));
-                let seconds = 0;
-                for (const part of parts) {
-                    seconds = seconds * 60 + (isNaN(part) ? 0 : part);
-                }
-                const ms = seconds * 1000;
-                return isNegative ? -ms : ms;
-            }
-
-            function formatTime(ms) {
-                const totalSeconds = Math.floor(ms / 1000);
-                const minutes = Math.floor(totalSeconds / 60);
-                const seconds = totalSeconds % 60;
-                return \`\${minutes}:\${seconds.toString().padStart(2, '0')}\`;
-            }
-
-            function safeText(value, fallback) {
-                return typeof value === 'string' && value.trim() ? value : fallback;
-            }
-
-            function safeRemoteUrl(value) {
-                if (typeof value !== 'string' || !value.trim()) return '';
-                try {
-                    const parsed = new URL(value);
-                    return parsed.protocol === 'https:' ? parsed.href : '';
-                } catch {
-                    return '';
-                }
-            }
-
-            function createTextElement(className, text) {
-                const el = document.createElement('div');
-                el.className = className;
-                el.textContent = text;
-                return el;
-            }
-
-            function createPlayingPreview(trackInfo, options) {
-                const fragment = document.createDocumentFragment();
-                fragment.appendChild(createTextElement('activity-header-preview', 'Listening to SoundCloud'));
-
-                const row = document.createElement('div');
-                if (options.inlineRow) {
-                    row.style.display = 'flex';
-                    row.style.alignItems = 'flex-start';
-                    row.style.gap = '12px';
-                } else {
-                    row.className = 'activity-row-preview';
-                }
-
-                const imageWrap = document.createElement('div');
-                imageWrap.className = 'activity-image-preview';
-                const artworkUrl = safeRemoteUrl(trackInfo.artwork).replace('50x50.', '300x300.');
-                if (artworkUrl) {
-                    const img = document.createElement('img');
-                    img.src = artworkUrl;
-                    img.alt = 'Track artwork';
-                    img.addEventListener('error', () => {
-                        img.style.display = 'none';
-                    });
-                    imageWrap.appendChild(img);
-                }
-
-                if (options.displaySCSmallIcon) {
-                    const smallIcon = document.createElement('div');
-                    smallIcon.className = 'small-icon-preview';
-                    const icon = document.createElement('img');
-                    icon.src = 'https://cdn.discordapp.com/app-assets/1090770350251458592/1090771481627197580.png?size=160';
-                    icon.alt = 'SoundCloud';
-                    icon.style.width = '16px';
-                    icon.style.height = '16px';
-                    icon.style.borderRadius = '50%';
-                    smallIcon.appendChild(icon);
-                    imageWrap.appendChild(smallIcon);
-                }
-
-                const details = document.createElement('div');
-                details.className = 'activity-details-preview';
-                details.appendChild(createTextElement('activity-name-preview', safeText(trackInfo.title, 'Unknown Track')));
-                details.appendChild(createTextElement('activity-details-text-preview', 'by ' + safeText(trackInfo.author, 'Unknown Artist')));
-
-                const progressContainer = document.createElement('div');
-                progressContainer.className = 'progress-bar-container-preview';
-                const progressBar = document.createElement('div');
-                progressBar.className = 'progress-bar-preview';
-                const progressFill = document.createElement('div');
-                progressFill.className = 'progress-bar-fill-preview';
-                progressFill.id = 'progressFillPreview';
-                progressBar.appendChild(progressFill);
-                progressContainer.appendChild(progressBar);
-
-                const timeDisplay = document.createElement('div');
-                timeDisplay.className = 'time-display-preview';
-                const currentTime = document.createElement('span');
-                currentTime.id = 'currentTimePreview';
-                currentTime.textContent = safeText(trackInfo.elapsed, '0:00');
-                const totalTime = document.createElement('span');
-                totalTime.id = 'totalTimePreview';
-                totalTime.textContent = safeText(trackInfo.duration, '0:00');
-                timeDisplay.appendChild(currentTime);
-                timeDisplay.appendChild(totalTime);
-                progressContainer.appendChild(timeDisplay);
-                details.appendChild(progressContainer);
-
-                const trackUrl = safeRemoteUrl(trackInfo.url);
-                if (options.displayButtons && trackUrl) {
-                    const buttons = document.createElement('div');
-                    buttons.className = 'activity-buttons-preview';
-                    const button = document.createElement('button');
-                    button.className = 'activity-button-preview';
-                    button.textContent = 'Listen on SoundCloud';
-                    button.addEventListener('click', () => shell.openExternal(trackUrl));
-                    buttons.appendChild(button);
-                    details.appendChild(buttons);
-                }
-
-                row.appendChild(imageWrap);
-                row.appendChild(details);
-                fragment.appendChild(row);
-                return fragment;
-            }
-
-            function createPausedPreview(options) {
-                const fragment = document.createDocumentFragment();
-                fragment.appendChild(createTextElement('activity-header-preview', 'Using SoundCloud'));
-
-                const row = document.createElement('div');
-                if (options.inlineRow) {
-                    row.style.display = 'flex';
-                    row.style.alignItems = 'flex-start';
-                    row.style.gap = '12px';
-                } else {
-                    row.className = 'activity-row-preview';
-                }
-
-                const imageWrap = document.createElement('div');
-                imageWrap.className = 'activity-image-preview';
-                const details = document.createElement('div');
-                details.className = 'activity-details-preview';
-                details.appendChild(createTextElement('activity-details-text-preview', 'Paused'));
-                row.appendChild(imageWrap);
-                row.appendChild(details);
-                fragment.appendChild(row);
-                return fragment;
-            }
-
-            function updatePreview(trackInfo) {
-                currentTrack = trackInfo;
-                if (!panelVisible || !document.getElementById('richPresencePreviewEnabled')?.checked) {
-                    clearInterval(progressInterval); return;
-                }
-                const activitySection = document.getElementById('activitySectionPreview');
-                const noActivity = document.getElementById('noActivityPreview');
-
-                const displayWhenIdling = document.getElementById('displayWhenIdling')?.checked || false;
-                const displaySCSmallIcon = document.getElementById('displaySCSmallIcon')?.checked || false;
-                const displayButtons = document.getElementById('displayButtons')?.checked || false;
-
-                if (!trackInfo || (!trackInfo.isPlaying && !displayWhenIdling)) {
-                    if (noActivity) noActivity.style.display = 'block';
-                    const existingContent = activitySection?.querySelector('.activity-content-preview');
-                    if (existingContent) existingContent.remove();
-                    clearInterval(progressInterval);
-                    return;
-                }
-
-                if (noActivity) noActivity.style.display = 'none';
-
-                const existingContent = activitySection?.querySelector('.activity-content-preview');
-                if (existingContent) existingContent.remove();
-
-                const activityContent = document.createElement('div');
-                activityContent.className = 'activity-content-preview';
-
-                if (trackInfo.isPlaying) {
-                    activityContent.appendChild(createPlayingPreview(trackInfo, {
-                        displaySCSmallIcon,
-                        displayButtons,
-                        inlineRow: true,
-                    }));
-                    startProgressUpdate(trackInfo);
-                } else if (displayWhenIdling) {
-                    activityContent.appendChild(createPausedPreview({ inlineRow: false }));
-                }
-
-                if (activitySection) activitySection.appendChild(activityContent);
-            }
-
-            function startProgressUpdate(trackInfo) {
-                clearInterval(progressInterval);
-                
-                if (!trackInfo.isPlaying || !trackInfo.elapsed || !trackInfo.duration) return;
-
-                const startTime = Date.now();
-                const elapsedMs = parseTimeToMs(trackInfo.elapsed);
-                const totalMs = parseTimeToMs(trackInfo.duration);
-
-                function updateProgress() {
-                    const now = Date.now();
-                    const currentElapsed = elapsedMs + (now - startTime);
-                    const progress = Math.min((currentElapsed / totalMs) * 100, 100);
-
-                    const progressFill = document.getElementById('progressFillPreview');
-                    const currentTimeEl = document.getElementById('currentTimePreview');
-
-                    if (progressFill) progressFill.style.width = \`\${progress}%\`;
-                    if (currentTimeEl) currentTimeEl.textContent = formatTime(currentElapsed);
-
-                    if (progress >= 100) clearInterval(progressInterval);
-                }
-
-                updateProgress();
-                progressInterval = setInterval(updateProgress, 1000);
-            }
-            ipcRenderer.on('presence-preview-update', (_, trackInfo) => {
-                updatePreview(trackInfo);
-            });
-            ipcRenderer.on('settings-visibility', (_, visible) => {
-                panelVisible = visible;
-                if (!visible) clearInterval(progressInterval);
-                else ipcRenderer.invoke('get-current-track').then(updatePreview).catch(() => {});
-            });
-
-            ipcRenderer.on('theme-changed', (_, isDark) => {
-                const dm = document.getElementById('darkMode');
-                if (dm) dm.checked = isDark;
-                document.documentElement.classList.toggle('theme-light', !isDark);
-            });
-
-            ipcRenderer.on('update-translations', () => {
-                ipcRenderer.invoke('get-translations').then((translations) => {
-                    document.querySelectorAll('[data-i18n]').forEach(element => {
-                        const key = element.getAttribute('data-i18n');
-                        if (key && translations[key]) {
-                            if (element.tagName === 'H2' && element.querySelector('svg')) {
-                                const svg = element.querySelector('svg');
-                                element.textContent = translations[key];
-                                if (svg) element.appendChild(svg);
-                            } else {
-                                element.textContent = translations[key];
-                            }
-                        }
-                    });
-
-                    document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
-                        const key = element.getAttribute('data-i18n-placeholder');
-                        if (key && translations[key]) {
-                            element.setAttribute('placeholder', translations[key]);
-                        }
-                    });
-
-                    document.querySelectorAll('[data-i18n-title]').forEach(element => {
-                        const key = element.getAttribute('data-i18n-title');
-                        if (key && translations[key]) {
-                            element.setAttribute('title', translations[key]);
-                        }
-                    });
-                });
-            });
-        `;
+        return readFileSync(join(__dirname, 'settings.js'), 'utf8');
+    }
+    private execute(script: string): Promise<unknown> {
+        const contents = this.view?.webContents;
+        if (!contents || contents.isDestroyed()) return Promise.resolve();
+        return contents.executeJavaScript(script).catch(() => {});
     }
     private show(): void {
+        clearTimeout(this.idleTimer);
         const wasCreated = this.view === null;
         const view = this.createView();
         this.isVisible = true;
         this.updateBounds();
         const applyShowState = () => {
-            view.webContents.executeJavaScript(`
+            if (view.webContents.isDestroyed() || !this.isVisible) return;
+            void this.execute(`
                 document.body.style.opacity;
                 document.body.classList.add('visible');
             `);
+            this.setThemeColors(this.colors);
+            this.setCustomCSS(this.customCSS);
             view.webContents.send('update-translations');
             const isDark = this.store.get('theme', 'dark') === 'dark';
             view.webContents.send('theme-changed', isDark);
@@ -1893,8 +513,9 @@ export class SettingsManager {
     }
     private hide(): void {
         if (!this.view) return;
+        this.isVisible = false;
         this.view.webContents.send('settings-visibility', false);
-        this.view.webContents.executeJavaScript(`
+        void this.execute(`
             document.body.classList.remove('visible');
             setTimeout(() => {
                 window.postMessage('hidePanel', '*');
@@ -1902,9 +523,10 @@ export class SettingsManager {
         `);
     }
     public setThemeColors(colors: ThemeColors | null): void {
+        this.colors = colors;
         if (!this.view) return;
         if (!colors) {
-            this.view.webContents.executeJavaScript(`
+            void this.execute(`
                 document.documentElement.style.removeProperty('--bg-primary');
                 document.documentElement.style.removeProperty('--bg-secondary');
                 document.documentElement.style.removeProperty('--text-primary');
@@ -1912,16 +534,26 @@ export class SettingsManager {
             `);
             return;
         }
-        this.view.webContents
-            .executeJavaScript(
-                `
-            document.documentElement.style.setProperty('--bg-primary', '${colors.surface || colors.background}');
-            document.documentElement.style.setProperty('--bg-secondary', '${colors.background}');
-            document.documentElement.style.setProperty('--text-primary', '${colors.text}');
-            document.documentElement.style.setProperty('--accent', '${colors.accent || colors.primary}');
+        void this.execute(
+            `
+            document.documentElement.style.setProperty('--bg-primary', ${JSON.stringify(colors.surface || colors.background)});
+            document.documentElement.style.setProperty('--bg-secondary', ${JSON.stringify(colors.background)});
+            document.documentElement.style.setProperty('--text-primary', ${JSON.stringify(colors.text)});
+            document.documentElement.style.setProperty('--accent', ${JSON.stringify(colors.accent || colors.primary)});
         `,
-            )
-            .catch(console.error);
+        ).catch(console.error);
+    }
+    public setCustomCSS(css: string): void {
+        this.customCSS = css;
+        void this.execute(`(() => {
+            document.getElementById('custom-theme-style')?.remove();
+            const css = ${JSON.stringify(css)};
+            if (!css.trim()) return;
+            const style = document.createElement('style');
+            style.id = 'custom-theme-style';
+            style.textContent = css;
+            document.head.appendChild(style);
+        })()`);
     }
     public getView(): BrowserView | null {
         return this.view;

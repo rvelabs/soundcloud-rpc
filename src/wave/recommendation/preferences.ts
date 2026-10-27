@@ -110,6 +110,12 @@ export function moodEvidence(
     const energy = track.features?.energy;
     if ((mood === 'calm' || mood === 'energetic') && energy !== undefined && Number.isFinite(energy)) {
         const value = Math.max(0, Math.min(1, energy));
+        if (track.features?.source === 'media-element-v1')
+            return {
+                score: (mood === 'calm' ? 0.5 - value : value - 0.5) * 2,
+                conflict: opposite && !match,
+                reason: match ? 'настроение по тегам' : 'громкость аудиосигнала',
+            };
         return {
             score: (mood === 'calm' ? 0.5 - value : value - 0.5) * 7,
             conflict: mood === 'calm' ? value > 0.65 : value < 0.35,

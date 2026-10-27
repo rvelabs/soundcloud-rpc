@@ -16,14 +16,13 @@ export function extractThemeColors(cssContent: string): ThemeColors | null {
         value = value
             .trim()
             .replace(/!important/gi, '')
+            .replace(/\s+/g, ' ')
             .trim();
+        if (value.length > 128) return null;
         if (value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)) {
             return value;
         }
-        if (value.match(/^rgba?\(/i)) {
-            return value;
-        }
-        if (value.match(/^hsla?\(/i)) {
+        if (/^(?:rgba?|hsla?)\([a-z0-9_#.,%()/\s+-]+\)$/i.test(value)) {
             return value;
         }
         if (value.match(/^[a-z]+$/i)) {

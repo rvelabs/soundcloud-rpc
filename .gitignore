@@ -22,3 +22,9 @@ Thumbs.db
 /.codex/
 /.idea/
 /build-*.err
+
+/library.data
+/library.data.tmp
+/library.key
+/adblock-v*.bin
+/wave-diagnostics.json

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Session } from 'electron';
-import { classifyTrackAvailability, createAvailabilityChecker, parseTrackAvailability } from './availability';
+import {
+    classifyTrackAvailability,
+    createAvailabilityChecker,
+    parseTrackAvailability,
+    confirmTrackPlayback,
+} from './availability';
 import { findSoundCloudMatch } from './match';
 import type { WebContents } from 'electron';
 import { EventEmitter } from 'node:events';
@@ -14,6 +19,17 @@ const full = {
 };
 const html = (data: unknown) => `<script>window.__sc_hydration = ${JSON.stringify(data)};</script>`;
 describe('availability gate', () => {
+    it('separates metadata from confirmed playback and scopes cached results to the network route', async () => {
+        const fetch = vi.fn(async () => new Response(html([{ data: full }])));
+        const session = { fetch } as unknown as Session;
+        const direct = createAvailabilityChecker(session, undefined, 'direct');
+        expect((await direct(url)).evidence).toBe('metadata');
+        confirmTrackPlayback(session, url, 'direct');
+        expect((await direct(url)).evidence).toBe('playback');
+        expect(fetch).toHaveBeenCalledTimes(1);
+        await createAvailabilityChecker(session, undefined, 'relay')(url);
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
     it('accepts a full clear stream and rejects blocked, preview and protected versions', () => {
         expect(classifyTrackAvailability(full).status).toBe('available');
         expect(classifyTrackAvailability({ ...full, policy: 'BLOCK' }).status).toBe('blocked');

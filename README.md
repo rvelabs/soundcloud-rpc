@@ -12,7 +12,7 @@
   listen. Choose a mood, activity or music language. Animated artwork pauses when the app is unfocused, minimized or out
   of view; music keeps playing.
 - **Playlist import** brings public Spotify, Yandex Music and YouTube Music playlists to SoundCloud. Review matches and
-  save the found part even when some tracks are unavailable. Import a CSV/TXT/TSV track list when a source cannot be reached.
+  save the found part even when some tracks are unavailable, and resume saved checks after restarting. Import a CSV/TXT/TSV track list when a source cannot be reached.
 - **Familiar SoundCloud controls**, plus Discord Rich Presence, Last.fm, themes and plugins. My Wave and playlist import
   support **English and Russian**, with an automatic language option.
 
@@ -37,7 +37,9 @@ manual upgrade to enable this. A deployed Cloudflare Worker is updated separatel
 
 Recommendations use SoundCloud related tracks and local ranking. This is an independent algorithm; it does not reproduce
 Yandex Music's proprietary model. Cold starts depend on SoundCloud. Tempo, mood and language matching depend on
-available metadata.
+available metadata. Balanced mode mixes new and older familiar recordings; New excludes known recordings.
+When the browser permits it, short samples from the SoundCloud player supply local loudness and spectrum measurements;
+protected or unsuitable sources remain unmeasured. Signal loudness is not a mood classifier.
 
 Import finds existing SoundCloud uploads; it does not copy audio. Source services may return partial playlists, and
 versions or regional availability can differ. Spotify album links are also supported and become SoundCloud playlists.
@@ -57,6 +59,9 @@ account. Revoke the setup token after deployment; never publish it or the relay 
 Worker** and enter a new setup token in the app. Updating an existing app-created Worker in the same Cloudflare account
 preserves its address and relay key. The new endpoint fetches only allowlisted public playlist metadata; it does not
 forward your source-platform cookies or account credentials.
+
+From 0.29, an updated Worker can negotiate a bounded four-frame transfer window. Older Workers remain compatible
+with the new client using the previous one-frame mode; update the Worker to enable pipelining.
 
 For manual deployment, open the Worker folder from settings: run `npx wrangler@4 login`, `npx wrangler@4 deploy`, then
 `npx wrangler@4 secret put RELAY_TOKEN`. Enter the Worker URL and the same randomly generated secret in the client.
@@ -87,6 +92,8 @@ npm ci
 npm test
 npm run test:worker
 npm run test:import
+npm run test:runtime
+npm run test:assets
 npm run lint
 npm run dev
 npm run build-win
@@ -107,7 +114,7 @@ sign-in cookies and tokens.
 Слушать SoundCloud с персональной «Моей волной», переносить плейлисты из других сервисов и пользоваться привычным
 штатным плеером.
 
-- **Моя волна** подбирает похожие записи к вашим любимым трекам, учитывает реакции и готовит продолжение заранее.
+- **Моя волна** подбирает похожие записи к вашим любимым трекам, учитывает реакции и готовит продолжение заранее. «Баланс» смешивает новые и знакомые записи, «Незнакомое» исключает уже известные треки.
   Настроение, занятие, язык музыки и язык интерфейса выбираются в «Настроить».
 - **Импорт** находится в отдельной карточке. Вставьте публичную ссылку Spotify, Яндекс Музыки или YouTube Music,
   проверьте совпадения и сохраните найденную часть. Ошибка отдельного трека не отменяет уже добавленные записи.

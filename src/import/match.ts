@@ -9,6 +9,7 @@ export interface ImportMatch {
         url: string;
         title: string;
         artist: string;
+        durationSeconds?: number;
         score: number;
         sourceQuery: string;
         availability?: TrackAvailability;
@@ -39,6 +40,7 @@ export function matchScore(
     candidate: {
         title: string;
         artist: string;
+        durationSeconds?: number;
     },
 ): number {
     const sourceTitle = normalize(source.title),
@@ -72,7 +74,12 @@ export function matchScore(
         /\b(?:nightcore|acoustic|acapella|a cappella|edit|mashup)\b/i,
     ];
     const penalty = versions.some((pattern) => pattern.test(source.title) !== pattern.test(candidate.title)) ? 0.24 : 0;
-    return Math.max(0, Math.round((title * 0.72 + artist * 0.28 - penalty) * 1000) / 1000);
+    const durationDifference =
+        source.durationSeconds && candidate.durationSeconds
+            ? Math.abs(source.durationSeconds - candidate.durationSeconds)
+            : 0;
+    const durationPenalty = durationDifference > Math.max(8, (source.durationSeconds || 0) * 0.12) ? 0.2 : 0;
+    return Math.max(0, Math.round((title * 0.72 + artist * 0.28 - penalty - durationPenalty) * 1000) / 1000);
 }
 export async function findSoundCloudMatch(
     view: WebContents,
@@ -100,6 +107,7 @@ export async function findSoundCloudMatch(
             url: string;
             title: string;
             artist: string;
+            durationSeconds?: number;
         }[] = [];
         for (let attempt = 0; attempt < 24; attempt++) {
             signal?.throwIfAborted();

@@ -7,6 +7,7 @@ export async function writePartialPlaylist<T>(
         progress: (completed: number, item: T) => void;
         signal?: AbortSignal;
         stopOnError?: (error: unknown) => boolean;
+        saved?: (item: T, outcome: 'added' | 'already') => void;
     },
 ): Promise<{
     added: number;
@@ -34,6 +35,7 @@ export async function writePartialPlaylist<T>(
             if (outcome === 'added') added++;
             else already++;
             successful.push(item);
+            options.saved?.(item, outcome);
         } catch (error) {
             options.signal?.throwIfAborted();
             failures.push({

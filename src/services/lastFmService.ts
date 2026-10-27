@@ -1,3 +1,5 @@
+import { DeliveryOutbox } from './deliveryOutbox';
+import type { DataStore } from '../storage/asyncDataStore';
 import { BrowserView } from 'electron';
 import type ElectronStore from 'electron-store';
 import * as crypto from 'crypto';
@@ -10,6 +12,7 @@ export interface ScrobbleState {
     startTime: number;
     duration: number;
     scrobbled: boolean;
+    deliveryQueued?: boolean;
     isPaused: boolean;
     pausedTime: number;
     lastElapsedSeconds: number;
@@ -32,7 +35,12 @@ function timeStringToSeconds(timeStr: string | undefined): number {
 function shouldScrobble(state: ScrobbleState): boolean {
     const until = state.isPaused ? (state.pauseStartedAt ?? Date.now()) : Date.now();
     const totalPlayed = (until - state.startTime) / 1000 - state.pausedTime;
-    return state.duration > 30 && !state.scrobbled && totalPlayed >= Math.min(state.duration / 2, 240);
+    return (
+        state.duration > 30 &&
+        !state.scrobbled &&
+        !state.deliveryQueued &&
+        totalPlayed >= Math.min(state.duration / 2, 240)
+    );
 }
 function generateApiSignature(params: Record<string, string>, secret: string): string {
     const sorted =
@@ -51,9 +59,40 @@ export class LastFmService {
     private loopWatchdog: NodeJS.Timeout | null = null;
     private cancelAuthentication?: () => void;
     private authenticationGeneration = 0;
-    constructor(window: BrowserView, store: ElectronStore) {
+    private outbox: DeliveryOutbox<{ artist: string; track: string; timestamp: number; scope: string }>;
+    private deliveryScope(): string {
+        return crypto
+            .createHash('sha256')
+            .update(String(this.store.get('lastFmSessionKey') || ''))
+            .digest('hex');
+    }
+    constructor(window: BrowserView, store: ElectronStore, dataStore: DataStore = store) {
         this.window = window;
         this.store = store;
+        this.outbox = new DeliveryOutbox(
+            dataStore,
+            'lastFmOutboxV1',
+            async (item) => {
+                if (item.scope !== this.deliveryScope()) return 'drop';
+                const data = await this.sendLastFmRequest('track.scrobble', {
+                    artist: item.artist,
+                    track: item.track,
+                    timestamp: String(item.timestamp),
+                });
+                if (!data || [11, 16, 29].includes(data.error || 0)) return 'retry';
+                if (data.error) return 'drop';
+                const state = this.currentScrobbleState;
+                if (
+                    state &&
+                    state.artist === item.artist &&
+                    state.title === item.track &&
+                    Math.floor(state.startTime / 1000) === item.timestamp
+                )
+                    state.scrobbled = true;
+                return 'sent';
+            },
+            () => this.store.get('lastFmEnabled') === true,
+        );
     }
     private async sendLastFmRequest(
         method: string,
@@ -80,6 +119,7 @@ export class LastFmService {
                 body: new URLSearchParams({ ...payload, api_sig: apiSig, format: 'json' }),
                 signal: AbortSignal.timeout(10000),
             });
+            if (response.ok === false) return null;
             return await response.json();
         } catch (error) {
             console.error(`Last.fm API [${method}] error:`, error);
@@ -140,16 +180,12 @@ export class LastFmService {
         }
     }
     private async scrobbleTrack(artist: string, track: string, timestamp: number): Promise<void> {
-        const data = await this.sendLastFmRequest('track.scrobble', {
-            artist,
-            track,
-            timestamp: timestamp.toString(),
-        });
-        if (data?.error) {
-            console.error('Last.fm scrobble rejection:', data.message);
-        } else if (data) {
-            console.log(`[Last.fm] Scrobbled: ${artist} - ${track}`);
-        }
+        const scope = this.deliveryScope();
+        const id = crypto
+            .createHash('sha256')
+            .update(JSON.stringify([scope, artist, track, timestamp]))
+            .digest('hex');
+        this.outbox.enqueue(id, { artist, track, timestamp, scope });
     }
     private async updateNowPlaying(artist: string, track: string): Promise<void> {
         const data = await this.sendLastFmRequest('track.updateNowPlaying', { artist, track });
@@ -157,6 +193,7 @@ export class LastFmService {
     }
     public async updateTrackInfo(trackInfo: LastFmTrackData, isPlaying: boolean = true): Promise<void> {
         if (!this.store.get('lastFmEnabled') || !trackInfo.title || !trackInfo.author) return;
+        this.outbox.start();
         const parsed = normalizeTrackInfo(
             trackInfo.title,
             trackInfo.author,
@@ -196,7 +233,7 @@ export class LastFmService {
                 !this.currentScrobbleState.scrobbled &&
                 shouldScrobble(this.currentScrobbleState)
             ) {
-                this.currentScrobbleState.scrobbled = true;
+                this.currentScrobbleState.deliveryQueued = true;
                 void this.scrobbleTrack(
                     this.currentScrobbleState.artist,
                     this.currentScrobbleState.title,
@@ -217,17 +254,6 @@ export class LastFmService {
             };
             if (!isPlaying) this.pauseStartTime = Date.now();
             shouldPingPresence = true;
-            {
-                const state = this.currentScrobbleState;
-                this.loopWatchdog = setInterval(async () => {
-                    if (this.currentScrobbleState !== state || state.isPaused || !this.store.get('lastFmEnabled'))
-                        return;
-                    if (shouldScrobble(state)) {
-                        state.scrobbled = true;
-                        await this.scrobbleTrack(state.artist, state.title, Math.floor(state.startTime / 1000));
-                    }
-                }, 1000);
-            }
         } else if (this.currentScrobbleState.duration === 0) {
             const updatedDur = timeStringToSeconds(trackInfo.duration);
             if (updatedDur > 0) this.currentScrobbleState.duration = updatedDur;
@@ -235,11 +261,40 @@ export class LastFmService {
         if (this.currentScrobbleState) {
             this.currentScrobbleState.lastElapsedSeconds = elapsedSeconds;
         }
+        this.scheduleScrobble();
         if (isPlaying && shouldPingPresence) {
             await this.updateNowPlaying(parsed.artist, parsed.track);
         }
     }
+    private scheduleScrobble(): void {
+        if (this.loopWatchdog) clearTimeout(this.loopWatchdog);
+        this.loopWatchdog = null;
+        const state = this.currentScrobbleState;
+        if (
+            !state ||
+            state.isPaused ||
+            state.scrobbled ||
+            state.deliveryQueued ||
+            state.duration <= 30 ||
+            !this.store.get('lastFmEnabled')
+        )
+            return;
+        const played = (Date.now() - state.startTime) / 1000 - state.pausedTime;
+        const remaining = Math.max(0, Math.min(state.duration / 2, 240) - played);
+        this.loopWatchdog = setTimeout(
+            () => {
+                this.loopWatchdog = null;
+                if (this.currentScrobbleState !== state || !this.store.get('lastFmEnabled') || state.isPaused) return;
+                if (shouldScrobble(state)) {
+                    state.deliveryQueued = true;
+                    void this.scrobbleTrack(state.artist, state.title, Math.floor(state.startTime / 1000));
+                } else this.scheduleScrobble();
+            },
+            Math.max(10, remaining * 1000),
+        );
+    }
     public disconnect(): void {
+        this.outbox.clear();
         this.dispose();
         this.store.set('lastFmEnabled', false);
         this.store.delete('lastFmApiKey');
@@ -248,6 +303,7 @@ export class LastFmService {
         this.window.webContents.reload();
     }
     public dispose(): void {
+        this.outbox.stop();
         if (this.loopWatchdog) clearInterval(this.loopWatchdog);
         this.loopWatchdog = null;
         this.currentScrobbleState = null;

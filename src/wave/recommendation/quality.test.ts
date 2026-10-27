@@ -76,7 +76,7 @@ describe('recommendation quality regressions', () => {
                 { now, recentTrackIds: ['favorite'] },
             ),
         ).toHaveLength(0);
-        expect(recommend([favorite], events, settings, { now })).toHaveLength(0);
+        expect(recommend([favorite], events, { ...settings, discovery: 'new' }, { now })).toHaveLength(0);
     });
     it('does not replay the same recording under a different URL', () => {
         const one = track('url-1', 'rock', { artist: 'Artist', title: 'Song' });

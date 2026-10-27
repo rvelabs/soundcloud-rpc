@@ -11,6 +11,7 @@ export async function saveImportSelection(
         concurrency: number;
         signal?: AbortSignal;
         stopOnError?: (error: unknown) => boolean;
+        saved?: (item: ImportMatch, outcome: 'added' | 'already') => void;
         progress: (phase: 'checking' | 'creating' | 'adding', completed: number, total: number, title: string) => void;
     },
 ) {
@@ -60,6 +61,7 @@ export async function saveImportSelection(
         add: options.add,
         signal: options.signal,
         stopOnError: options.stopOnError,
+        saved: options.saved,
         progress: (completed, item) => options.progress('adding', completed, available.length, item.source.title),
     });
     return { ...result, failures: [...failures, ...result.failures] };

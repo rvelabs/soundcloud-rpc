@@ -3,18 +3,21 @@ export function allowedHost(host) {
         typeof host === 'string' && /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:soundcloud\.com|sndcdn\.com)$/.test(host)
     );
 }
-export function bridgeSocket(ws, socket) {
+export function bridgeSocket(ws, socket, windowSize = 1) {
+    windowSize = windowSize === 4 ? 4 : 1;
     const reader = socket.readable.getReader(),
         writer = socket.writable.getWriter();
+    const acknowledgements = [];
     let closed = false,
-        ack,
-        timeout,
-        writing = false;
+        writing = 0,
+        writeTail = Promise.resolve();
     const close = () => {
         if (closed) return;
         closed = true;
-        clearTimeout(timeout);
-        ack?.();
+        for (const pending of acknowledgements.splice(0)) {
+            clearTimeout(pending.timer);
+            pending.resolve();
+        }
         void reader.cancel().catch(() => {});
         void writer.abort().catch(() => {});
         void socket.close().catch(() => {});
@@ -27,37 +30,52 @@ export function bridgeSocket(ws, socket) {
     ws.addEventListener('message', (event) => {
         if (closed) return;
         if (typeof event.data === 'string') {
-            if (event.data === 'ack' && ack) {
-                clearTimeout(timeout);
-                const done = ack;
-                ack = undefined;
-                done();
-            } else close();
+            const pending = event.data === 'ack' ? acknowledgements.shift() : undefined;
+            if (!pending) {
+                close();
+                return;
+            }
+            clearTimeout(pending.timer);
+            pending.resolve();
             return;
         }
-        if (!(event.data instanceof ArrayBuffer) || event.data.byteLength > 65536 || writing) {
+        if (!(event.data instanceof ArrayBuffer) || event.data.byteLength > 65536 || writing >= windowSize) {
             close();
             return;
         }
-        writing = true;
-        void writer.write(new Uint8Array(event.data)).then(() => {
-            writing = false;
-            if (!closed) ws.send('ack');
-        }, close);
+        writing++;
+        const data = new Uint8Array(event.data);
+        writeTail = writeTail
+            .then(async () => {
+                if (closed) return;
+                await writer.write(data);
+                writing--;
+                if (!closed) ws.send('ack');
+            })
+            .catch(close);
     });
+    const send = (data) =>
+        new Promise((resolve) => {
+            const pending = { resolve, timer: setTimeout(close, 15000) };
+            acknowledgements.push(pending);
+            try {
+                ws.send(data);
+            } catch {
+                close();
+            }
+        });
     void (async () => {
+        const pending = [];
         try {
             while (!closed) {
                 const { value, done } = await reader.read();
                 if (done) break;
                 for (let offset = 0; offset < value.byteLength && !closed; offset += 65536) {
-                    await new Promise((resolve) => {
-                        ack = resolve;
-                        timeout = setTimeout(close, 15000);
-                        ws.send(value.slice(offset, offset + 65536));
-                    });
+                    pending.push(send(value.slice(offset, offset + 65536)));
+                    if (pending.length >= windowSize) await pending.shift();
                 }
             }
+            await Promise.all(pending);
         } catch {
         } finally {
             close();
@@ -100,7 +118,9 @@ export function createRelayHandler(connect) {
         const pair = new WebSocketPair();
         pair[1].binaryType = 'arraybuffer';
         pair[1].accept();
-        bridgeSocket(pair[1], socket);
+        const windowSize = url.searchParams.get('window') === '4' ? 4 : 1;
+        if (windowSize === 4) pair[1].send('window:4');
+        bridgeSocket(pair[1], socket, windowSize);
         return new Response(null, { status: 101, webSocket: pair[0] });
     };
 }

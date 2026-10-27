@@ -106,6 +106,8 @@ app.whenReady().then(async () => {
             },
             new TranslationService(),
         );
+        assert.equal(settings.getView(), null);
+        settings.toggle();
         view = settings.getView();
         const errors = [];
         view.webContents.on('console-message', (_event, level, message) => {

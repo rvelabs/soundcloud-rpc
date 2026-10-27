@@ -55,6 +55,7 @@ export class CloudflareGateway {
             if (this.diagnostics.length > 32) this.diagnostics.shift();
             const url = new URL(base);
             url.searchParams.set('host', match[1].toLowerCase());
+            url.searchParams.set('window', '4');
             const ws = new WebSocket(url.href, {
                 headers: { Authorization: 'Bearer ' + secret },
                 handshakeTimeout: 12000,
@@ -65,45 +66,50 @@ export class CloudflareGateway {
             this.tunnels.add(ws);
             let opened = false,
                 closed = false,
-                receiving = false,
-                ack: (() => void) | undefined;
-            let ackTimer: ReturnType<typeof setTimeout> | undefined;
+                receiving = 0,
+                windowSize = 1;
+            const acknowledgements: Array<{
+                resolve: () => void;
+                reject: (error: Error) => void;
+                timer: ReturnType<typeof setTimeout>;
+            }> = [];
             const finish = () => {
                 if (closed) return;
                 closed = true;
                 diagnostic.elapsedMs = Date.now() - began;
                 if (!opened) diagnostic.failure ||= 'closed-before-open';
-                clearTimeout(ackTimer);
-                const release = ack;
-                ack = undefined;
-                release?.();
+                for (const pending of acknowledgements.splice(0)) {
+                    clearTimeout(pending.timer);
+                    pending.reject(new Error('Relay closed'));
+                }
                 this.tunnels.delete(ws);
                 ws.terminate();
                 if (!opened && !socket.destroyed) socket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n');
                 else socket.destroy();
             };
-            const send = async (data: Buffer) => {
-                for (let offset = 0; offset < data.length; offset += 65536) {
-                    await new Promise<void>((resolve, reject) => {
-                        ack = () => {
-                            clearTimeout(ackTimer);
-                            ack = undefined;
-                            resolve();
-                        };
-                        ackTimer = setTimeout(() => {
-                            diagnostic.failure ||= 'ack-timeout';
-                            reject(new Error('Relay acknowledgement timed out'));
-                            finish();
-                        }, 15000);
-                        ws.send(data.subarray(offset, offset + 65536), (error) => {
-                            if (error) {
-                                reject(error);
-                                finish();
-                            } else diagnostic.sentBytes += Math.min(65536, data.length - offset);
-                        });
+            const frame = (data: Buffer) => {
+                const task = new Promise<void>((resolve, reject) => {
+                    const timer = setTimeout(() => {
+                        diagnostic.failure ||= 'ack-timeout';
+                        finish();
+                    }, 15000);
+                    acknowledgements.push({ resolve, reject, timer });
+                    ws.send(data, (error) => {
+                        if (error) finish();
+                        else diagnostic.sentBytes += data.length;
                     });
+                });
+                void task.catch(() => {});
+                return task;
+            };
+            const send = async (data: Buffer) => {
+                const pending: Promise<void>[] = [];
+                for (let offset = 0; offset < data.length; offset += 65536) {
                     if (closed) throw new Error('Relay closed');
+                    pending.push(frame(data.subarray(offset, offset + 65536)));
+                    if (pending.length >= windowSize) await pending.shift();
                 }
+                await Promise.all(pending);
             };
             ws.on('open', () => {
                 opened = true;
@@ -120,22 +126,34 @@ export class CloudflareGateway {
             ws.on('message', (data: Buffer, binary: boolean) => {
                 if (closed) return;
                 if (!binary) {
-                    if (data.toString() === 'ack' && ack) ack();
-                    else {
+                    const control = data.toString();
+                    if (
+                        control === 'window:4' &&
+                        windowSize === 1 &&
+                        diagnostic.receivedBytes === 0 &&
+                        acknowledgements.length === 0
+                    ) {
+                        windowSize = 4;
+                        diagnostic.windowSize = 4;
+                    } else if (control === 'ack' && acknowledgements.length) {
+                        const pending = acknowledgements.shift()!;
+                        clearTimeout(pending.timer);
+                        pending.resolve();
+                    } else {
                         diagnostic.failure ||= 'protocol';
                         finish();
                     }
                     return;
                 }
-                if (!opened || receiving) {
+                if (!opened || receiving >= windowSize) {
                     diagnostic.failure ||= 'protocol';
                     finish();
                     return;
                 }
-                receiving = true;
+                receiving++;
                 diagnostic.receivedBytes += data.length;
                 socket.write(data, () => {
-                    receiving = false;
+                    receiving--;
                     if (!closed)
                         ws.send('ack', (error) => {
                             if (error) finish();

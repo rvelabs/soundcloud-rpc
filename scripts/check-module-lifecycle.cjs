@@ -91,7 +91,7 @@ app.whenReady().then(async () => {
         fs.mkdirSync(themeDir, { recursive: true });
         fs.writeFileSync(
             path.join(pluginDir, 'qa.js'),
-            `globalThis.ticks=0;module.exports={onEnable(){setInterval(()=>globalThis.ticks++,5)}}`,
+            `globalThis.ticks=0;module.exports={onEnable(){setInterval(()=>globalThis.ticks++,25)},contentScript(){return String(globalThis.ticks)}}`,
         );
         fs.writeFileSync(
             path.join(pluginDir, 'broken.js'),
@@ -103,16 +103,20 @@ app.whenReady().then(async () => {
         plugins = new (load('services/pluginService.js').PluginService)(store);
         for (let i = 0; i < 12; i++) {
             assert(plugins.setPluginEnabled('qa', true));
-            const context = plugins.runtimes.get('qa').context;
-            await wait(25);
-            assert(context.ticks > 0);
+            const host = plugins.runtimes.get('qa');
+            await host.ready;
+            await wait(70);
+            assert(Number(await host.call('contentScript')) > 0);
+            const exit = new Promise((resolve) => host.worker.once('exit', resolve));
             plugins.setPluginEnabled('qa', false);
-            const ticks = context.ticks;
-            await wait(25);
-            assert.equal(context.ticks, ticks);
+            await exit;
+            assert.equal(plugins.runtimes.size, 0);
         }
         assert.equal(plugins.runtimes.size, 0);
-        assert.equal(plugins.setPluginEnabled('broken', true), false);
+        assert.equal(plugins.setPluginEnabled('broken', true), true);
+        const broken = plugins.runtimes.get('broken');
+        await broken.ready.catch(() => {});
+        await wait(80);
         assert.equal(plugins.getPlugins().find((item) => item.id === 'broken').enabled, false);
         assert.equal(plugins.runtimes.size, 0);
         passed.push(

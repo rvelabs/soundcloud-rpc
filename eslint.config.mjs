@@ -32,7 +32,7 @@ export default defineConfig([
         rules: { 'no-empty': ['error', { allowEmptyCatch: true }] },
     },
     {
-        files: ['src/header/*.js', 'src/wave/*.js'],
+        files: ['src/header/*.js', 'src/wave/*.js', 'src/settings/*.js'],
         languageOptions: { globals: globals.browser },
     },
     {

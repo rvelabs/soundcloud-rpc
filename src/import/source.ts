@@ -3,6 +3,7 @@ export interface SourceTrack {
     title: string;
     artist: string;
     sourceId?: string;
+    durationSeconds?: number;
 }
 export interface SourcePlaylist {
     platform: SourcePlatform;
@@ -85,7 +86,14 @@ function playlistResult(
         const key = `${name.toLowerCase()}\u0000${artist.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        unique.push({ title: name, artist, ...(track.sourceId ? { sourceId: track.sourceId } : {}) });
+        unique.push({
+            title: name,
+            artist,
+            ...(track.sourceId ? { sourceId: track.sourceId } : {}),
+            ...(Number.isFinite(track.durationSeconds) && track.durationSeconds! > 0
+                ? { durationSeconds: track.durationSeconds }
+                : {}),
+        });
     }
     if (!clean(title) || !unique.length)
         throw new Error(
@@ -113,6 +121,7 @@ export function parseSpotifyEmbed(html: string): SourcePlaylist {
                                 title?: string;
                                 subtitle?: string;
                                 uri?: string;
+                                duration?: number;
                             }[];
                         };
                     };
@@ -130,6 +139,7 @@ export function parseSpotifyEmbed(html: string): SourcePlaylist {
             title: item.title || '',
             artist: item.subtitle || '',
             sourceId: item.uri,
+            durationSeconds: item.duration ? item.duration / 1000 : undefined,
         })),
         (entity?.trackList?.length || 0) >= 100,
     );
@@ -158,6 +168,7 @@ export function parseYandexPlaylist(value: unknown): SourcePlaylist {
                 name?: string;
             }[];
             id?: string | number;
+            durationMs?: number;
         };
         return {
             title: track?.title || '',
@@ -167,6 +178,7 @@ export function parseYandexPlaylist(value: unknown): SourcePlaylist {
                     .filter(Boolean)
                     .join(', ') || '',
             sourceId: String(track?.id || ''),
+            durationSeconds: track?.durationMs ? track.durationMs / 1000 : undefined,
         };
     });
     return playlistResult(
@@ -231,11 +243,13 @@ export function parseYouTubePlaylist(html: string): SourcePlaylist {
                 shortBylineText?: unknown;
                 longBylineText?: unknown;
                 videoId?: string;
+                lengthSeconds?: string;
             };
             tracks.push({
                 title: textRuns(row.title),
                 artist: textRuns(row.shortBylineText || row.longBylineText),
                 sourceId: row.videoId,
+                durationSeconds: Number(row.lengthSeconds) || undefined,
             });
         }
         if (node.musicResponsiveListItemRenderer) {

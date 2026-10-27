@@ -1,3 +1,4 @@
+import { IpcRegistry } from '../utils/ipcRegistry';
 import { app, ipcMain } from 'electron';
 import { readFileSync, existsSync, readdirSync, statSync, watch, mkdirSync } from 'fs';
 import { join, basename, extname } from 'path';
@@ -19,7 +20,9 @@ export class ThemeService {
     private emitter = new EventEmitter();
     private stopWatching?: () => void;
     private refreshTimer?: ReturnType<typeof setTimeout>;
-    constructor(store: ElectronStore) {
+    private ipc: IpcRegistry;
+    constructor(store: ElectronStore, allowed: ConstructorParameters<typeof IpcRegistry>[1] = () => false) {
+        this.ipc = new IpcRegistry(ipcMain, allowed);
         this.store = store;
         this.themesPath = join(app.getPath('userData'), 'themes');
         this.ensureThemesDirectory();
@@ -107,26 +110,26 @@ export class ThemeService {
         }
     }
     private setupIpcHandlers(): void {
-        ipcMain.handle('get-custom-themes', () => {
+        this.ipc.handle('get-custom-themes', () => {
             return Array.from(this.customThemes.values()).map((theme) => ({
                 name: theme.name,
                 filePath: theme.filePath,
                 metadata: theme.metadata,
             }));
         });
-        ipcMain.handle('get-current-custom-theme', () => {
+        this.ipc.handle('get-current-custom-theme', () => {
             return this.currentCustomTheme;
         });
-        ipcMain.handle('apply-custom-theme', (_, themeName: string) => {
-            return this.applyCustomTheme(themeName);
+        this.ipc.handle('apply-custom-theme', (_, themeName: string) => {
+            return typeof themeName === 'string' && themeName.length <= 200 && this.applyCustomTheme(themeName);
         });
-        ipcMain.handle('remove-custom-theme', () => {
+        this.ipc.handle('remove-custom-theme', () => {
             return this.removeCustomTheme();
         });
-        ipcMain.handle('get-themes-folder-path', () => {
+        this.ipc.handle('get-themes-folder-path', () => {
             return this.themesPath;
         });
-        ipcMain.handle('refresh-custom-themes', () => {
+        this.ipc.handle('refresh-custom-themes', () => {
             this.customThemes.clear();
             this.loadCustomThemes();
             return Array.from(this.customThemes.values()).map((theme) => ({
@@ -135,7 +138,7 @@ export class ThemeService {
                 metadata: theme.metadata,
             }));
         });
-        ipcMain.handle('get-theme-colors', () => {
+        this.ipc.handle('get-theme-colors', () => {
             return this.getCurrentThemeColors();
         });
     }
@@ -200,6 +203,7 @@ export class ThemeService {
         return () => this.emitter.off('custom-theme-updated', listener);
     }
     public dispose(): void {
+        this.ipc.dispose();
         clearTimeout(this.refreshTimer);
         this.stopWatching?.();
         this.emitter.removeAllListeners();

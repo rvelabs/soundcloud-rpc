@@ -33,6 +33,34 @@ export async function listNativeNextUp(contents: WebContents): Promise<string[]>
     )) as string[];
     return links.filter((url) => trackPath(url) !== null);
 }
+export async function removeNativeNextUp(contents: WebContents, urls: string[]): Promise<boolean> {
+    const paths = [...new Set(urls.map(trackPath).filter((value): value is string => Boolean(value)))];
+    if (!paths.length) return true;
+    if (contents.isDestroyed()) return false;
+    await contents.executeJavaScript(
+        `(() => {
+        const paths = new Set(${JSON.stringify(paths)});
+        const current = document.querySelector('.playbackSoundBadge__titleLink')?.pathname;
+        for (const link of document.querySelectorAll('.queue__itemsContainer a[href]')) {
+            if (!paths.has(link.pathname) || link.pathname === current) continue;
+            const row = link.closest('.queueItemView,li');
+            const button = row?.querySelector('.queueItemView__remove,.queueItemView__removeFromQueue,button[title*="Remove"],button[aria-label*="Remove"],button[title*="Удалить"],button[aria-label*="Удалить"]');
+            if (button) button.click();
+        }
+    })()`,
+        true,
+    );
+    for (let attempt = 0; attempt < 10; attempt++) {
+        if (contents.isDestroyed()) return false;
+        const remaining = await listNativeNextUp(contents);
+        const current = await contents.executeJavaScript(
+            "document.querySelector('.playbackSoundBadge__titleLink')?.pathname || ''",
+        );
+        if (!remaining.some((url) => paths.includes(trackPath(url) || '') && trackPath(url) !== current)) return true;
+        await wait(100);
+    }
+    return false;
+}
 async function cardAvailable(contents: WebContents, target: string): Promise<boolean> {
     return contents.executeJavaScript(
         `(() => [...document.querySelectorAll('.sound a.soundTitle__title[href]')]
@@ -40,7 +68,12 @@ async function cardAvailable(contents: WebContents, target: string): Promise<boo
         true,
     ) as Promise<boolean>;
 }
-async function searchInPage(contents: WebContents, query: string, target: string): Promise<boolean> {
+async function searchInPage(
+    contents: WebContents,
+    query: string,
+    target: string,
+    isActive: () => boolean,
+): Promise<boolean> {
     const clean = query.trim().slice(0, 100);
     if (!clean) return false;
     const search = (await contents.executeJavaScript(
@@ -57,6 +90,7 @@ async function searchInPage(contents: WebContents, query: string, target: string
     if (!search) throw new Error('Поле поиска SoundCloud недоступно.');
     await contents.insertText(clean);
     await wait(100);
+    if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     const submitted = (await contents.executeJavaScript(
         `(() => {
         const button = document.querySelector('.headerSearch__submit');
@@ -68,6 +102,7 @@ async function searchInPage(contents: WebContents, query: string, target: string
     )) as boolean;
     if (!submitted) throw new Error('SoundCloud не показал кнопку поиска.');
     for (let i = 0; i < 20; i++) {
+        if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
         if (await cardAvailable(contents, target)) return true;
         await wait(100);
     }
@@ -84,6 +119,7 @@ async function searchInPage(contents: WebContents, query: string, target: string
     )) as boolean;
     if (filtered)
         for (let i = 0; i < 35; i++) {
+            if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
             if (await cardAvailable(contents, target)) return true;
             await wait(100);
         }
@@ -130,11 +166,12 @@ async function locateTrack(
     ];
     for (const query of queries.slice(0, maxQueries)) {
         if (!isActive()) throw new NativeActionCanceledError();
-        if (await searchInPage(contents, query, target)) return;
+        if (await searchInPage(contents, query, target, isActive)) return;
     }
     throw new NativeTrackNotFoundError();
 }
-async function queueOnCurrentPage(contents: WebContents, target: string): Promise<boolean> {
+async function queueOnCurrentPage(contents: WebContents, target: string, isActive: () => boolean): Promise<boolean> {
+    if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     const state = (await contents.executeJavaScript(
         `(() => {
         const target = ${JSON.stringify(target)};
@@ -156,6 +193,7 @@ async function queueOnCurrentPage(contents: WebContents, target: string): Promis
         selected: boolean;
     } | null = null;
     for (let i = 0; i < 20; i++) {
+        if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
         buttonPosition = (await contents.executeJavaScript(
             `(() => {
             const b = document.querySelector('.dropdownMenu button.addToNextUp[title="Add to Next up"],.dropdownMenu button.addToNextUp[aria-label="Add to Next up"]');
@@ -174,6 +212,7 @@ async function queueOnCurrentPage(contents: WebContents, target: string): Promis
         await wait(100);
     }
     if (!buttonPosition) throw new Error('SoundCloud не показал кнопку Add to Next Up.');
+    if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     if (buttonPosition.selected) throw new Error('Трек уже находится в очереди SoundCloud.');
     contents.sendInputEvent({
         type: 'mouseDown',
@@ -190,6 +229,7 @@ async function queueOnCurrentPage(contents: WebContents, target: string): Promis
         clickCount: 1,
     });
     for (let i = 0; i < 15; i++) {
+        if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
         if ((await listNativeNextUp(contents)).some((url) => trackPath(url) === target)) return true;
         await wait(100);
     }
@@ -321,7 +361,7 @@ export async function addToNativeNextUp(
         sourceQuery,
         3,
         async (target) => {
-            if (!(await queueOnCurrentPage(contents, target)))
+            if (!(await queueOnCurrentPage(contents, target, isActive)))
                 throw new Error('Трек не появился на странице SoundCloud.');
         },
         isActive,

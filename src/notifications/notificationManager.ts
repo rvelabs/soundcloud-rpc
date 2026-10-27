@@ -9,7 +9,6 @@ export class NotificationManager {
     private parentWindow: BrowserWindow;
     private themeColors: ThemeColors | null = null;
     private devMode = process.argv.includes('--dev');
-    private useMacOptimizations = process.platform === 'darwin';
     private cancelDone?: () => void;
     private timer?: ReturnType<typeof setTimeout>;
     constructor(parentWindow: BrowserWindow) {
@@ -40,12 +39,10 @@ export class NotificationManager {
         try {
             this.parentWindow.removeBrowserView(view);
         } catch {}
-        if (this.useMacOptimizations) {
-            try {
-                if (!view.webContents.isDestroyed()) view.webContents.close();
-            } catch {}
-            this.view = null;
-        }
+        try {
+            if (!view.webContents.isDestroyed()) view.webContents.close();
+        } catch {}
+        this.view = null;
     }
     public setThemeColors(colors: ThemeColors | null): void {
         this.themeColors = colors;

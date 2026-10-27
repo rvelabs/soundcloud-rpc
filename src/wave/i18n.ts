@@ -1,5 +1,11 @@
 export type InterfaceLanguage = 'auto' | 'ru' | 'en';
 export const waveEnglish: Record<string, string> = {
+    'Воспроизведение подтверждено': 'Playback confirmed',
+    'Доступен по метаданным': 'Available according to metadata',
+    'громкость аудиосигнала': 'measured signal loudness',
+    'Продолжить сохранённый импорт': 'Resume saved import',
+    ' Источник показал только часть треков. Для полного списка используйте импорт CSV/TXT.':
+        ' The source returned only some tracks. Import CSV/TXT for the complete list.',
     'Поддерживаются плейлисты Яндекс Музыки, Spotify и YouTube Music, а также альбомы Spotify.':
         'Supported links: Yandex Music, Spotify and YouTube Music playlists, and Spotify albums.',
     'Spotify не показал список треков. Нужен доступный публичный плейлист или альбом.':

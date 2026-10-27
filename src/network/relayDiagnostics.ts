@@ -2,6 +2,7 @@ export interface TunnelDiagnostic {
     id: number;
     host: string;
     opened: boolean;
+    windowSize?: number;
     sentBytes: number;
     receivedBytes: number;
     elapsedMs: number;

@@ -35,21 +35,24 @@ async function runtime(protocol, entry = echoEntry) {
         throw error;
     }
 }
-async function transfer(base, payload, secret = token) {
+async function transfer(base, payload, secret = token, requestedWindow = 1) {
     const url = new URL('/tunnel?host=soundcloud.com', base);
     url.protocol = 'ws:';
+    if (requestedWindow === 4) url.searchParams.set('window', '4');
     return new Promise((resolve, reject) => {
         const ws = new WebSocket(url, { headers: { Authorization: 'Bearer ' + secret }, perMessageDeflate: false });
         const parts = [];
         let sent = 0,
             received = 0,
-            settled = false;
+            settled = false,
+            outstanding = 0,
+            windowSize = 1;
         const timer = setTimeout(() => finish(new Error('Worker runtime transfer deadline')), 10000);
         const finish = (error, closeCode, httpStatus) => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
-            const result = { sent, received, closeCode, httpStatus, data: Buffer.concat(parts) };
+            const result = { sent, received, closeCode, httpStatus, windowSize, data: Buffer.concat(parts) };
             if (error) {
                 ws.terminate();
                 reject(error);
@@ -62,10 +65,12 @@ async function transfer(base, payload, secret = token) {
             }
         };
         const send = () => {
-            if (sent >= payload.length) return;
-            const data = payload.subarray(sent, sent + 32768);
-            sent += data.length;
-            ws.send(data);
+            while (sent < payload.length && outstanding < windowSize) {
+                const data = payload.subarray(sent, sent + 32768);
+                sent += data.length;
+                outstanding++;
+                ws.send(data);
+            }
         };
         ws.on('open', send);
         ws.on('message', (data, binary) => {
@@ -74,8 +79,13 @@ async function transfer(base, payload, secret = token) {
                 received += data.length;
                 ws.send('ack');
                 if (received === payload.length) finish();
-            } else if (data.toString() === 'ack') send();
-            else finish(new Error('Unexpected control frame'));
+            } else if (data.toString() === 'ack') {
+                outstanding--;
+                send();
+            } else if (data.toString() === 'window:4' && requestedWindow === 4) {
+                windowSize = 4;
+                send();
+            } else finish(new Error('Unexpected control frame'));
         });
         ws.on('error', (error) => finish(error));
         ws.on('close', (code) => finish(undefined, code));
@@ -113,12 +123,17 @@ async function transfer(base, payload, secret = token) {
             result = await transfer(fixed.url, payload);
         assert.equal(result.received, payload.length);
         assert(result.data.equals(payload));
+        const pipelined = await transfer(fixed.url, payload, token, 4);
+        assert.equal(pipelined.windowSize, 4);
+        assert(pipelined.data.equals(payload));
         const unauthorized = await transfer(fixed.url, Buffer.alloc(0), 'wrong');
         assert.equal(unauthorized.httpStatus, 401);
         console.log(
             JSON.stringify({
                 fixedWorker: 'passed',
                 verifiedBytes: result.received,
+                pipelinedVerifiedBytes: pipelined.received,
+                windowSize: pipelined.windowSize,
                 unauthorizedStatus: unauthorized.httpStatus,
                 engine: 'workerd',
                 compatibilityFlag: 'websocket_standard_binary_type',

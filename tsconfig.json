@@ -1,6 +1,7 @@
 {
     "compilerOptions": {
         "target": "es2020",
+        "lib": ["es2021", "dom", "dom.iterable"],
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "noImplicitAny": true,

@@ -1,4 +1,6 @@
 export interface SoundFeatures {
+    source?: 'media-element-v1' | 'metadata' | 'legacy';
+    sampleSeconds?: number;
     energy?: number;
     bass?: number;
     brightness?: number;
@@ -57,4 +59,5 @@ export interface Context {
     allowUnverified?: boolean;
     recentArtists?: string[];
     seed?: number;
+    sequenceOffset?: number;
 }

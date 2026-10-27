@@ -36,7 +36,6 @@ import { PluginService } from './services/pluginService';
 import { discoverRelatedCandidates, discoverPersonalHistory, extractWaveLinks } from './wave/nativeWave';
 import { setTrackLiked } from './wave/nativeLike';
 import {
-    WaveEngine,
     defaultWaveControls,
     parseTime,
     type AudioFeatures,
@@ -47,13 +46,20 @@ import { SoundCloudRecommender } from './wave/recommendation/soundcloudAdapter';
 import { RelatedDiscovery } from './wave/relatedDiscovery';
 import { ListeningEvidence } from './wave/listeningEvidence';
 import { WindowTasks } from './utils/windowTasks';
+import { IdleResource } from './utils/idleResource';
+import { IpcRegistry } from './utils/ipcRegistry';
+import { validSetting } from './settings/validateSetting';
+import { AsyncDataStore } from './storage/asyncDataStore';
+import { writeFile, rename, readFile } from 'node:fs/promises';
 import { UpdateController, type UpdateMode, type UpdateState } from './updates/updateController';
 import { presentUpdate } from './updates/presentation';
 import { waveEnglish, translateWaveText } from './wave/i18n';
 import { PreparedQueue } from './wave/preparedQueue';
+import { PlaybackCoordinator } from './wave/playbackCoordinator';
 import {
     addToNativeNextUp,
     listNativeNextUp,
+    removeNativeNextUp,
     playInNativePlayer,
     trackPath,
     NativeTrackNotFoundError,
@@ -61,12 +67,15 @@ import {
 } from './wave/nativeQueue';
 import { enrichPublicTrack, setPublicMetadataFetch } from './wave/trackMetadata';
 import { installWaveMediaEndCapture } from './wave/mediaEndCapture';
+import { installAudioFeatureCapture } from './wave/audioFeatureCapture';
 import { setStationAutoplay } from './wave/nativeAutoplay';
 import { loadSourcePlaylist } from './import/loadSource';
 import { loadLocalPlaylist } from './import/localSource';
 import { findSoundCloudMatch, type ImportMatch } from './import/match';
 import { cancelImportOperation, automaticImportConcurrency, mapImportTracks } from './import/parallel';
-import { createAvailabilityChecker } from './import/availability';
+import { createAvailabilityChecker, confirmTrackPlayback } from './import/availability';
+import { ImportJournal, type ImportJob } from './import/importJournal';
+import { TaskPool } from './import/taskPool';
 import { availableParallelism, freemem } from 'node:os';
 import { createSoundCloudPlaylist, addSoundCloudPlaylistTrack, PlaylistWriteError } from './import/nativePlaylist';
 import type { SourcePlaylist } from './import/source';
@@ -138,12 +147,15 @@ let themeService: ThemeService;
 let shortcutService: ShortcutService;
 let pluginService: PluginService;
 let waveStarting = false;
-let waveEngine: WaveEngine;
-const waveHomeView = null as BrowserView | null;
-let waveDiscoveryView: BrowserView | null = null;
+let libraryStore: AsyncDataStore | undefined;
+let libraryOpening: Promise<AsyncDataStore> | undefined;
+let diagnosticWrite: Promise<void> = Promise.resolve();
+let diagnosticTimer: ReturnType<typeof setTimeout> | undefined;
 let waveVisible = false;
 let onNativeWaveTrackUpdate: ((track: TrackInfo) => void) | null = null;
+let onNativeProgress: ((track: TrackInfo) => void) | undefined;
 const waveListening = new ListeningEvidence();
+let stopWindowWork: (() => void) | undefined;
 let onWaveNextRequest: (() => void) | null = null;
 const waveTrace: {
     at: number;
@@ -176,14 +188,18 @@ function traceWave(event: string, current?: string, observed?: string, detail?: 
         ].includes(event)
     )
         return;
-    try {
-        writeFileSync(
-            path.join(app.getPath('userData'), 'wave-diagnostics.json'),
-            JSON.stringify({ capturedAt: new Date().toISOString(), events: waveTrace }, null, 2),
-        );
-    } catch (error) {
-        console.debug('Wave diagnostic write unavailable:', error);
-    }
+    clearTimeout(diagnosticTimer);
+    diagnosticTimer = setTimeout(() => {
+        const snapshot = JSON.stringify({ capturedAt: new Date().toISOString(), events: waveTrace }, null, 2);
+        const file = path.join(app.getPath('userData'), 'wave-diagnostics.json');
+        diagnosticWrite = diagnosticWrite
+            .then(async () => {
+                await writeFile(file + '.tmp', snapshot);
+                await rename(file + '.tmp', file);
+            })
+            .catch((error) => console.debug('Wave diagnostic write unavailable:', error));
+    }, 750);
+    diagnosticTimer.unref();
 }
 let tray: Tray | null = null;
 let isQuitting = false;
@@ -194,23 +210,6 @@ const globalUserAgent = isMac
     ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
     : `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = globalUserAgent;
-function applyMacMemoryOptimizations(): void {
-    if (!isMac) return;
-    const existingDisableFeatures = app.commandLine.getSwitchValue('disable-features');
-    const features = new Set(
-        existingDisableFeatures
-            .split(',')
-            .map((feature) => feature.trim())
-            .filter(Boolean),
-    );
-    features.add('BackForwardCache');
-    app.commandLine.appendSwitch('disable-features', Array.from(features).join(','));
-    app.commandLine.appendSwitch('renderer-process-limit', '1');
-    app.commandLine.appendSwitch('disk-cache-size', '1');
-    app.commandLine.appendSwitch('media-cache-size', '1');
-    app.commandLine.appendSwitch('enable-low-end-device-mode');
-}
-applyMacMemoryOptimizations();
 const HEADER_HEIGHT = 32;
 const isMas = process.mas === true;
 if (!isMas) {
@@ -467,14 +466,11 @@ function adjustContentViews() {
         width,
         height: height - HEADER_HEIGHT,
     });
-    if (waveHomeView && waveVisible) {
-        waveHomeView.setBounds({ x: 0, y: HEADER_HEIGHT, width: 1, height: 1 });
-    }
     updateDialogBounds(mainWindow);
 }
 function setupWindowControls() {
     if (!mainWindow) return;
-    ipcMain.on('minimize-window', () => {
+    windowIpc.on('minimize-window', () => {
         if (!mainWindow) return;
         const minimizeToTray = store.get('minimizeToTray', true);
         if (minimizeToTray) {
@@ -483,7 +479,7 @@ function setupWindowControls() {
             mainWindow.minimize();
         }
     });
-    ipcMain.on('maximize-window', () => {
+    windowIpc.on('maximize-window', () => {
         if (mainWindow) {
             if (mainWindow.isMaximized()) {
                 mainWindow.unmaximize();
@@ -492,7 +488,7 @@ function setupWindowControls() {
             }
         }
     });
-    ipcMain.on('title-bar-double-click', () => {
+    windowIpc.on('title-bar-double-click', () => {
         if (mainWindow) {
             if (mainWindow.isMaximized()) {
                 mainWindow.unmaximize();
@@ -510,7 +506,7 @@ function setupWindowControls() {
     mainWindow.on('resize', () => {
         adjustContentViews();
     });
-    ipcMain.on('close-window', () => {
+    windowIpc.on('close-window', () => {
         if (mainWindow) {
             const minimizeToTray = store.get('minimizeToTray', true);
             if (minimizeToTray) {
@@ -520,17 +516,17 @@ function setupWindowControls() {
             }
         }
     });
-    ipcMain.on('navigate-back', () => {
+    windowIpc.on('navigate-back', () => {
         if (contentView && contentView.webContents.navigationHistory.canGoBack()) {
             contentView.webContents.navigationHistory.goBack();
         }
     });
-    ipcMain.on('navigate-forward', () => {
+    windowIpc.on('navigate-forward', () => {
         if (contentView && contentView.webContents.navigationHistory.canGoForward()) {
             contentView.webContents.navigationHistory.goForward();
         }
     });
-    ipcMain.on('refresh-page', () => {
+    windowIpc.on('refresh-page', () => {
         if (contentView) {
             if (headerView && headerView.webContents) {
                 headerView.webContents.send('refresh-state-changed', true);
@@ -539,7 +535,7 @@ function setupWindowControls() {
             contentView.webContents.reload();
         }
     });
-    ipcMain.on('cancel-refresh', () => {
+    windowIpc.on('cancel-refresh', () => {
         if (contentView) {
             contentView.webContents.stop();
             if (headerView && headerView.webContents) {
@@ -547,27 +543,39 @@ function setupWindowControls() {
             }
         }
     });
-    ipcMain.on('toggle-theme', () => {
+    windowIpc.on('toggle-theme', () => {
         isDarkTheme = !isDarkTheme;
         if (headerView && headerView.webContents) {
             headerView.webContents.send('theme-changed', isDarkTheme);
         }
         applyThemeToContent(isDarkTheme);
     });
-    ipcMain.handle('is-maximized', () => {
+    windowIpc.handle('is-maximized', () => {
         return mainWindow ? mainWindow.isMaximized() : false;
     });
-    ipcMain.handle('get-minimize-to-tray', () => {
+    windowIpc.handle('get-minimize-to-tray', () => {
         return store.get('minimizeToTray', true);
     });
-    ipcMain.handle('get-navigation-controls-enabled', () => {
+    windowIpc.handle('get-navigation-controls-enabled', () => {
         return store.get('navigationControlsEnabled', false);
     });
     adjustContentViews();
 }
 let headerView: BrowserView | null;
 let contentView: BrowserView;
+const windowIpc = new IpcRegistry(ipcMain, (event, channel) => {
+    if (/^(wave-inline:|playlist-import:|soundcloud:)/.test(channel)) return isTrustedSoundCloudSender(event);
+    return settingsManager?.owns(event.sender) === true || headerView?.webContents === event.sender;
+});
+
 async function init() {
+    libraryOpening ??= AsyncDataStore.open(app.getPath('userData'), store, {
+        available: () => safeStorage.isEncryptionAvailable(),
+        encrypt: (value) => safeStorage.encryptString(value),
+        decrypt: (value) => safeStorage.decryptString(value),
+    });
+    libraryStore = await libraryOpening;
+    await libraryStore.migrate(store);
     try {
         await components.whenReady();
         console.log('Components ready:', components.status());
@@ -599,18 +607,11 @@ async function init() {
     });
     const updateWaveVisibility = () => {
         const contents = contentView?.webContents;
-        const home = waveHomeView?.webContents;
         if (mainWindow.isDestroyed()) return;
         if (contents && !contents.isDestroyed()) {
             contents.send(
                 'wave-inline:visibility',
                 mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
-            );
-        }
-        if (home && !home.isDestroyed()) {
-            home.send(
-                'wave-home:visible',
-                waveVisible && mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
             );
         }
     };
@@ -681,28 +682,39 @@ async function init() {
             credentials: 'omit',
         }),
     );
-    waveEngine = new WaveEngine(store);
     waveListening.reset();
-    waveDiscoveryView = new BrowserView({
-        webPreferences: {
-            session: clientContents.session,
-            nodeIntegration: false,
-            contextIsolation: true,
-            sandbox: true,
-            webSecurity: true,
-            backgroundThrottling: false,
-            images: false,
+    const discoveryPage = new IdleResource(
+        () => {
+            const view = new BrowserView({
+                webPreferences: {
+                    session: clientContents.session,
+                    nodeIntegration: false,
+                    contextIsolation: true,
+                    sandbox: true,
+                    webSecurity: true,
+                    backgroundThrottling: false,
+                    images: false,
+                },
+            });
+            view.setBounds({ x: 0, y: 0, width: 1000, height: 800 });
+            view.webContents.setUserAgent(globalUserAgent);
+            view.webContents.setAudioMuted(true);
+            view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+            return view.webContents;
         },
-    });
-    const discoveryContents = waveDiscoveryView.webContents;
-    waveDiscoveryView.setBounds({ x: 0, y: 0, width: 1000, height: 800 });
-    discoveryContents.setUserAgent(globalUserAgent);
-    discoveryContents.setAudioMuted(true);
-    discoveryContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+        (contents) => {
+            if (!contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
+        },
+    );
     clientContents.setUserAgent(globalUserAgent);
     translationService = new TranslationService();
-    themeService = new ThemeService(store);
-    pluginService = new PluginService(store);
+    themeService = new ThemeService(
+        store,
+        (event, channel) =>
+            settingsManager?.owns(event.sender) === true ||
+            (channel === 'get-theme-colors' && headerView?.webContents === event.sender),
+    );
+    pluginService = new PluginService(store, (event) => settingsManager?.owns(event.sender) === true);
     pluginService.setContentView(contentView);
     let waveHistoryLoaded = false;
     let waveCurrent = '';
@@ -743,14 +755,27 @@ async function init() {
     };
     let nativeQueueAvailable = Date.now() - Number(store.get(nativeQueueFailureKey) || 0) > 60 * 60 * 1000;
     let nativeQueueTask: Promise<void> | null = null;
+    let nativeQueueAttempt = 0;
+    let nativeAdding: WaveCandidate | null = null;
+    let nativeQueueResetTask: Promise<void> | null = null;
     let lastQueueInspection = 0;
     let waveShuffle = false;
     let waveLikeView: BrowserView | null = null;
     let importView: BrowserView | null = null;
-    let importDraft: {
-        source: SourcePlaylist;
-        matches: ImportMatch[];
-    } | null = null;
+    const importJournal = new ImportJournal(libraryStore, currentAccountId);
+    let importDraft: ImportJob | null = importJournal.current() || null;
+    const availabilityRoute = () =>
+        JSON.stringify([
+            currentAccountId,
+            store.get('proxyEnabled'),
+            store.get('proxyHost'),
+            store.get('proxyPort'),
+            store.get('cloudflareMode'),
+            store.get('cloudflareEndpoint'),
+        ]);
+    const importDomPool = new TaskPool(() =>
+        freemem() < 2 * 1024 ** 3 || waveVisible || lastTrackInfo.isPlaying ? 2 : 3,
+    );
     let importTask: Promise<unknown> | null = null;
     let importScanController: AbortController | null = null;
     let importCommitController: AbortController | null = null;
@@ -778,6 +803,10 @@ async function init() {
         view.webContents.setUserAgent(globalUserAgent);
         view.webContents.setAudioMuted(true);
         view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+        if (search)
+            view.webContents.on('did-navigate', (_event, _url, status) => {
+                if (status === 429) importDomPool.backoff();
+            });
         return view;
     };
     const getImportView = () => {
@@ -786,6 +815,16 @@ async function init() {
         return importView.webContents;
     };
     mainWindow.once('closed', () => {
+        stopWindowWork?.();
+        windowIpc.dispose();
+        lastFmService?.dispose();
+        webhookService?.dispose();
+        presenceService?.dispose();
+        themeService?.dispose();
+        pluginService?.dispose();
+        settingsManager?.dispose();
+        notificationManager?.dispose();
+        shortcutService?.destroy();
         importScanController?.abort();
         importCommitController?.abort();
         for (const view of importSearchViews) closeImportView(view);
@@ -799,6 +838,8 @@ async function init() {
         detail = '',
         update: Record<string, unknown> = {},
     ) => {
+        if (completed === 0 || completed === total || phase === 'error' || completed % 25 === 0)
+            traceWave('import-' + phase, undefined, undefined, `${completed}/${total} ${detail}`.slice(0, 300));
         if (!clientContents.isDestroyed())
             clientContents.send('playlist-import:progress', { phase, completed, total, detail, ...update });
     };
@@ -841,11 +882,10 @@ async function init() {
             syncMediaEndCapture();
         }
     };
-    const knownLike = (url: string) => waveKnownLikes.get(url) ?? waveEngine.liked(url);
+    const knownLike = (url: string) => waveKnownLikes.get(url) ?? waveRecommender.liked(url);
     const likeState = (url: string) => ({ url, known: knownLike(url) !== undefined, liked: knownLike(url) === true });
     const sendLikeState = (url: string) => {
         sendInline('liked', likeState(url));
-        waveHomeView?.webContents.send('wave-home:liked', url, knownLike(url) === true);
     };
     const getLikeView = () => {
         if (!waveLikeView?.webContents || waveLikeView.webContents.isDestroyed()) {
@@ -867,10 +907,13 @@ async function init() {
     };
     const releaseLikePage = () => {
         if (waveLikeView?.webContents && !waveLikeView.webContents.isDestroyed())
-            void waveLikeView.webContents.loadURL('about:blank').catch(() => {});
+            waveLikeView.webContents.close({ waitForBeforeUnload: false });
+        waveLikeView = null;
     };
-    const relatedDiscovery = new RelatedDiscovery((url) => discoverRelatedCandidates(discoveryContents, url));
-    const waveRecommender = new SoundCloudRecommender(store, currentAccountId, async (seeds) => {
+    const relatedDiscovery = new RelatedDiscovery((url) =>
+        discoveryPage.use((contents) => discoverRelatedCandidates(contents, url)),
+    );
+    const waveRecommender = new SoundCloudRecommender(libraryStore, currentAccountId, async (seeds) => {
         const generation = waveGeneration;
         return relatedDiscovery.discover(seeds, () => waveVisible && generation === waveGeneration);
     });
@@ -878,7 +921,10 @@ async function init() {
     clientContents.on('did-finish-load', () => {
         if (clientContents.isDestroyed() || !clientContents.getURL().startsWith('https://soundcloud.com/')) return;
         void clientContents
-            .executeJavaScript(`(${installWaveMediaEndCapture.toString()})()`, true)
+            .executeJavaScript(
+                `(${installWaveMediaEndCapture.toString()})();(${installAudioFeatureCapture.toString()})()`,
+                true,
+            )
             .then(syncMediaEndCapture)
             .catch((error) => console.debug('Wave media end hook unavailable:', error));
         if (!stationRecoveryAttempted && stationAutoplayPrevious === true && !waveVisible) {
@@ -918,6 +964,8 @@ async function init() {
         );
         const features: SoundFeatures | undefined = audioSamples
             ? {
+                  source: 'media-element-v1',
+                  sampleSeconds: audioSamples,
                   energy: audioTotals.energy / audioSamples,
                   bass: audioTotals.bass / audioSamples,
                   brightness: audioTotals.brightness / audioSamples,
@@ -946,12 +994,15 @@ async function init() {
         waveRecommender.setControls(waveControls);
         if (JSON.stringify(waveControls) !== previous) {
             waveQueueEpoch++;
+            waveGeneration++;
+            playback.invalidate();
             for (const candidate of waveFuture) waveRecommender.release(candidate);
             waveFuture.length = 0;
             wavePrepared.clear();
             if (waveVisible)
-                void prepareUpcoming()
-                    .then(fillNativeQueue)
+                void resetNativeQueue()
+                    .then(prepareUpcoming)
+                    .then(() => (waveCurrentCandidate ? fillNativeQueue() : playback.request('start')))
                     .catch((error) => console.debug('Wave settings refresh unavailable:', error));
         }
         store.set(controlsKey, waveControls);
@@ -966,88 +1017,105 @@ async function init() {
         if (wavePrepared.length >= 3) return;
         const generation = waveGeneration;
         const settingsEpoch = waveQueueEpoch;
-        await wavePrepared.prepare(async () => {
-            const previousSearch = waveSearchTail;
-            let release!: () => void;
-            waveSearchTail = new Promise<void>((resolve) => {
-                release = resolve;
-            });
-            await previousSearch;
-            try {
-                if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible) return [];
-                const minimum = waveStarting || waveNextTask ? 1 : 3;
+        await wavePrepared.prepare(
+            async (publish) => {
+                const target = waveStarting || waveNextTask ? 1 : 3;
                 const available = () =>
                     waveRecommender
                         .rank(20)
                         .filter(
                             (item) =>
-                                (waveControls.discovery === 'favorites' || item.source === 'related') &&
+                                (['favorites', 'balanced', 'familiar'].includes(waveControls.discovery || 'balanced') ||
+                                    item.source === 'related') &&
                                 item.url !== waveCurrent &&
                                 item.url !== lastTrackInfo.url &&
                                 !waveFuture.some((future) => future.url === item.url) &&
                                 !nativeQueued.some((queued) => queued.url === item.url),
                         );
-                if (available().length < minimum) {
-                    try {
-                        const visible = (await clientContents.executeJavaScript(
-                            `(${extractWaveLinks.toString()})()`,
-                            true,
-                        )) as WaveCandidate[];
-                        waveRecommender.addCandidates(visible);
-                    } catch (error) {
-                        console.debug('Wave visible recommendations unavailable:', error);
-                    }
+                const cached = available().slice(0, 4);
+                if (cached.length) {
+                    const checked = await Promise.all(cached.map(enrichPublicTrack));
+                    if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible) return [];
+                    waveRecommender.addCandidates(checked);
+                    const ready = waveRecommender.rankBuffered(checked).slice(0, target);
+                    publish(ready);
+                    if (ready.length >= target) return ready;
                 }
-                if (!available().length && waveControls.discovery === 'favorites') return [];
-                if (available().length < minimum && waveControls.discovery !== 'favorites')
-                    await waveRecommender.refresh();
-                if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible) return [];
-                const playable: WaveCandidate[] = [];
-                const targetCount = waveStarting || waveNextTask ? 1 : 3;
-                for (let round = 0; round < 2 && playable.length < targetCount; round++) {
-                    if (round && waveControls.discovery !== 'favorites') await waveRecommender.refresh();
-                    const ranked = available().slice(0, 12);
-                    for (let i = 0; i < ranked.length && playable.length < targetCount; i += 4) {
-                        const batch = await Promise.all(ranked.slice(i, i + 4).map(enrichPublicTrack));
-                        if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible)
-                            return [];
-                        waveRecommender.addCandidates(batch);
-                        for (const candidate of waveRecommender.rankBuffered(batch)) {
-                            const duration = candidate.durationSeconds;
-                            if (duration && (duration < 45 || duration > 1200)) {
-                                waveRecommender.reserve(candidate);
-                                traceWave('duration-rejected', waveCurrent, candidate.url, String(duration));
-                                continue;
-                            }
-                            if (!playable.some((old) => old.url === candidate.url)) playable.push(candidate);
+
+                const previousSearch = waveSearchTail;
+                let release!: () => void;
+                waveSearchTail = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                await previousSearch;
+                try {
+                    if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible) return [];
+                    const minimum = waveStarting || waveNextTask ? 1 : 3;
+                    if (available().length < minimum) {
+                        try {
+                            const visible = (await clientContents.executeJavaScript(
+                                `(${extractWaveLinks.toString()})()`,
+                                true,
+                            )) as WaveCandidate[];
+                            waveRecommender.addCandidates(visible);
+                        } catch (error) {
+                            console.debug('Wave visible recommendations unavailable:', error);
                         }
                     }
+                    if (!available().length && waveControls.discovery === 'favorites') return [];
+                    if (available().length < minimum && waveControls.discovery !== 'favorites')
+                        await waveRecommender.refresh();
+                    if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible) return [];
+                    const playable: WaveCandidate[] = [];
+                    const targetCount = waveStarting || waveNextTask ? 1 : 3;
+                    for (let round = 0; round < 2 && playable.length < targetCount; round++) {
+                        if (round && waveControls.discovery !== 'favorites') await waveRecommender.refresh();
+                        const ranked = available().slice(0, 12);
+                        for (let i = 0; i < ranked.length && playable.length < targetCount; i += 4) {
+                            const batch = await Promise.all(ranked.slice(i, i + 4).map(enrichPublicTrack));
+                            if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible)
+                                return [];
+                            waveRecommender.addCandidates(batch);
+                            for (const candidate of waveRecommender.rankBuffered(batch)) {
+                                const duration = candidate.durationSeconds;
+                                if (duration && (duration < 45 || duration > 1200)) {
+                                    waveRecommender.reserve(candidate);
+                                    traceWave('duration-rejected', waveCurrent, candidate.url, String(duration));
+                                    continue;
+                                }
+                                if (!playable.some((old) => old.url === candidate.url)) playable.push(candidate);
+                            }
+                            publish(waveRecommender.rankBuffered(playable).slice(0, targetCount));
+                        }
+                    }
+                    return waveRecommender.rankBuffered(playable).slice(0, targetCount);
+                } finally {
+                    release();
                 }
-                return waveRecommender.rankBuffered(playable).slice(0, targetCount);
-            } finally {
-                release();
-            }
-        }, [
-            waveCurrent,
-            lastTrackInfo.url,
-            ...waveFuture.map((candidate) => candidate.url),
-            ...nativeQueued.map((candidate) => candidate.url),
-        ]);
+            },
+            [
+                waveCurrent,
+                lastTrackInfo.url,
+                ...waveFuture.map((candidate) => candidate.url),
+                ...nativeQueued.map((candidate) => candidate.url),
+            ],
+        );
     };
-    if (savedControls && typeof savedControls === 'object') setControls(savedControls);
     const takeDiverseUpcoming = async (): Promise<WaveCandidate | undefined> => {
         const epoch = waveQueueEpoch;
         const options: WaveCandidate[] = [];
         const collect = async () => {
             while (options.length < 3) {
-                const next = waveFuture.pop() || (await wavePrepared.take(waveShuffle));
+                const next =
+                    waveFuture.pop() ||
+                    (options.length && !wavePrepared.length ? undefined : await wavePrepared.take(waveShuffle));
                 if (!next) break;
                 if (next.url !== waveCurrent && !options.some((item) => item.url === next.url)) options.push(next);
             }
         };
         await collect();
         if (!options.length) {
-            await prepareUpcoming();
+            void prepareUpcoming().catch((error) => console.debug('Wave preparation unavailable:', error));
             await collect();
         }
         if (epoch !== waveQueueEpoch || !waveVisible) return undefined;
@@ -1059,7 +1127,7 @@ async function init() {
         );
         if (!ranked.length) {
             options.length = 0;
-            await prepareUpcoming();
+            void prepareUpcoming().catch((error) => console.debug('Wave preparation unavailable:', error));
             await collect();
             if (epoch !== waveQueueEpoch || !waveVisible) return undefined;
             ranked = waveRecommender.rankBuffered(
@@ -1082,11 +1150,11 @@ async function init() {
             if (waveNextTask && waveNextTaskGeneration === waveGeneration) return waveNextTask;
         }
         const generation = waveGeneration;
+        nativeQueueAttempt++;
         traceWave('next-requested', waveCurrent, undefined, reason);
         const task = (async () => {
             try {
                 if (reason === 'user') {
-                    waveEngine.skipCurrent();
                     recordCurrent('skip');
                 } else if (reason === 'finish') recordCurrent('complete');
                 else if (reason === 'error') recordCurrent('play');
@@ -1128,7 +1196,7 @@ async function init() {
                 }
                 if (generation !== waveGeneration || !waveVisible) return;
                 if (!chosen) throw playError || new Error(noSelectionMessage());
-                waveRecommender.reserve(chosen);
+                waveRecommender.reserve(chosen, true);
                 if (waveCurrentCandidate) {
                     waveHistory.push(waveCurrentCandidate);
                     if (waveHistory.length > 100) waveHistory.shift();
@@ -1141,10 +1209,8 @@ async function init() {
                 audioTotals.energy = 0;
                 audioTotals.bass = 0;
                 audioTotals.brightness = 0;
-                waveHomeView?.webContents.send('wave-home:play-track', chosen);
                 sendInline('candidate', chosen);
                 sendLikeState(chosen.url);
-                waveHomeView?.webContents.send('wave-home:state', 'playing');
                 sendInline('state', 'playing');
                 void disableStationAutoplay().catch((error) =>
                     console.debug('Wave station autoplay refresh unavailable:', error),
@@ -1156,7 +1222,6 @@ async function init() {
             } catch (error) {
                 if (generation !== waveGeneration || !waveVisible) return;
                 const message = error instanceof Error ? error.message : 'Не удалось подобрать трек.';
-                waveHomeView?.webContents.send('wave-home:state', 'error', message);
                 sendInline('state', 'error', message);
                 throw error;
             }
@@ -1166,57 +1231,114 @@ async function init() {
         try {
             await task;
         } finally {
-            if (waveNextTask === task) waveNextTask = null;
+            if (waveNextTask === task) {
+                waveNextTask = null;
+                if (!clientContents.isDestroyed())
+                    void clientContents
+                        .executeJavaScript(
+                            'if (window.__waveMediaEndState) Object.assign(window.__waveMediaEndState, {handoffPending:false, protectedUntil:0, expectedPath:undefined})',
+                        )
+                        .catch(() => {});
+            }
             if (waveVisible)
                 void prepareUpcoming().catch((error) => console.debug('Wave buffer refill unavailable:', error));
         }
     };
+    const playback = new PlaybackCoordinator({
+        active: () => waveVisible && !clientContents.isDestroyed(),
+        nativeReady: () => nativeQueueAvailable && nativeQueued.length > 0,
+        select: chooseNext,
+        advanceNative: async () => {
+            const previous = waveCurrent;
+            const generation = waveGeneration;
+            const clicked = await clientContents.executeJavaScript(
+                `(() => {
+                const button = document.querySelector('.skipControl__next');
+                if (!button || button.disabled) return false;
+                button.click(); return true;
+            })()`,
+                true,
+            );
+            if (!clicked) throw new Error('SoundCloud не показал кнопку следующего трека.');
+            const deadline = Date.now() + 4000;
+            while (waveVisible && generation === waveGeneration && waveCurrent === previous && Date.now() < deadline)
+                await new Promise((resolve) => setTimeout(resolve, 80));
+            if (waveVisible && generation === waveGeneration && waveCurrent === previous)
+                throw new Error('SoundCloud не подтвердил переход к следующему треку.');
+        },
+    });
     onWaveNextRequest = () => {
-        void chooseNext('user').catch((error) => console.debug('Wave next unavailable:', error));
+        void playback.request('user').catch((error) => console.debug('Wave next unavailable:', error));
     };
     const fillNativeQueue = async (): Promise<void> => {
+        if (nativeQueueResetTask) await nativeQueueResetTask;
         if (nativeQueueTask) return nativeQueueTask;
         const generation = waveGeneration;
+        const attempt = nativeQueueAttempt;
         const task = (async () => {
             let missingCandidates = 0;
             if (!nativeQueueAvailable && waveFuture.length) sendInline('state', 'playing', 'Следующий трек готов');
             while (
                 waveVisible &&
                 generation === waveGeneration &&
-                (nativeQueueAvailable ? nativeQueued.length < 1 : waveFuture.length < 1)
+                attempt === nativeQueueAttempt &&
+                (nativeQueueAvailable ? nativeQueued.length < 3 : waveFuture.length < 3)
             ) {
                 await prepareUpcoming();
                 const next = await takeDiverseUpcoming();
-                if (!next || generation !== waveGeneration || !waveVisible) break;
+                if (!next || generation !== waveGeneration || attempt !== nativeQueueAttempt || !waveVisible) break;
                 if (next.url === waveCurrent || nativeQueued.some((item) => item.url === next.url)) continue;
                 if (nativeQueueAvailable) {
                     try {
                         const occupied = (await listNativeNextUp(clientContents)).some(
-                            (url) => trackPath(url) !== trackPath(waveCurrent),
+                            (url) =>
+                                trackPath(url) !== trackPath(waveCurrent) &&
+                                !nativeQueued.some((item) => trackPath(item.url) === trackPath(url)),
                         );
                         if (occupied) {
+                            if (nativeQueued.length) {
+                                waveFuture.push(next);
+                                waveRecommender.reserve(next);
+                                break;
+                            }
                             nativeQueueAvailable = false;
                             traceWave('queue-occupied', waveCurrent, next.url);
                         } else {
+                            nativeAdding = next;
                             await addToNativeNextUp(
                                 clientContents,
                                 next.url,
                                 next.title,
                                 next.sourceQuery,
-                                () => generation === waveGeneration && waveVisible,
+                                () => generation === waveGeneration && attempt === nativeQueueAttempt && waveVisible,
                             );
+                            nativeAdding = null;
                             store.set(nativeQueueFailureKey, 0);
                             traceWave('queue-confirmed', waveCurrent, next.url);
                         }
                     } catch (error) {
-                        if (error instanceof NativeActionCanceledError) break;
+                        if (error instanceof NativeActionCanceledError) {
+                            if (!clientContents.isDestroyed() && nativeAdding?.url === next.url)
+                                await removeNativeNextUp(clientContents, [next.url]).catch(() => false);
+                            if (waveVisible && generation === waveGeneration) {
+                                waveFuture.push(next);
+                                waveRecommender.reserve(next);
+                            }
+                            break;
+                        }
                         if (error instanceof NativeTrackNotFoundError) {
                             traceWave('queue-candidate-missing', waveCurrent, next.url);
                             waveRecommender.reserve(next);
                             if (++missingCandidates < 3) continue;
+                            if (nativeQueued.length) break;
                             nativeQueueAvailable = false;
                             traceWave('queue-search-fallback', waveCurrent);
                             continue;
+                        }
+                        if (nativeQueued.length) {
+                            waveFuture.push(next);
+                            waveRecommender.reserve(next);
+                            break;
                         }
                         nativeQueueAvailable = false;
                         store.set(nativeQueueFailureKey, Date.now());
@@ -1229,9 +1351,11 @@ async function init() {
                         console.debug('Native Next Up unavailable; using prepared Wave transition:', error);
                     }
                 }
-                if (generation !== waveGeneration || !waveVisible) break;
-                if (nativeQueueAvailable) nativeQueued.push(next);
-                else waveFuture.push(next);
+                if (generation !== waveGeneration || attempt !== nativeQueueAttempt || !waveVisible) break;
+                if (nativeQueueAvailable) {
+                    nativeQueued.push(next);
+                    waveRecommender.reserve(next, true);
+                } else waveFuture.push(next);
                 sendInline('queue-ready', nativeQueueAvailable && nativeQueued.length > 0);
                 waveRecommender.reserve(next);
                 sendInline('state', 'playing', 'Следующий трек готов');
@@ -1241,13 +1365,43 @@ async function init() {
         try {
             await task;
         } finally {
-            if (nativeQueueTask === task) nativeQueueTask = null;
+            if (nativeQueueTask === task) {
+                nativeQueueTask = null;
+                nativeAdding = null;
+            }
         }
     };
+    const resetNativeQueue = async (): Promise<void> => {
+        if (nativeQueueResetTask) return nativeQueueResetTask;
+        const stale = [...nativeQueued, ...(nativeAdding ? [nativeAdding] : [])];
+        nativeQueued.length = 0;
+        sendInline('queue-ready', false);
+        const task = (async () => {
+            await nativeQueueTask?.catch(() => {});
+            if (clientContents.isDestroyed()) return;
+            if (stale.length) {
+                const removed = await removeNativeNextUp(
+                    clientContents,
+                    stale.map((item) => item.url),
+                );
+                nativeQueueAvailable = removed;
+                traceWave('queue-reset', waveCurrent, undefined, removed ? 'confirmed' : 'prepared-transition');
+                for (const item of stale) waveRecommender.release(item);
+            }
+            nativeAdding = null;
+        })();
+        nativeQueueResetTask = task;
+        try {
+            await task;
+        } finally {
+            if (nativeQueueResetTask === task) nativeQueueResetTask = null;
+        }
+    };
+    if (savedControls && typeof savedControls === 'object') setControls(savedControls);
     let waveTasteTask: Promise<void> | undefined;
     const loadWaveTaste = async (): Promise<void> => {
         if (waveTasteTask) return waveTasteTask;
-        if (waveHistoryLoaded || !waveDiscoveryView) return;
+        if (waveHistoryLoaded || windowWorkStopped || isQuitting || clientContents.isDestroyed()) return;
         const previousSearch = waveSearchTail;
         let release!: () => void;
         waveSearchTail = new Promise<void>((resolve) => {
@@ -1256,15 +1410,15 @@ async function init() {
         const task = (async () => {
             await previousSearch;
             try {
-                if (!waveDiscoveryView || discoveryContents.isDestroyed()) return;
-                const personal = await discoverPersonalHistory(discoveryContents);
-                waveEngine.ingestLikes(personal.likes);
+                if (windowWorkStopped || isQuitting || clientContents.isDestroyed()) return;
+                const personal = await discoveryPage.use(discoverPersonalHistory);
+                if (windowWorkStopped || isQuitting || clientContents.isDestroyed()) return;
                 waveRecommender.seedLikes(personal.likes);
                 waveRecommender.seedRecent(personal.recent);
                 waveHistoryLoaded = personal.likes.length > 0 || personal.recent.length > 0;
-                sendInline('stats', waveEngine.stats());
+                sendInline('stats', waveRecommender.stats());
             } catch (error) {
-                console.debug('Wave taste history unavailable:', error);
+                if (!windowWorkStopped && !isQuitting) console.debug('Wave taste history unavailable:', error);
             } finally {
                 release();
             }
@@ -1276,11 +1430,6 @@ async function init() {
             if (waveTasteTask === task) waveTasteTask = undefined;
         }
     };
-    clientContents.once('did-finish-load', () => {
-        windowTasks.defer(() => {
-            void loadWaveTaste();
-        }, 1800);
-    });
     const disposeWaveViews = () => {
         windowTasks.dispose();
         waveVisible = false;
@@ -1288,13 +1437,68 @@ async function init() {
         waveQueueEpoch++;
         wavePrepared.clear();
         onNativeWaveTrackUpdate = null;
-        for (const view of [waveDiscoveryView, waveLikeView]) {
+        onNativeProgress = undefined;
+        discoveryPage.dispose();
+        for (const view of [waveLikeView]) {
             const contents = view?.webContents;
             if (contents && !contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
         }
     };
+    let windowWorkStopped = false;
+    stopWindowWork = () => {
+        if (windowWorkStopped) return;
+        windowWorkStopped = true;
+        if (waveVisible && waveCurrentCandidate) recordCurrent('play');
+        else if (lastTrackInfo.url) {
+            const fraction = waveListening.fraction(lastTrackInfo.url, parseTime(lastTrackInfo.duration));
+            waveRecommender.record(
+                { url: lastTrackInfo.url, title: lastTrackInfo.title, artist: lastTrackInfo.author, sourceRank: 0 },
+                fraction >= 0.9 ? 'complete' : 'play',
+                fraction,
+            );
+        }
+        importScanController?.abort();
+        importCommitController?.abort();
+        playback.invalidate();
+        waveRecommender.clearCandidates();
+        disposeWaveViews();
+        onWaveNextRequest = null;
+    };
+    let confirmedPlaybackUrl = '';
+    onNativeProgress = (track) => {
+        if (
+            track.url &&
+            track.url !== confirmedPlaybackUrl &&
+            track.isPlaying &&
+            waveListening.fraction(track.url, parseTime(track.duration)) * parseTime(track.duration) >= 3
+        ) {
+            confirmTrackPlayback(clientContents.session, track.url, availabilityRoute());
+            confirmedPlaybackUrl = track.url;
+        }
+    };
     onNativeWaveTrackUpdate = (track) => {
-        if (!waveVisible) return;
+        onNativeProgress?.(track);
+        if (!waveVisible) {
+            if (lastTrackInfo.url && lastTrackInfo.url !== track.url) {
+                const old = lastTrackInfo;
+                const fraction = waveListening.fraction(old.url || '', parseTime(old.duration));
+                waveRecommender.record(
+                    { url: old.url!, title: old.title, artist: old.author, sourceRank: 0 },
+                    fraction >= 0.9 ? 'complete' : fraction < 0.2 ? 'skip' : 'play',
+                    fraction,
+                );
+            }
+            if (
+                track.url &&
+                waveRecommender.liked(track.url) !== track.isLiked &&
+                (track.isLiked || lastTrackInfo.url === track.url)
+            )
+                waveRecommender.record(
+                    { url: track.url, title: track.title, artist: track.author, sourceRank: 0 },
+                    track.isLiked ? 'like' : 'unlike',
+                );
+            return;
+        }
         sendInline('track', track);
         if (!track.url) return;
         if (track.url !== lastTrackInfo.url) {
@@ -1323,14 +1527,7 @@ async function init() {
             if (!nativeQueueAvailable || (!nativeQueued.length && !nativeQueueTask)) {
                 const duration = parseTime(track.duration);
                 const elapsed = parseTime(track.elapsed);
-                if (duration > 0 && elapsed >= duration - 2) waveReachedEnd = true;
-                if (
-                    lastTrackInfo.isPlaying &&
-                    !track.isPlaying &&
-                    duration > 0 &&
-                    (elapsed >= duration - 1 || (waveReachedEnd && elapsed === 0))
-                )
-                    void chooseNext('finish').catch((error) => console.debug('Wave transition unavailable:', error));
+                waveReachedEnd = duration > 0 && elapsed >= duration - 1;
                 return;
             }
             if (Date.now() - lastQueueInspection > 7000 && !nativeQueueTask) {
@@ -1357,9 +1554,9 @@ async function init() {
         if ((!nativeQueueAvailable || !nativeQueued.length) && waveCurrentCandidate) {
             const duration = parseTime(lastTrackInfo.duration);
             const elapsed = parseTime(lastTrackInfo.elapsed);
-            void chooseNext(waveReachedEnd || (duration > 0 && elapsed >= duration - 2) ? 'finish' : 'user').catch(
-                (error) => console.debug('Wave transition unavailable:', error),
-            );
+            void playback
+                .request(waveReachedEnd || (duration > 0 && elapsed >= duration - 2) ? 'finish' : 'user')
+                .catch((error) => console.debug('Wave transition unavailable:', error));
             return;
         }
         if (waveCurrentCandidate) {
@@ -1381,7 +1578,7 @@ async function init() {
         if (index >= 0) nativeQueued.splice(0, index + 1);
         sendInline('queue-ready', nativeQueueAvailable && nativeQueued.length > 0);
         if (waveCurrentCandidate) {
-            waveRecommender.reserve(waveCurrentCandidate);
+            waveRecommender.reserve(waveCurrentCandidate, true);
             sendInline('candidate', waveCurrentCandidate);
             sendLikeState(waveCurrentCandidate.url);
         }
@@ -1404,13 +1601,11 @@ async function init() {
         if (!waveVisible) return;
         sendInline('queue-ready', false);
         waveVisible = false;
+        playback.invalidate();
         waveReachedEnd = false;
         waveGeneration++;
         waveQueueEpoch++;
-        if (waveDiscoveryView && !discoveryContents.isDestroyed()) {
-            discoveryContents.stop();
-            void discoveryContents.loadURL('about:blank').catch(() => {});
-        }
+        discoveryPage.release();
         recordCurrent('play');
         waveRecommender.clearCandidates();
         waveRecommender.setAnchor(undefined);
@@ -1419,7 +1614,7 @@ async function init() {
         if (!likeTask) releaseLikePage();
         sendInline('active', false);
         updateWaveVisibility();
-        nativeQueued.length = 0;
+        void resetNativeQueue().catch((error) => console.debug('Wave queue reset unavailable:', error));
         void restoreStationAutoplay().catch((error) =>
             console.debug('Wave station autoplay restore unavailable:', error),
         );
@@ -1445,41 +1640,12 @@ async function init() {
                         .some((candidate) => waveControls.discovery === 'favorites' || candidate.source === 'related')
                 )
                     await loadWaveTaste();
-                await prepareUpcoming();
-                let first: WaveCandidate | undefined;
-                let playError: unknown;
-                for (let attempt = 0; attempt < 5; attempt++) {
-                    const candidate = await takeDiverseUpcoming();
-                    if (generation !== waveGeneration || !waveVisible) return 'open';
-                    if (!candidate) break;
-                    waveCurrent = candidate.url;
-                    try {
-                        await clientContents.executeJavaScript(
-                            `if (window.__waveMediaEndState) window.__waveMediaEndState.expectedPath = ${JSON.stringify(trackPath(candidate.url))};`,
-                            true,
-                        );
-                        await playInNativePlayer(
-                            clientContents,
-                            candidate.url,
-                            candidate.title,
-                            candidate.sourceQuery,
-                            () => generation === waveGeneration && waveVisible,
-                        );
-                        first = candidate;
-                        break;
-                    } catch (error) {
-                        waveCurrent = lastTrackInfo.url;
-                        playError = error;
-                        waveRecommender.reserve(candidate);
-                    }
-                }
-                if (!first) throw playError || new Error(noSelectionMessage());
-                waveCurrentCandidate = first;
-                waveRecommender.setAnchor(first);
-                waveReachedEnd = false;
-                waveCurrentRecorded = false;
-                waveRecommender.reserve(first);
-                sendInline('candidate', first);
+                if (
+                    waveControls.discovery !== 'favorites' &&
+                    !waveRecommender.rank(20).some((candidate) => candidate.source === 'related')
+                )
+                    await waveRecommender.refresh();
+                await playback.request('start');
             } else {
                 waveCurrent = lastTrackInfo.url;
                 waveCurrentCandidate = {
@@ -1491,7 +1657,7 @@ async function init() {
                 };
                 waveRecommender.setAnchor(waveCurrentCandidate);
                 waveCurrentRecorded = false;
-                waveRecommender.reserve(waveCurrentCandidate);
+                waveRecommender.reserve(waveCurrentCandidate, true);
                 sendInline('candidate', waveCurrentCandidate);
                 waveReachedEnd = false;
                 sendInline('track', lastTrackInfo);
@@ -1526,6 +1692,15 @@ async function init() {
     const waveDiagnostics = () => ({
         version: app.getVersion(),
         source: 'related-tracks',
+        events: waveTrace.slice(-80),
+        import: importDraft
+            ? {
+                  source: importDraft.source.platform,
+                  total: importDraft.matches.length,
+                  matched: importDraft.matches.filter((match) => match.soundcloud).length,
+                  updatedAt: importDraft.updatedAt,
+              }
+            : undefined,
         controls: { ...waveControls },
         discovery: relatedDiscovery.diagnostics(),
         recommendation: waveRecommender.diagnostics(),
@@ -1535,12 +1710,12 @@ async function init() {
         choosing: Boolean(waveNextTask),
         filling: Boolean(nativeQueueTask),
     });
-    ipcMain.handle('wave-inline:copy-diagnostics', (event) => {
+    windowIpc.handle('wave-inline:copy-diagnostics', (event) => {
         if (!isTrustedSoundCloudSender(event)) throw new Error('Недоверенная страница.');
         clipboard.writeText(JSON.stringify(waveDiagnostics(), null, 2));
         return true;
     });
-    ipcMain.handle('wave-inline:ready', (event) => {
+    windowIpc.handle('wave-inline:ready', (event) => {
         if (!isTrustedSoundCloudSender(event)) return null;
         return {
             active: waveVisible,
@@ -1548,7 +1723,7 @@ async function init() {
             controls: waveControls,
             excludedArtists: waveRecommender.getExcludedArtists(),
             track: waveVisible ? lastTrackInfo : null,
-            stats: waveEngine.stats(),
+            stats: waveRecommender.stats(),
             candidate: waveCurrentCandidate,
             diagnostics: waveDiagnostics(),
             queueReady: nativeQueueAvailable && nativeQueued.length > 0,
@@ -1556,14 +1731,14 @@ async function init() {
             visible: mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
         };
     });
-    ipcMain.handle('wave-inline:set-language', (event, language: unknown) => {
+    windowIpc.handle('wave-inline:set-language', (event, language: unknown) => {
         if (!isTrustedSoundCloudSender(event) || !['auto', 'ru', 'en'].includes(String(language)))
             throw new Error('Invalid interface language');
         store.set('waveInterfaceLanguage', language);
         sendInline('interface-language', language);
         return language;
     });
-    ipcMain.handle('wave-inline:like', async (event, url: unknown, desired: unknown) => {
+    windowIpc.handle('wave-inline:like', async (event, url: unknown, desired: unknown) => {
         if (
             !isTrustedSoundCloudSender(event) ||
             !waveVisible ||
@@ -1588,14 +1763,12 @@ async function init() {
         try {
             const liked = await task;
             waveKnownLikes.set(candidate.url, liked);
-            waveEngine.setLiked(candidate.url, liked, candidate);
             waveRecommender.record(candidate, liked ? 'like' : 'unlike');
             if (waveCurrent === candidate.url && waveVisible) {
                 if (lastTrackInfo.url === candidate.url) lastTrackInfo = { ...lastTrackInfo, isLiked: liked };
                 sendLikeState(candidate.url);
                 if (lastTrackInfo.url === candidate.url) sendInline('track', lastTrackInfo);
-                waveHomeView?.webContents.send('wave-home:stats', waveEngine.stats());
-                sendInline('stats', waveEngine.stats());
+                sendInline('stats', waveRecommender.stats());
             }
             return { url: candidate.url, liked };
         } finally {
@@ -1605,11 +1778,11 @@ async function init() {
             }
         }
     });
-    ipcMain.handle('wave-inline:start', async (event) => {
+    windowIpc.handle('wave-inline:start', async (event) => {
         if (!isTrustedSoundCloudSender(event)) throw new Error('Недоверенный вызов волны.');
         return startWave();
     });
-    ipcMain.handle('wave-inline:exclude-artist', async (event, artist: unknown, excluded: unknown) => {
+    windowIpc.handle('wave-inline:exclude-artist', async (event, artist: unknown, excluded: unknown) => {
         if (
             !isTrustedSoundCloudSender(event) ||
             typeof artist !== 'string' ||
@@ -1622,19 +1795,22 @@ async function init() {
             throw new Error('Исполнитель недоступен.');
         waveRecommender.excludeArtist(artist, excluded);
         if (excluded && nativeQueued.some((item) => item.artist.trim().toLowerCase() === artist.trim().toLowerCase())) {
-            nativeQueueAvailable = false;
-            nativeQueued.length = 0;
-            sendInline('queue-ready', false);
+            waveGeneration++;
+            playback.invalidate();
+            void resetNativeQueue()
+                .then(prepareUpcoming)
+                .then(fillNativeQueue)
+                .catch((error) => console.debug('Wave artist queue refresh unavailable:', error));
         }
         waveQueueEpoch++;
         for (const candidate of waveFuture) waveRecommender.release(candidate);
         waveFuture.length = 0;
         wavePrepared.clear();
         sendInline('excluded-artists', waveRecommender.getExcludedArtists());
-        if (excluded && waveVisible && waveCurrentCandidate?.artist === artist) await chooseNext('user');
+        if (excluded && waveVisible && waveCurrentCandidate?.artist === artist) await playback.request('user');
         return waveRecommender.getExcludedArtists();
     });
-    ipcMain.handle('wave-inline:dislike', async (event, url: unknown) => {
+    windowIpc.handle('wave-inline:dislike', async (event, url: unknown) => {
         if (
             !isTrustedSoundCloudSender(event) ||
             !waveVisible ||
@@ -1645,7 +1821,7 @@ async function init() {
             throw new Error('Трек уже сменился.');
         waveRecommender.record(waveCurrentCandidate, 'dislike');
         traceWave('feedback-dislike', waveCurrent);
-        await chooseNext('user');
+        await playback.request('user');
     });
     const scanPlaylist = async (load: (signal: AbortSignal) => Promise<SourcePlaylist>) => {
         if (importTask) throw new Error('Предыдущий импорт ещё выполняется.');
@@ -1653,65 +1829,76 @@ async function init() {
         importScanController = controller;
         const slots = new Map<number, BrowserView>();
         const task = (async () => {
-            importDraft = null;
             importProgress('source', 0, 0, 'Читаем плейлист…');
             const source = await load(controller.signal);
             controller.signal.throwIfAborted();
             const concurrency = automaticImportConcurrency(availableParallelism(), freemem(), source.tracks.length);
-            const availability = createAvailabilityChecker(clientContents.session, controller.signal);
+            const availability = createAvailabilityChecker(
+                clientContents.session,
+                controller.signal,
+                availabilityRoute(),
+            );
             importProgress('matching', 0, source.tracks.length, 'Ищем совпадения…', {
                 title: source.title,
                 tracks: source.tracks,
                 partial: source.partial,
                 concurrency,
             });
-            const partialMatches: ImportMatch[] = source.tracks.map((track) => ({
-                source: track,
-                error: 'Проверка ещё не завершена.',
-            }));
-            importDraft = { source, matches: partialMatches };
+            const job = importJournal.begin(source);
+            const partialMatches = job.matches;
+            importDraft = job;
             const matches = await mapImportTracks(source.tracks, {
                 concurrency,
                 signal: controller.signal,
-                run: async (track, _index, slot): Promise<ImportMatch> => {
-                    let view = slots.get(slot);
-                    if (!view || view.webContents.isDestroyed()) {
-                        view = createImportView(true);
-                        slots.set(slot, view);
-                        importSearchViews.add(view);
+                run: async (track, index): Promise<ImportMatch> => {
+                    const cached = partialMatches[index].soundcloud || importJournal.cached(track);
+                    if (cached) {
+                        const checked = await availability(cached.url);
+                        if (checked.status === 'available')
+                            return { source: track, soundcloud: { ...cached, availability: checked } };
                     }
-                    const currentView = view;
-                    const deadline = new AbortController();
-                    const signal = AbortSignal.any([controller.signal, deadline.signal]);
-                    let timedOut = false;
-                    const timer = setTimeout(() => {
-                        timedOut = true;
-                        deadline.abort();
-                    }, 40000);
-                    const closeOnAbort = () => closeImportView(currentView);
-                    signal.addEventListener('abort', closeOnAbort, { once: true });
-                    try {
-                        return await cancelImportOperation(
-                            findSoundCloudMatch(currentView.webContents, track, signal, availability),
-                            signal,
-                        );
-                    } catch {
-                        controller.signal.throwIfAborted();
-                        closeImportView(currentView);
-                        slots.delete(slot);
-                        return {
-                            source: track,
-                            error: timedOut
-                                ? 'Поиск занял слишком долго. Повторите проверку.'
-                                : 'SoundCloud не ответил. Повторите проверку.',
-                        };
-                    } finally {
-                        clearTimeout(timer);
-                        signal.removeEventListener('abort', closeOnAbort);
-                    }
+                    return importDomPool.run(async (slot) => {
+                        let view = slots.get(slot);
+                        if (!view || view.webContents.isDestroyed()) {
+                            view = createImportView(true);
+                            slots.set(slot, view);
+                            importSearchViews.add(view);
+                        }
+                        const currentView = view;
+                        const deadline = new AbortController();
+                        const signal = AbortSignal.any([controller.signal, deadline.signal]);
+                        let timedOut = false;
+                        const timer = setTimeout(() => {
+                            timedOut = true;
+                            deadline.abort();
+                        }, 40000);
+                        const closeOnAbort = () => closeImportView(currentView);
+                        signal.addEventListener('abort', closeOnAbort, { once: true });
+                        try {
+                            return await cancelImportOperation(
+                                findSoundCloudMatch(currentView.webContents, track, signal, availability),
+                                signal,
+                            );
+                        } catch {
+                            controller.signal.throwIfAborted();
+                            closeImportView(currentView);
+                            slots.delete(slot);
+                            return {
+                                source: track,
+                                error: timedOut
+                                    ? 'Поиск занял слишком долго. Повторите проверку.'
+                                    : 'SoundCloud не ответил. Повторите проверку.',
+                            };
+                        } finally {
+                            clearTimeout(timer);
+                            signal.removeEventListener('abort', closeOnAbort);
+                        }
+                    }, controller.signal);
                 },
                 onComplete: (match, index, completed) => {
                     partialMatches[index] = match;
+                    importJournal.remember(match);
+                    importJournal.save(job);
                     importProgress(
                         'matching',
                         completed,
@@ -1721,8 +1908,18 @@ async function init() {
                     );
                 },
             });
-            importDraft = { source, matches };
-            return { title: source.title, platform: source.platform, partial: source.partial, matches };
+            job.matches = matches;
+            importDraft = job;
+            importJournal.save(job);
+            return {
+                title: job.title || source.title,
+                platform: source.platform,
+                partial: source.partial,
+                matches,
+                selectedIndexes: job.selected,
+                savedUrls: job.savedUrls,
+                writtenTitle: job.writtenTitle,
+            };
         })();
         importTask = task;
         try {
@@ -1736,7 +1933,34 @@ async function init() {
             if (importTask === task) importTask = null;
         }
     };
-    ipcMain.handle('playlist-import:scan', (event, link: unknown) => {
+    windowIpc.handle('playlist-import:draft', () => importDraft);
+    windowIpc.handle('playlist-import:resume', () => {
+        if (!importDraft) throw new Error('Нет сохранённого импорта.');
+        const source = importDraft.source;
+        return scanPlaylist(async () => source);
+    });
+    windowIpc.on('playlist-import:selection', (_event, input: unknown) => {
+        if (!importDraft || !input || typeof input !== 'object') return;
+        const value = input as { indexes?: unknown; title?: unknown };
+        if (
+            !Array.isArray(value.indexes) ||
+            value.indexes.length > 500 ||
+            typeof value.title !== 'string' ||
+            value.title.length > 100
+        )
+            return;
+        importDraft.selected = [
+            ...new Set(
+                value.indexes.filter(
+                    (index): index is number =>
+                        Number.isInteger(index) && index >= 0 && index < importDraft!.matches.length,
+                ),
+            ),
+        ];
+        importDraft.title = value.title;
+        importJournal.save(importDraft);
+    });
+    windowIpc.handle('playlist-import:scan', (event, link: unknown) => {
         if (!isTrustedSoundCloudSender(event) || typeof link !== 'string' || link.length > 1000)
             throw new Error('Недопустимая ссылка на плейлист.');
         return scanPlaylist((signal) =>
@@ -1755,7 +1979,7 @@ async function init() {
             }),
         );
     });
-    ipcMain.handle('playlist-import:scan-file', async (event) => {
+    windowIpc.handle('playlist-import:scan-file', async (event) => {
         if (!isTrustedSoundCloudSender(event)) throw new Error('Недоверенная страница импорта.');
         if (importTask || importFileDialogOpen) throw new Error('Предыдущий импорт ещё выполняется.');
         importFileDialogOpen = true;
@@ -1776,7 +2000,7 @@ async function init() {
             importFileDialogOpen = false;
         }
     });
-    ipcMain.handle('playlist-import:commit', async (event, selection: unknown) => {
+    windowIpc.handle('playlist-import:commit', async (event, selection: unknown) => {
         const input = selection as {
             indexes?: unknown;
             title?: unknown;
@@ -1811,13 +2035,26 @@ async function init() {
             seenUrls.add(url);
             return true;
         });
+        draft.selected = indexes;
+        draft.title = input.title.trim();
+        importJournal.save(draft);
         const playlistTitle = input.title.trim();
         const controller = new AbortController();
         importCommitController = controller;
         const task = (async () => {
             const title = playlistTitle;
-            const availability = createAvailabilityChecker(clientContents.session, controller.signal);
+            const availability = createAvailabilityChecker(
+                clientContents.session,
+                controller.signal,
+                availabilityRoute(),
+            );
             const result = await saveImportSelection(chosen, {
+                saved: (item) => {
+                    if (draft.writtenTitle !== title) draft.savedUrls = [];
+                    draft.writtenTitle = title;
+                    draft.savedUrls = [...new Set([...(draft.savedUrls || []), item.soundcloud!.url])];
+                    importJournal.save(draft);
+                },
                 check: availability,
                 stopOnError: (error) => error instanceof PlaylistWriteError && error.fatal,
                 concurrency: automaticImportConcurrency(availableParallelism(), freemem(), chosen.length),
@@ -1838,6 +2075,10 @@ async function init() {
                     ),
                 progress: (phase, completed, total, detail) => importProgress(phase, completed, total, detail || title),
             });
+            draft.savedUrls = [
+                ...new Set([...(draft.savedUrls || []), ...result.successful.map((item) => item.soundcloud!.url)]),
+            ];
+            importJournal.save(draft);
             const failures = result.failures;
             if (!result.successful.length)
                 throw new Error(
@@ -1867,26 +2108,30 @@ async function init() {
             if (importTask === task) importTask = null;
         }
     });
-    ipcMain.on('playlist-import:cancel', (event) => {
+    windowIpc.on('playlist-import:cancel', (event) => {
         if (isTrustedSoundCloudSender(event) && importScanController) {
             importScanController.abort();
             for (const view of importSearchViews) closeImportView(view);
         }
     });
-    ipcMain.on('wave-inline:control', (event, command: unknown, value: unknown) => {
+    windowIpc.on('wave-inline:control', (event, command: unknown, value: unknown) => {
         if (!isTrustedSoundCloudSender(event) || typeof command !== 'string') return;
         if (!waveVisible && command !== 'stop') return;
         if (command === 'stop') {
             hideWave();
             return;
         }
+        if (command === 'prepare') {
+            void fillNativeQueue().catch((error) => console.debug('Wave preparation unavailable:', error));
+            return;
+        }
         if (command === 'next') {
-            void chooseNext('user').catch((error) => console.debug('Wave next unavailable:', error));
+            void playback.request('user').catch((error) => console.debug('Wave next unavailable:', error));
             return;
         }
         if (command === 'finish') {
             traceWave('media-ended-captured', waveCurrent);
-            void chooseNext('finish').catch((error) => console.debug('Wave finish unavailable:', error));
+            void playback.request('finish').catch((error) => console.debug('Wave finish unavailable:', error));
             return;
         }
         if (command === 'shuffle' && typeof value === 'boolean') {
@@ -1894,157 +2139,43 @@ async function init() {
             return;
         }
     });
-    ipcMain.on('wave-inline:controls', (event, input: unknown) => {
+    windowIpc.on('wave-inline:controls', (event, input: unknown) => {
         if (isTrustedSoundCloudSender(event) && input && typeof input === 'object')
             setControls(input as Partial<WaveControls>);
     });
-    ipcMain.handle('wave-home:start', async (event) => {
-        if (!waveHomeView || event.sender !== waveHomeView.webContents) throw new Error('Недоверенный вызов волны.');
-        return startWave();
-    });
-    ipcMain.on('wave-home:next', (event, reason: unknown) => {
-        if (waveVisible && waveHomeView && event.sender === waveHomeView.webContents) {
-            void chooseNext(
-                reason === 'user' ? 'user' : reason === 'finish' ? 'finish' : reason === 'error' ? 'error' : 'start',
-            ).catch(() => {});
-        }
-    });
-    ipcMain.on('wave-home:previous', (event) => {
-        if (!waveVisible || !waveHomeView || event.sender !== waveHomeView.webContents || waveNextTask) return;
-        const previous = waveHistory.pop();
-        if (!previous) {
-            waveHomeView.webContents.send('wave-home:restart');
-            return;
-        }
-        recordCurrent('play');
-        if (waveCurrentCandidate) waveFuture.push(waveCurrentCandidate);
-        waveCurrentCandidate = previous;
-        waveCurrent = previous.url;
-        waveCurrentRecorded = false;
-        audioSamples = 0;
-        audioTotals.energy = 0;
-        audioTotals.bass = 0;
-        audioTotals.brightness = 0;
-        waveHomeView.webContents.send('wave-home:play-track', previous);
-        sendInline('candidate', previous);
-        sendLikeState(previous.url);
-    });
-    ipcMain.on('wave-home:shuffle', (event, enabled: unknown) => {
-        if (waveHomeView && event.sender === waveHomeView.webContents && typeof enabled === 'boolean')
-            waveShuffle = enabled;
-    });
-    ipcMain.on('wave-home:track-update', (event, track: TrackInfo) => {
-        if (
-            !waveHomeView ||
-            event.sender !== waveHomeView.webContents ||
-            !track ||
-            track.url !== waveCurrent ||
-            typeof track.title !== 'string'
-        )
-            return;
-        const known = knownLike(track.url);
-        const currentTrack = known === undefined ? track : { ...track, isLiked: known };
-        lastTrackInfo = currentTrack;
-        waveEngine.observe(currentTrack);
-        waveHomeView.webContents.send('wave-home:track', currentTrack);
-        sendInline('track', currentTrack);
-        waveHomeView.webContents.send('wave-home:stats', waveEngine.stats());
-        sendInline('stats', waveEngine.stats());
-        void presenceService?.updatePresence(currentTrack);
-    });
-    ipcMain.on('wave-home:back', (event) => {
-        if (waveHomeView && event.sender === waveHomeView.webContents) hideWave();
-    });
-    ipcMain.on('wave-home:open-track', (event, target: unknown) => {
-        if (!waveHomeView || event.sender !== waveHomeView.webContents || typeof target !== 'string') return;
-        try {
-            const url = new URL(target);
-            if (url.origin !== 'https://soundcloud.com' || url.pathname.split('/').filter(Boolean).length !== 2) return;
-            hideWave();
-            void clientContents.loadURL(url.href);
-        } catch {}
-    });
-    ipcMain.on('wave-home:navigate', (event, target: unknown) => {
-        if (!waveHomeView || event.sender !== waveHomeView.webContents || typeof target !== 'string') return;
-        if (target === 'daily' || target === 'weekly') {
-            void startWave().catch(() => {});
-            return;
-        }
-        const urls: Record<string, string> = {
-            likes: 'https://soundcloud.com/you/likes',
-            home: 'https://soundcloud.com/discover',
-            genres: 'https://soundcloud.com/discover',
-            new: 'https://soundcloud.com/discover',
-            charts: 'https://soundcloud.com/charts/top',
-            collections: 'https://soundcloud.com/discover',
-        };
-        if (urls[target]) {
-            hideWave();
-            void clientContents.loadURL(urls[target]);
-        }
-    });
     let lastInlineAudioAt = 0;
-    ipcMain.on('wave-home:audio', (event, features: AudioFeatures) => {
+    windowIpc.on('wave-inline:audio', (event, input: unknown) => {
         if (
-            !waveHomeView ||
-            event.sender !== waveHomeView.webContents ||
-            !features ||
-            !['energy', 'bass', 'mid', 'treble'].every(
-                (key) =>
-                    typeof features[key as keyof AudioFeatures] === 'number' &&
-                    Number.isFinite(features[key as keyof AudioFeatures]),
-            )
+            !isTrustedSoundCloudSender(event) ||
+            !waveVisible ||
+            !waveCurrentCandidate ||
+            !input ||
+            typeof input !== 'object'
         )
             return;
-        waveEngine.audio(features);
-        if (audioSamples < 10000 && waveVisible && waveCurrentCandidate) {
-            audioTotals.energy += Math.max(0, Math.min(1, features.energy));
-            audioTotals.bass += Math.max(0, Math.min(1, features.bass));
-            audioTotals.brightness += Math.max(0, Math.min(1, features.treble));
+        const features = input as AudioFeatures & { path?: string; source?: string; sampleSeconds?: number };
+        if (
+            features.path !== trackPath(waveCurrent) ||
+            features.source !== 'media-element-v1' ||
+            typeof features.sampleSeconds !== 'number' ||
+            features.sampleSeconds < 0 ||
+            features.sampleSeconds > 93 ||
+            !['energy', 'bass', 'mid', 'treble'].every((key) => {
+                const value = features[key as keyof AudioFeatures];
+                return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+            })
+        )
+            return;
+        const now = Date.now();
+        if (now - lastInlineAudioAt < 750) return;
+        lastInlineAudioAt = now;
+        if (audioSamples < 90) {
+            audioTotals.energy += features.energy;
+            audioTotals.bass += features.bass;
+            audioTotals.brightness += features.treble;
             audioSamples++;
         }
-        const now = Date.now();
-        if (now - lastInlineAudioAt >= 500) {
-            lastInlineAudioAt = now;
-            sendInline('audio', features);
-        }
-    });
-    ipcMain.on('wave-home:metadata', (event, url: unknown, metadata: unknown) => {
-        if (
-            !waveHomeView ||
-            event.sender !== waveHomeView.webContents ||
-            url !== waveCurrent ||
-            !metadata ||
-            typeof metadata !== 'object'
-        )
-            return;
-        waveEngine.metadata(
-            url,
-            metadata as {
-                genre?: string;
-                tags?: string[];
-                bpm?: number;
-            },
-        );
-        if (waveCurrentCandidate) {
-            const item = metadata as {
-                genre?: unknown;
-                tags?: unknown;
-                bpm?: unknown;
-            };
-            if (typeof item.genre === 'string') waveCurrentCandidate.genre = item.genre.slice(0, 80);
-            if (Array.isArray(item.tags))
-                waveCurrentCandidate.tags = item.tags
-                    .filter((tag): tag is string => typeof tag === 'string')
-                    .slice(0, 20);
-            const bpm = Number(item.bpm);
-            if (Number.isFinite(bpm) && bpm >= 50 && bpm <= 220) {
-                waveCurrentCandidate.bpm = bpm;
-                waveCurrentCandidate.bpmConfidence = 0.7;
-            }
-            waveCurrentCandidate.metadataChecked = true;
-        }
-        sendInline('metadata', metadata);
+        sendInline('audio', features);
     });
     themeService.onCustomThemeUpdated(() => {
         applyThemeToContent(isDarkTheme);
@@ -2056,7 +2187,7 @@ async function init() {
     let networkSettingsBusy = false;
     const workerSetup = new WorkerSetup();
     clientContents.once('destroyed', () => workerSetup.clear());
-    ipcMain.handle('network:setup-accounts', async (event, token: unknown) => {
+    windowIpc.handle('network:setup-accounts', async (event, token: unknown) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Подождите окончания настройки.');
         networkSettingsBusy = true;
@@ -2066,12 +2197,12 @@ async function init() {
             networkSettingsBusy = false;
         }
     });
-    ipcMain.handle('network:setup-cancel', (event) => {
+    windowIpc.handle('network:setup-cancel', (event) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Дождитесь окончания текущей операции.');
         workerSetup.clear();
     });
-    ipcMain.handle('network:setup-deploy', async (event, account: unknown) => {
+    windowIpc.handle('network:setup-deploy', async (event, account: unknown) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Подождите окончания настройки.');
         if (!safeStorage.isEncryptionAvailable()) throw new Error('Системное хранилище ключей недоступно.');
@@ -2102,7 +2233,7 @@ async function init() {
             networkSettingsBusy = false;
         }
     });
-    ipcMain.handle('network:files', async (event) => {
+    windowIpc.handle('network:files', async (event) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         return shell.openPath(
             app.isPackaged
@@ -2110,11 +2241,11 @@ async function init() {
                 : path.join(__dirname, '../cloudflare/soundcloud-relay'),
         );
     });
-    ipcMain.handle('network:status', (event) => {
+    windowIpc.handle('network:status', (event) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         return connectionRecovery.getStatus();
     });
-    ipcMain.handle('network:save', async (event, input: unknown) => {
+    windowIpc.handle('network:save', async (event, input: unknown) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Подождите окончания проверки подключения.');
         networkSettingsBusy = true;
@@ -2127,7 +2258,7 @@ async function init() {
             networkSettingsBusy = false;
         }
     });
-    ipcMain.handle('network:test', async (event) => {
+    windowIpc.handle('network:test', async (event) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Подождите окончания проверки подключения.');
         networkSettingsBusy = true;
@@ -2138,7 +2269,7 @@ async function init() {
             networkSettingsBusy = false;
         }
     });
-    ipcMain.handle('network:copy-diagnostics', async (event) => {
+    windowIpc.handle('network:copy-diagnostics', async (event) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
         if (networkSettingsBusy) throw new Error('Дождитесь окончания проверки подключения.');
         const diagnostic = connectionRecovery.getDiagnostics();
@@ -2148,22 +2279,22 @@ async function init() {
         return 'Диагностика подключения скопирована. Она не содержит ключей, cookies и токенов.';
     });
     presenceService = new PresenceService(store, translationService);
-    lastFmService = new LastFmService(contentView, store);
-    webhookService = new WebhookService(store);
+    lastFmService = new LastFmService(contentView, store, libraryStore);
+    webhookService = new WebhookService(store, libraryStore);
     shortcutService = new ShortcutService(mainWindow);
     shortcutService.attachToWebContents(clientContents);
     clientContents.on('before-input-event', (event, input) => {
         if (!waveVisible || input.type !== 'keyDown' || input.key !== 'MediaNextTrack') return;
         event.preventDefault();
-        void chooseNext('user').catch((error) => console.debug('Wave media next unavailable:', error));
+        void playback.request('user').catch((error) => console.debug('Wave media next unavailable:', error));
     });
     if (platform() === 'win32') thumbarService = new ThumbarService(translationService);
     setupMemoryPressureHandler();
-    ipcMain.on('toggle-settings', () => {
+    windowIpc.on('toggle-settings', () => {
         settingsManager.toggle();
         applyThemeToContent(isDarkTheme);
     });
-    ipcMain.handle('confirm-open-homepage', async (_event, url: string) => {
+    windowIpc.handle('confirm-open-homepage', async (_event, url: string) => {
         if (!url || typeof url !== 'string') return false;
         const normalizedUrl = url.trim();
         if (!/^https?:\/\//i.test(normalizedUrl)) return false;
@@ -2173,7 +2304,7 @@ async function init() {
         }
         return confirmed;
     });
-    ipcMain.on('show-plugin-homepage-dialog', async (_event, url: string) => {
+    windowIpc.on('show-plugin-homepage-dialog', async (_event, url: string) => {
         if (!url || typeof url !== 'string') return;
         const normalizedUrl = url.trim();
         if (!/^https?:\/\//i.test(normalizedUrl)) return;
@@ -2182,7 +2313,7 @@ async function init() {
             await shell.openExternal(normalizedUrl);
         }
     });
-    ipcMain.handle('open-external-url', async (_event, url: string) => {
+    windowIpc.handle('open-external-url', async (_event, url: string) => {
         if (!url || typeof url !== 'string') return '';
         const normalizedUrl = url.trim();
         try {
@@ -2194,7 +2325,7 @@ async function init() {
             return '';
         }
     });
-    ipcMain.handle('open-path', async (_event, targetPath: string) => {
+    windowIpc.handle('open-path', async (_event, targetPath: string) => {
         if (!targetPath || typeof targetPath !== 'string') return 'Invalid path';
         const allowedPaths = [themeService.getThemesPath(), pluginService.getPluginsPath()].map((allowedPath) =>
             path.resolve(allowedPath),
@@ -2208,7 +2339,7 @@ async function init() {
     setupThemeHandlers();
     setupTranslationHandlers();
     setupAudioHandler();
-    ipcMain.handle('get-current-track', (event) => {
+    windowIpc.handle('get-current-track', (event) => {
         return settingsManager.owns(event.sender) ? lastTrackInfo : null;
     });
     await proxyService.apply();
@@ -2253,9 +2384,9 @@ async function init() {
                 fullLists,
                 { enableCompression: true },
                 {
-                    path: 'engine.bin',
-                    read: async (...args) => readFileSync(...args),
-                    write: async (...args) => writeFileSync(...args),
+                    path: path.join(app.getPath('userData'), 'adblock-v2.bin'),
+                    read: (file) => readFile(file),
+                    write: (file, data) => writeFile(file, data),
                 },
             );
             blocker.enableBlockingInSession(clientContents.session);
@@ -2304,18 +2435,19 @@ async function init() {
             console.error('Failed to reinitialize after page load:', error);
         }
     }
-    ipcMain.on('setting-changed', async (_event, data) => {
+    windowIpc.on('setting-changed', async (_event, data) => {
+        if (!validSetting(data)) return;
         const key = proxyService.transformKey(data.key);
         store.set(key, data.value);
         console.log(key);
         if (key === 'displayWhenIdling') {
-            displayWhenIdling = data.value;
+            displayWhenIdling = data.value === true;
             presenceService.updateDisplaySettings(displayWhenIdling, displaySCSmallIcon);
         } else if (key === 'displaySCSmallIcon') {
-            displaySCSmallIcon = data.value;
+            displaySCSmallIcon = data.value === true;
             presenceService.updateDisplaySettings(displayWhenIdling, displaySCSmallIcon);
         } else if (key === 'displayButtons') {
-            presenceService.updateDisplaySettings(displayWhenIdling, displaySCSmallIcon, data.value);
+            presenceService.updateDisplaySettings(displayWhenIdling, displaySCSmallIcon, data.value === true);
         } else if (key === 'statusDisplayType') {
             presenceService.setStatusDisplayType(data.value as number);
         } else if (key === 'minimizeToTray') {
@@ -2326,40 +2458,45 @@ async function init() {
                 setupTray();
             }
         } else if (key === 'webhookEnabled') {
-            webhookService.setEnabled(data.value);
+            webhookService.setEnabled(data.value === true);
         } else if (key === 'webhookUrl') {
-            webhookService.setWebhookUrl(data.value);
+            webhookService.setWebhookUrl(String(data.value));
         } else if (key === 'webhookTriggerPercentage') {
-            webhookService.setTriggerPercentage(data.value);
+            webhookService.setTriggerPercentage(Number(data.value));
         } else if (key === 'navigationControlsEnabled') {
             if (headerView && headerView.webContents) {
                 headerView.webContents.send('navigation-controls-toggle', data.value);
             }
         } else if (key === 'uiScale') {
-            if (contentView) clientContents.setZoomFactor(data.value);
+            if (contentView) clientContents.setZoomFactor(Number(data.value));
         } else if (key === 'customTheme') {
             if (data.value === 'none') {
                 themeService.removeCustomTheme();
             } else {
-                themeService.applyCustomTheme(data.value);
+                themeService.applyCustomTheme(String(data.value));
             }
             applyThemeToContent(isDarkTheme);
         } else if (key === 'hidePromotions' || key === 'hideEventsNearYou' || key === 'hideArtistUpsells') {
             applyThemeToContent(isDarkTheme);
         }
     });
-    ipcMain.handle('get-accounts', () => {
+    windowIpc.handle('get-accounts', () => {
         return {
             accounts: store.get('accounts', [{ id: 'default', name: 'Main Account' }]),
             currentAccountId: store.get('currentAccountId', 'default'),
         };
     });
-    ipcMain.on('switch-account', (_, accountId) => {
+    windowIpc.on('switch-account', (_, accountId) => {
+        if (
+            typeof accountId !== 'string' ||
+            !((store.get('accounts') || []) as Array<{ id: string }>).some((account) => account.id === accountId)
+        )
+            return;
         store.set('currentAccountId', accountId);
         app.relaunch();
         app.quit();
     });
-    ipcMain.on('add-account', () => {
+    windowIpc.on('add-account', () => {
         const newId = `acc_${Date.now()}`;
         const accounts = store.get('accounts', [{ id: 'default', name: 'Main Account' }]);
         accounts.push({ id: newId, name: 'New Account' });
@@ -2368,7 +2505,7 @@ async function init() {
         app.relaunch();
         app.quit();
     });
-    ipcMain.on('logout-account', async () => {
+    windowIpc.on('logout-account', async () => {
         const currentId = store.get('currentAccountId', 'default');
         if (contentView) {
             await clientContents.session.clearStorageData();
@@ -2384,7 +2521,7 @@ async function init() {
             if (contentView) clientContents.reload();
         }
     });
-    ipcMain.on('apply-changes', async () => {
+    windowIpc.on('apply-changes', async () => {
         await proxyService.apply();
         await connectionRecovery.configure();
         if (store.get('lastFmEnabled')) {
@@ -2400,7 +2537,7 @@ async function init() {
         }
     });
     let accountPollBusy = false;
-    const accountPoll = setInterval(async () => {
+    const updateAccountName = async () => {
         if (accountPollBusy || !contentView || clientContents.isDestroyed()) return;
         accountPollBusy = true;
         try {
@@ -2410,7 +2547,7 @@ async function init() {
 						const profileBtn = document.querySelector('.header__userNav [data-menu-name="profile"]');
 						if (profileBtn && profileBtn.href) {
 							const parts = profileBtn.href.split('/');
-							return parts[parts.length - 1]; // returns "elricfd"
+							return parts[parts.length - 1];
 						}
 						const userBtn = document.querySelector('.header__userNavUsernameButton');
 						if (userBtn && userBtn.href) {
@@ -2441,8 +2578,13 @@ async function init() {
         } finally {
             accountPollBusy = false;
         }
-    }, 5000);
-    clientContents.once('destroyed', () => clearInterval(accountPoll));
+    };
+    const scheduleAccountName = () =>
+        windowTasks.defer(() => {
+            void updateAccountName();
+        }, 1000);
+    clientContents.on('did-finish-load', scheduleAccountName);
+    clientContents.on('did-navigate-in-page', scheduleAccountName);
     void clientContents.loadURL('https://soundcloud.com/').catch(() => {});
 }
 function setupMemoryPressureHandler() {
@@ -2478,7 +2620,8 @@ function setupThemeHandlers() {
         settingsManager.getView()?.webContents.send('theme-changed', isDarkTheme);
     }
     applyThemeToContent(isDarkTheme);
-    ipcMain.on('setting-changed', (_, data) => {
+    windowIpc.on('setting-changed', (_, data) => {
+        if (!validSetting(data)) return;
         if (data.key === 'theme') {
             isDarkTheme = data.value === 'dark';
             store.set('theme', data.value);
@@ -2593,7 +2736,7 @@ function applyThemeToContent(isDark: boolean) {
                 }
                 document.head.appendChild(style);
                 if (window._artistUpsellInterval) clearInterval(window._artistUpsellInterval);
-                window._artistUpsellInterval = setInterval(() => {
+                window._artistUpsellInterval = ${hideArtistUpsells} ? setInterval(() => {
                     document.querySelectorAll('iframe[title="Artist tools"], iframe[title="Sidebar modules"]').forEach(iframe => {
                         try {
                             const doc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -2615,8 +2758,8 @@ function applyThemeToContent(isDark: boolean) {
                         } catch(e) {
                         }
                     });
-                }, 1000);
-                const contentCSS = \`${sections.all + (sections.all && sections.content ? '\n' : '') + sections.content || ''}\`;
+                }, 3000) : null;
+                const contentCSS = ${JSON.stringify(sections.all + (sections.all && sections.content ? '\n' : '') + sections.content || '')};
                 if (contentCSS.trim()) {
                     const customStyle = document.createElement('style');
                     customStyle.id = 'custom-theme-style';
@@ -2646,7 +2789,7 @@ function applyThemeToContent(isDark: boolean) {
         const headerScript = `
             (function(){
                 try {
-                    const css = \`${headerCSS}\`;
+                    const css = ${JSON.stringify(headerCSS)};
                     const id = 'custom-theme-style';
                     const existing = document.getElementById(id);
                     if (existing) existing.remove();
@@ -2664,24 +2807,7 @@ function applyThemeToContent(isDark: boolean) {
     }
     if (settingsManager) {
         const settingsCSS = sections.all + (sections.all && sections.settings ? '\n' : '') + sections.settings || '';
-        const settingsScript = `
-            (function(){
-                try {
-                    const css = \`${settingsCSS}\`;
-                    const id = 'custom-theme-style';
-                    const existing = document.getElementById(id);
-                    if (existing) existing.remove();
-                    if (css.trim()){
-                        const style = document.createElement('style');
-                        style.id = id;
-                        style.textContent = css;
-                        document.head.appendChild(style);
-                        console.log('Applied custom settings theme CSS');
-                    }
-                } catch(e){ console.error('Settings theme inject error:', e); }
-            })();
-        `;
-        settingsManager.getView()?.webContents.executeJavaScript(settingsScript).catch(console.error);
+        settingsManager.setCustomCSS(settingsCSS);
     }
 }
 function initializeShortcuts() {
@@ -2735,19 +2861,47 @@ function initializeShortcuts() {
     });
     console.log(`Initialized ${shortcutService.count} keyboard shortcuts`);
 }
-app.on('ready', init);
+app.on('ready', () => {
+    void init().catch((error) => {
+        console.error('Client startup failed:', error);
+        dialog.showErrorBox(
+            'SoundCloud',
+            'Не удалось загрузить локальные данные. Они сохранены без изменений. ' +
+                (error instanceof Error ? error.message : String(error)),
+        );
+        app.quit();
+    });
+});
 app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') {
         app.quit();
     }
 });
 app.on('activate', function () {
-    if (mainWindow === null) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
         init();
     }
 });
-app.on('before-quit', () => {
+let libraryClosed = false;
+let libraryClosing: Promise<void> | undefined;
+app.on('before-quit', (event) => {
     isQuitting = true;
+    if (libraryStore && !libraryClosed) {
+        stopWindowWork?.();
+        lastFmService?.dispose();
+        webhookService?.dispose();
+        event.preventDefault();
+        libraryClosing ??= libraryStore
+            .close()
+            .catch((error) => {
+                console.error('Library flush failed:', error);
+            })
+            .then(() => {
+                libraryClosed = true;
+                app.quit();
+            });
+        return;
+    }
     updateController?.dispose();
     lastFmService?.dispose();
     webhookService?.dispose();
@@ -2848,14 +3002,15 @@ function setupTranslationHandlers() {
     });
 }
 function setupAudioHandler() {
-    ipcMain.on('soundcloud:track-progress', (event, data: unknown) => {
-        if (!waveVisible || !isTrustedSoundCloudSender(event)) return;
+    windowIpc.on('soundcloud:track-progress', (event, data: unknown) => {
+        if (!isTrustedSoundCloudSender(event)) return;
         const update = validateTrackUpdatePayload({ data, reason: 'playback-state-change' });
         if (!update || update.data.url !== lastTrackInfo.url) return;
         lastTrackInfo = { ...lastTrackInfo, elapsed: update.data.elapsed, duration: update.data.duration };
         waveListening.observe(lastTrackInfo.url || '', parseTime(lastTrackInfo.elapsed), lastTrackInfo.isPlaying);
+        onNativeProgress?.(lastTrackInfo);
     });
-    ipcMain.on('soundcloud:track-update', (event, payload: unknown) => {
+    windowIpc.on('soundcloud:track-update', (event, payload: unknown) => {
         if (!isTrustedSoundCloudSender(event)) {
             console.warn('Rejected track update from untrusted sender');
             return;
@@ -2872,11 +3027,6 @@ function setupAudioHandler() {
         waveListening.observe(result.url || '', parseTime(result.elapsed), result.isPlaying);
         onNativeWaveTrackUpdate?.(result);
         lastTrackInfo = result;
-        if (waveEngine) {
-            waveEngine.observe(result);
-            waveHomeView?.webContents.send('wave-home:track', result);
-            waveHomeView?.webContents.send('wave-home:stats', waveEngine.stats());
-        }
         if (pluginService) {
             pluginService.notifyTrackChange(result as unknown as Record<string, unknown>);
         }

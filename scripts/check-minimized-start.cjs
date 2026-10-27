@@ -14,6 +14,7 @@ fs.writeFileSync(
         adBlocker: false,
         discordRichPresence: false,
         minimizeToTray: true,
+        waveControls_default: { mood: 'any', tone: 'bass', tempo: 'any', discovery: 'new' },
         waveFeedbackV1_default: [
             { track: { id: seed, title: 'Favorite', artist: 'Seed artist' }, kind: 'like', at: Date.now() },
         ],
@@ -126,7 +127,8 @@ app.whenReady().then(async () => {
         );
         console.log(JSON.stringify({ startedWhileMinimized: true, startMs: Date.now() - start, captures, state }));
         done = true;
-        app.exit(0);
+        if (process.env.WAVE_TEST_GRACEFUL === '1') app.quit();
+        else app.exit(0);
     } catch (error) {
         console.error(error.stack);
         done = true;

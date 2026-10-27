@@ -1,3 +1,4 @@
+import { defaultWaveControls } from '../waveEngine';
 import { describe, expect, it } from 'vitest';
 import type ElectronStore from 'electron-store';
 import { SoundCloudRecommender, toTrack } from './soundcloudAdapter';
@@ -127,6 +128,7 @@ describe('SoundCloud recommendation adapter', () => {
             ],
         });
         const recommender = new SoundCloudRecommender(store, 'default', async () => [liked, old, fresh]);
+        recommender.setControls({ ...defaultWaveControls, discovery: 'new' });
         expect((await recommender.refresh()).map((candidate) => candidate.url)).toEqual(['fresh']);
         expect(Array.isArray(values.get('waveFeedbackV1_default'))).toBe(true);
     });
@@ -148,6 +150,7 @@ describe('SoundCloud recommendation adapter', () => {
         const newTrack = item('new', 'B', 'rock');
         const { store } = memoryStore();
         const first = new SoundCloudRecommender(store, 'one', async () => [liked, newTrack]);
+        first.setControls({ ...defaultWaveControls, discovery: 'new' });
         expect((await first.refresh()).map((candidate) => candidate.url)).toEqual(['new']);
         const second = new SoundCloudRecommender(store, 'two', async () => [newTrack]);
         second.record(newTrack, 'dislike');

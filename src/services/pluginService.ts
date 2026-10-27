@@ -1,38 +1,29 @@
+import { IpcRegistry } from '../utils/ipcRegistry';
 import { app, ipcMain, type BrowserView } from 'electron';
 import { readFileSync, existsSync, readdirSync, statSync, watch, mkdirSync } from 'fs';
 import path, { join, basename, extname } from 'path';
 import type ElectronStore from 'electron-store';
 import { EventEmitter } from 'events';
 import { parseMetadata, type FileMetadata } from '../utils/metadataParser';
-import { Script, createContext, type Context } from 'vm';
+import { PluginHost } from './pluginHost';
 export interface PluginInfo {
     id: string;
     filePath: string;
     metadata: FileMetadata;
     enabled: boolean;
 }
-interface PluginRuntime {
-    context: Context;
-    exports: PluginExports;
-    cleanupTimers: () => void;
-}
-interface PluginExports {
-    onEnable?: () => void;
-    onDisable?: () => void;
-    onTrackChange?: (track: Record<string, unknown>) => void;
-    onThemeChange?: (isDark: boolean) => void;
-    contentScript?: () => string;
-}
 export class PluginService {
     private store: ElectronStore;
     private plugins: Map<string, PluginInfo> = new Map();
-    private runtimes: Map<string, PluginRuntime> = new Map();
+    private runtimes: Map<string, PluginHost> = new Map();
     private pluginsPath: string;
     private emitter = new EventEmitter();
     private stopWatching?: () => void;
     private refreshTimer?: ReturnType<typeof setTimeout>;
     private contentView: BrowserView | null = null;
-    constructor(store: ElectronStore) {
+    private ipc: IpcRegistry;
+    constructor(store: ElectronStore, allowed: ConstructorParameters<typeof IpcRegistry>[1] = () => false) {
+        this.ipc = new IpcRegistry(ipcMain, allowed);
         this.store = store;
         this.pluginsPath = this.getPluginsPath();
         this.ensurePluginsDirectory();
@@ -109,56 +100,32 @@ export class PluginService {
     private activatePlugin(id: string): boolean {
         const plugin = this.plugins.get(id);
         if (!plugin) return false;
-        const timers = new Set<ReturnType<typeof setTimeout>>();
-        const cleanupTimers = () => {
-            for (const timer of timers) clearTimeout(timer);
-            timers.clear();
-        };
         try {
             if (this.runtimes.has(id)) return true;
             const source = readFileSync(plugin.filePath, 'utf-8');
-            const pluginExports: PluginExports = {};
-            const sandbox = {
-                module: { exports: pluginExports },
-                exports: pluginExports,
-                console: {
-                    log: (...args: unknown[]) => console.log(`[plugin:${id}]`, ...args),
-                    warn: (...args: unknown[]) => console.warn(`[plugin:${id}]`, ...args),
-                    error: (...args: unknown[]) => console.error(`[plugin:${id}]`, ...args),
-                },
-                setTimeout: (callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
-                    const timer = setTimeout(() => {
-                        timers.delete(timer);
-                        callback(...args);
-                    }, delay);
-                    timers.add(timer);
-                    return timer;
-                },
-                clearTimeout: (timer: ReturnType<typeof setTimeout>) => {
-                    clearTimeout(timer);
-                    timers.delete(timer);
-                },
-                setInterval: (callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
-                    const timer = setInterval(callback, delay, ...args);
-                    timers.add(timer);
-                    return timer;
-                },
-                clearInterval: (timer: ReturnType<typeof setTimeout>) => {
-                    clearInterval(timer);
-                    timers.delete(timer);
-                },
-            };
-            const context = createContext(sandbox);
-            const script = new Script(source, { filename: plugin.filePath });
-            script.runInContext(context, { timeout: 1000 });
-            const resolved = sandbox.module.exports || sandbox.exports;
-            this.runtimes.set(id, { context, exports: resolved, cleanupTimers });
-            resolved.onEnable?.();
-            this.injectContentScript(id, resolved);
+            const host = new PluginHost(source, plugin.filePath, (error) => {
+                console.error(`Plugin ${id} stopped:`, error.message);
+                if (this.runtimes.get(id) !== host) return;
+                this.runtimes.delete(id);
+                plugin.enabled = false;
+                this.removeContentScript(id);
+                this.persistEnabledState();
+                this.emitter.emit('plugins-changed');
+            });
+            this.runtimes.set(id, host);
+            void host.ready
+                .then(() => this.injectContentScript(id, host))
+                .catch((error) => {
+                    console.error(`Failed to activate plugin ${id}:`, error.message);
+                    host.dispose();
+                    if (this.runtimes.get(id) !== host) return;
+                    this.runtimes.delete(id);
+                    plugin.enabled = false;
+                    this.persistEnabledState();
+                    this.emitter.emit('plugins-changed');
+                });
             return true;
         } catch (error) {
-            cleanupTimers();
-            this.runtimes.delete(id);
             console.error(`Failed to activate plugin ${id}:`, error);
             return false;
         }
@@ -166,25 +133,24 @@ export class PluginService {
     private deactivatePlugin(id: string): void {
         const runtime = this.runtimes.get(id);
         if (!runtime) return;
-        try {
-            runtime.exports.onDisable?.();
-        } catch (e) {
-            console.error(`[plugin:${id}] onDisable error:`, e);
-        }
         this.removeContentScript(id);
-        runtime.cleanupTimers();
         this.runtimes.delete(id);
+        void runtime.ready
+            .then(() => runtime.call('onDisable'))
+            .catch(() => {})
+            .finally(() => runtime.dispose());
     }
-    private injectContentScript(id: string, exports: PluginExports): void {
+    private async injectContentScript(id: string, runtime: PluginHost): Promise<void> {
         if (!this.contentView || this.contentView.webContents.isDestroyed()) return;
-        let code: string | undefined;
-        try {
-            code = exports.contentScript?.();
-        } catch (e) {
-            console.error(`[plugin:${id}] contentScript() error:`, e);
+        const code = await runtime.call('contentScript');
+        if (
+            typeof code !== 'string' ||
+            !code.trim() ||
+            this.runtimes.get(id) !== runtime ||
+            !this.contentView ||
+            this.contentView.webContents.isDestroyed()
+        )
             return;
-        }
-        if (!code || !code.trim()) return;
         const wrapped = `
             (function(){
                 try {
@@ -220,7 +186,9 @@ export class PluginService {
     }
     public injectAllContentScripts(): void {
         for (const [id, runtime] of this.runtimes) {
-            this.injectContentScript(id, runtime.exports);
+            void this.injectContentScript(id, runtime).catch((error) =>
+                console.error('Plugin content update failed:', error.message),
+            );
         }
     }
     private persistEnabledState(): void {
@@ -269,51 +237,47 @@ export class PluginService {
         this.emitter.emit('plugins-changed');
     }
     public notifyTrackChange(track: Record<string, unknown>): void {
-        for (const [id, runtime] of this.runtimes) {
-            try {
-                runtime.exports.onTrackChange?.({ ...track });
-            } catch (e) {
-                console.error(`[plugin:${id}] onTrackChange error:`, e);
-            }
-        }
+        for (const runtime of this.runtimes.values()) runtime.notify('onTrackChange', { ...track });
     }
     public notifyThemeChange(isDark: boolean): void {
-        for (const [id, runtime] of this.runtimes) {
-            try {
-                runtime.exports.onThemeChange?.(isDark);
-            } catch (e) {
-                console.error(`[plugin:${id}] onThemeChange error:`, e);
-            }
-        }
+        for (const runtime of this.runtimes.values()) runtime.notify('onThemeChange', isDark);
     }
     public getPluginsPath(): string {
-        return app.isPackaged ? path.join(app.getPath('userData'), 'plugins') : path.join(process.cwd(), 'plugins');
+        return process.argv.includes('--dev')
+            ? path.join(process.cwd(), 'plugins')
+            : path.join(app.getPath('userData'), 'plugins');
     }
     public onPluginsChanged(listener: () => void): () => void {
         this.emitter.on('plugins-changed', listener);
         return () => this.emitter.off('plugins-changed', listener);
     }
     public dispose(): void {
+        this.ipc.dispose();
         clearTimeout(this.refreshTimer);
         this.stopWatching?.();
         for (const id of this.runtimes.keys()) this.deactivatePlugin(id);
         this.emitter.removeAllListeners();
     }
     private setupIpcHandlers(): void {
-        ipcMain.handle('get-plugins', () => {
+        this.ipc.handle('get-plugins', () => {
             return this.getPlugins().map((p) => ({
                 id: p.id,
                 metadata: p.metadata,
                 enabled: p.enabled,
             }));
         });
-        ipcMain.handle('set-plugin-enabled', (_, id: string, enabled: boolean) => {
-            return this.setPluginEnabled(id, enabled);
+        this.ipc.handle('set-plugin-enabled', (_, id: string, enabled: boolean) => {
+            return (
+                typeof id === 'string' &&
+                id.length <= 200 &&
+                typeof enabled === 'boolean' &&
+                this.setPluginEnabled(id, enabled)
+            );
         });
-        ipcMain.handle('get-plugins-folder-path', () => {
+        this.ipc.handle('get-plugins-folder-path', () => {
             return this.pluginsPath;
         });
-        ipcMain.handle('refresh-plugins', () => {
+        this.ipc.handle('refresh-plugins', () => {
             this.refreshPlugins();
             return this.getPlugins().map((p) => ({
                 id: p.id,

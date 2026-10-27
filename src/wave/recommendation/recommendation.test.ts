@@ -17,12 +17,12 @@ const event = (item: Track, kind: Feedback['kind'], listenedFraction?: number): 
     at: now,
 });
 describe('standalone recommendation modules', () => {
-    it('learns from a liked genre but never replays the liked track', () => {
+    it('learns from a liked genre and mixes an older favorite after two new tracks', () => {
         const seed = track('liked', 'A', 'shoegaze');
         const candidates = [seed, track('new-shoegaze', 'B', 'shoegaze'), track('other', 'C', 'house')];
         const result = recommend(candidates, [event(seed, 'like')], controls, { now });
         expect(result[0].track.id).toBe('new-shoegaze');
-        expect(result.map((item) => item.track.id)).not.toContain('liked');
+        expect(result.map((item) => item.track.id)).toEqual(['new-shoegaze', 'other', 'liked']);
     });
     it('moves away from immediate skips and reinforces completed tracks', () => {
         const skipped = track('skipped', 'A', 'ambient');

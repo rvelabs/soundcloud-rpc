@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('settingsAPI', {
         if (!ON_CHANNELS.has(channel) || typeof listener !== 'function') return;
         const wrapped = (_event: IpcRendererEvent, ...args: unknown[]) => listener(...args);
         ipcRenderer.on(channel, wrapped);
+        return () => ipcRenderer.removeListener(channel, wrapped);
     },
     openExternal: (url: string) => {
         if (!isHttpsUrl(url)) return Promise.resolve('');

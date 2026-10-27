@@ -1,9 +1,9 @@
-import type ElectronStore from 'electron-store';
+import type { DataStore } from '../../storage/asyncDataStore';
 import type { WaveCandidate, WaveControls } from '../waveEngine';
 import { RecommendationSession } from './session';
 import { buildProfile, normalize } from './profile';
 import type { Controls, Feedback, FeedbackKind, SoundFeatures, Track } from './types';
-type Store = Pick<ElectronStore, 'get' | 'set'>;
+type Store = DataStore;
 type Discovery = (seeds: Track[]) => Promise<WaveCandidate[]>;
 const kinds = new Set<FeedbackKind>(['like', 'unlike', 'dislike', 'play', 'skip', 'complete']);
 export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Track {
@@ -21,9 +21,12 @@ export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Tra
         relatedTo: candidate.relatedTo,
         source: candidate.source,
         features: {
+            ...candidate.features,
             ...features,
-            bpm: candidate.bpm || features?.bpm,
-            bpmConfidence: candidate.bpm ? candidate.bpmConfidence : features?.bpmConfidence,
+            bpm: candidate.bpm || features?.bpm || candidate.features?.bpm,
+            bpmConfidence: candidate.bpm
+                ? candidate.bpmConfidence
+                : (features?.bpmConfidence ?? candidate.features?.bpmConfidence),
         },
     };
 }
@@ -73,7 +76,7 @@ export class SoundCloudRecommender {
         this.cacheKey = `waveCandidatesV2_${accountId}`;
         const saved = store.get(this.key);
         this.feedbackEvents = Array.isArray(saved) ? saved.filter(validFeedback).slice(-5000) : [];
-        if (!Array.isArray(saved)) this.migrateLegacy(accountId);
+        this.migrateLegacy(accountId);
         this.session = new RecommendationSession(
             {
                 related: async (seeds) => {
@@ -121,6 +124,7 @@ export class SoundCloudRecommender {
                 tags: track.tags,
                 bpm: track.features?.bpm,
                 bpmConfidence: track.features?.bpmConfidence,
+                features: track.features,
                 sourceRank: 0,
                 language: track.language,
                 playbackCount: track.playbackCount,
@@ -129,8 +133,16 @@ export class SoundCloudRecommender {
         );
     }
     private migrateLegacy(accountId: string): void {
+        const migrationKey = `waveLegacyMergedV1_${accountId}`;
+        if (this.store.get(migrationKey) === true) return;
         const history = this.store.get(`waveHistory_${accountId}`);
         if (!Array.isArray(history)) return;
+        const known = new Set(this.feedbackEvents.map((event) => `${event.track.id}|${event.kind}`));
+        const reactions = new Set(
+            this.feedbackEvents
+                .filter((event) => ['like', 'unlike', 'dislike'].includes(event.kind))
+                .map((event) => event.track.id),
+        );
         for (const item of history.slice(-500) as Array<Record<string, unknown>>) {
             if (
                 !item ||
@@ -157,12 +169,15 @@ export class SoundCloudRecommender {
                         : undefined,
             };
             const at = typeof item.updatedAt === 'number' ? item.updatedAt : this.now();
-            if (Number(item.plays) > 0) this.feedbackEvents.push({ track, kind: 'play', at, listenedFraction: 0.6 });
-            if (Number(item.skips) > 0) this.feedbackEvents.push({ track, kind: 'skip', at, listenedFraction: 0.1 });
-            if (item.liked === true) this.feedbackEvents.push({ track, kind: 'like', at });
+            if (Number(item.plays) > 0 && !known.has(`${track.id}|play`) && !known.has(`${track.id}|complete`))
+                this.feedbackEvents.push({ track, kind: 'play', at, listenedFraction: 0.6 });
+            if (Number(item.skips) > 0 && !known.has(`${track.id}|skip`))
+                this.feedbackEvents.push({ track, kind: 'skip', at, listenedFraction: 0.1 });
+            if (item.liked === true && !reactions.has(track.id)) this.feedbackEvents.push({ track, kind: 'like', at });
         }
-        this.feedbackEvents = this.feedbackEvents.slice(-5000);
+        this.feedbackEvents = this.feedbackEvents.sort((left, right) => left.at - right.at).slice(-5000);
         this.save();
+        this.store.set(migrationKey, true);
     }
     private save(): void {
         this.store.set(this.key, this.feedbackEvents.slice(-5000));
@@ -268,7 +283,10 @@ export class SoundCloudRecommender {
         this.save();
     }
     record(candidate: WaveCandidate, kind: FeedbackKind, listenedFraction?: number, features?: SoundFeatures): void {
-        const event: Feedback = { track: toTrack(candidate, features), kind, at: this.now(), listenedFraction };
+        const previous = this.candidates.get(candidate.url);
+        const current = { ...previous, ...candidate, features: features || candidate.features || previous?.features };
+        if (features) this.addCandidates([current]);
+        const event: Feedback = { track: toTrack(current, features), kind, at: this.now(), listenedFraction };
         this.feedbackEvents.push(event);
         if (this.feedbackEvents.length > 5000) this.feedbackEvents.splice(0, this.feedbackEvents.length - 5000);
         this.session.feedback(event);
@@ -301,8 +319,9 @@ export class SoundCloudRecommender {
             )
             .map(({ track, reasons }) => ({ ...byId.get(track.id)!, recommendationReasons: reasons }));
     }
-    reserve(candidate: WaveCandidate): void {
+    reserve(candidate: WaveCandidate, accepted = false): void {
         this.session.reserve(candidate.url);
+        if (accepted) this.session.accept(candidate.url);
     }
     release(candidate: WaveCandidate): void {
         this.session.release(candidate.url);
@@ -313,6 +332,23 @@ export class SoundCloudRecommender {
     }
     feedbackCount(): number {
         return this.feedbackEvents.length;
+    }
+    liked(url: string): boolean | undefined {
+        for (let index = this.feedbackEvents.length - 1; index >= 0; index--) {
+            const event = this.feedbackEvents[index];
+            if (event.track.id !== url) continue;
+            if (event.kind === 'like') return true;
+            if (event.kind === 'unlike') return false;
+        }
+        return undefined;
+    }
+    stats(): { heard: number; liked: number } {
+        const heard = new Set(
+            this.feedbackEvents
+                .filter((event) => ['play', 'complete'].includes(event.kind) && (event.listenedFraction || 0) >= 0.5)
+                .map((event) => event.track.id),
+        );
+        return { heard: heard.size, liked: this.session.profile().likedIds.size };
     }
     diagnostics(): object {
         return {

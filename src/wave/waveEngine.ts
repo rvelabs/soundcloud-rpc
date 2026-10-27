@@ -1,5 +1,6 @@
-import type ElectronStore from 'electron-store';
+import type { DataStore } from '../storage/asyncDataStore';
 import type { TrackInfo } from '../types';
+import type { SoundFeatures } from './recommendation/types';
 export interface WaveCandidate {
     url: string;
     title: string;
@@ -20,6 +21,7 @@ export interface WaveCandidate {
     playability?: 'available' | 'blocked' | 'preview' | 'protected' | 'unknown';
     recommendationReasons?: string[];
     durationSeconds?: number;
+    features?: SoundFeatures;
 }
 export interface AudioFeatures {
     energy: number;
@@ -68,7 +70,7 @@ export class WaveEngine {
     private featureSum = { energy: 0, bass: 0, mid: 0, treble: 0 };
     private featureCount = 0;
     private lastSavedBucket = -1;
-    constructor(private store: ElectronStore) {
+    constructor(private store: DataStore) {
         const saved = store.get(this.key());
         this.history = Array.isArray(saved)
             ? saved

@@ -53,9 +53,19 @@ window.addEventListener(
     true,
 );
 window.addEventListener('__soundcloudWaveMediaEnded', sendWaveFinish, true);
+window.addEventListener(
+    '__soundcloudWavePrepareNext',
+    () => {
+        if (waveTransportActive) ipcRenderer.send('wave-inline:control', 'prepare');
+    },
+    true,
+);
 contextBridge.exposeInMainWorld('soundcloudAPI', {
+    sendAudioFeatures: (features: unknown) => {
+        if (waveTransportActive) ipcRenderer.send('wave-inline:audio', features);
+    },
     sendTrackProgress: (data: TrackInfo) => {
-        if (waveTransportActive) ipcRenderer.send('soundcloud:track-progress', data);
+        ipcRenderer.send('soundcloud:track-progress', data);
     },
     sendTrackUpdate: (data: TrackInfo, reason: TrackUpdateReason) => {
         ipcRenderer.send('soundcloud:track-update', {
@@ -95,15 +105,23 @@ contextBridge.exposeInMainWorld('waveInline', {
             ].includes(channel)
         )
             return;
-        ipcRenderer.on(`wave-inline:${channel}`, (_event, ...args) => callback(...args));
+        const listener = (_event: unknown, ...args: unknown[]) => callback(...args);
+        ipcRenderer.on(`wave-inline:${channel}`, listener);
+        return () => ipcRenderer.removeListener(`wave-inline:${channel}`, listener);
     },
 });
 contextBridge.exposeInMainWorld('playlistImporter', {
+    draft: () => ipcRenderer.invoke('playlist-import:draft'),
+    resume: () => ipcRenderer.invoke('playlist-import:resume'),
+    selection: (input: unknown) => ipcRenderer.send('playlist-import:selection', input),
     scan: (url: string) => ipcRenderer.invoke('playlist-import:scan', url),
     scanFile: () => ipcRenderer.invoke('playlist-import:scan-file'),
     commit: (selection: { indexes: number[]; title: string }) =>
         ipcRenderer.invoke('playlist-import:commit', selection),
     cancel: () => ipcRenderer.send('playlist-import:cancel'),
-    onProgress: (callback: (state: unknown) => void) =>
-        ipcRenderer.on('playlist-import:progress', (_event, state) => callback(state)),
+    onProgress: (callback: (state: unknown) => void) => {
+        const listener = (_event: unknown, state: unknown) => callback(state);
+        ipcRenderer.on('playlist-import:progress', listener);
+        return () => ipcRenderer.removeListener('playlist-import:progress', listener);
+    },
 });

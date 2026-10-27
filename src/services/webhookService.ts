@@ -1,3 +1,6 @@
+import { DeliveryOutbox } from './deliveryOutbox';
+import { createHash } from 'node:crypto';
+import type { DataStore } from '../storage/asyncDataStore';
 import type ElectronStore from 'electron-store';
 import fetch from 'cross-fetch';
 import { normalizeTrackInfo } from '../utils/trackParser';
@@ -17,6 +20,7 @@ export interface WebhookState {
     startTime: number;
     duration: number;
     webhookSent: boolean;
+    deliveryQueued?: boolean;
     originUrl: string;
     trackArt: string;
     isPaused: boolean;
@@ -43,15 +47,48 @@ function shouldSendWebhook(state: WebhookState, triggerPercentage: number): bool
     const totalElapsed = (Date.now() - state.startTime) / 1000;
     const playedTime = totalElapsed - state.pausedTime;
     const targetTime = (state.duration * triggerPercentage) / 100;
-    return state.duration > 0 && !state.webhookSent && playedTime >= targetTime;
+    return state.duration > 0 && !state.webhookSent && !state.deliveryQueued && playedTime >= targetTime;
 }
 export class WebhookService {
     private store: ElectronStore;
     private currentWebhookState: WebhookState | null = null;
     private webhookTimeout: NodeJS.Timeout | null = null;
     private pauseStartTime: number = 0;
-    constructor(store: ElectronStore) {
+    private outbox: DeliveryOutbox<{ track: WebhookTrackData; timestamp: string; scope: string; id: string }>;
+    private deliveryScope(): string {
+        return createHash('sha256')
+            .update(String(this.store.get('webhookUrl') || ''))
+            .digest('hex');
+    }
+    constructor(store: ElectronStore, dataStore: DataStore = store) {
         this.store = store;
+        this.outbox = new DeliveryOutbox(
+            dataStore,
+            'webhookOutboxV1',
+            async (item) => {
+                if (item.scope !== this.deliveryScope()) return 'drop';
+                const response = await fetch(String(this.store.get('webhookUrl')), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': item.id },
+                    body: JSON.stringify({ timestamp: item.timestamp, eventId: item.id, ...item.track }),
+                    signal: AbortSignal.timeout(10000),
+                });
+                if (!response.ok)
+                    return response.status === 429 || response.status === 408 || response.status >= 500
+                        ? 'retry'
+                        : 'drop';
+                const state = this.currentWebhookState;
+                if (
+                    state &&
+                    state.track === item.track.track &&
+                    state.artist === item.track.artist &&
+                    new Date(state.startTime).toISOString() === item.timestamp
+                )
+                    state.webhookSent = true;
+                return 'sent';
+            },
+            () => this.store.get('webhookEnabled') === true,
+        );
     }
     private scheduleWebhook(): void {
         if (this.webhookTimeout) {
@@ -61,6 +98,7 @@ export class WebhookService {
         if (
             !this.currentWebhookState ||
             this.currentWebhookState.webhookSent ||
+            this.currentWebhookState.deliveryQueued ||
             this.currentWebhookState.isPaused ||
             this.currentWebhookState.duration <= 0
         ) {
@@ -84,10 +122,16 @@ export class WebhookService {
     private async sendScheduledWebhook(): Promise<void> {
         this.webhookTimeout = null;
         const state = this.currentWebhookState;
-        if (!state || state.webhookSent || state.isPaused || !this.store.get('webhookEnabled')) {
+        if (
+            !state ||
+            state.webhookSent ||
+            state.deliveryQueued ||
+            state.isPaused ||
+            !this.store.get('webhookEnabled')
+        ) {
             return;
         }
-        state.webhookSent = true;
+        state.deliveryQueued = true;
         await this.sendWebhook({
             artist: state.artist,
             track: state.track,
@@ -97,35 +141,18 @@ export class WebhookService {
         });
     }
     private async sendWebhook(trackData: WebhookTrackData): Promise<void> {
-        const webhookUrl = this.store.get('webhookUrl') as string;
-        const webhookEnabled = this.store.get('webhookEnabled') as boolean;
-        if (!webhookEnabled || !webhookUrl) {
-            return;
-        }
-        try {
-            const response = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    timestamp: new Date().toISOString(),
-                    ...trackData,
-                }),
-                signal: AbortSignal.timeout(10000),
-            });
-            if (!response.ok) {
-                console.error('Webhook failed:', response.status, response.statusText);
-            } else {
-                console.log(`Webhook sent for ${trackData.artist} - ${trackData.track}`);
-            }
-        } catch (error) {
-            console.error('Failed to send webhook:', error);
-        }
+        if (!this.store.get('webhookEnabled') || !this.store.get('webhookUrl')) return;
+        const timestamp = new Date(this.currentWebhookState?.startTime || Date.now()).toISOString();
+        const scope = this.deliveryScope();
+        const id = createHash('sha256')
+            .update(JSON.stringify([scope, trackData.artist, trackData.track, timestamp]))
+            .digest('hex');
+        this.outbox.enqueue(id, { track: trackData, timestamp, scope, id });
     }
     public async updateTrackInfo(trackInfo: WebhookInputData, isPlaying: boolean = true): Promise<void> {
         const webhookEnabled = this.store.get('webhookEnabled') as boolean;
         if (!webhookEnabled) return;
+        this.outbox.start();
         if (!trackInfo.title || !trackInfo.author) {
             return;
         }
@@ -174,7 +201,7 @@ export class WebhookService {
                 !this.currentWebhookState.webhookSent &&
                 shouldSendWebhook(this.currentWebhookState, triggerPercentage)
             ) {
-                this.currentWebhookState.webhookSent = true;
+                this.currentWebhookState.deliveryQueued = true;
                 void this.sendWebhook({
                     artist: this.currentWebhookState.artist,
                     track: this.currentWebhookState.track,
@@ -222,12 +249,14 @@ export class WebhookService {
         if (!enabled) this.dispose();
     }
     public disconnect(): void {
+        this.outbox.clear();
         this.dispose();
         this.store.set('webhookEnabled', false);
         this.store.delete('webhookUrl');
         this.store.delete('webhookTriggerPercentage');
     }
     public dispose(): void {
+        this.outbox.stop();
         if (this.webhookTimeout) {
             clearTimeout(this.webhookTimeout);
             this.webhookTimeout = null;

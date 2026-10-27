@@ -88,77 +88,86 @@ describe('Cloudflare transport', () => {
         expect((await handler(req('127.0.0.1', token), { RELAY_TOKEN: token })).status).toBe(403);
         expect(calls).toBe(0);
     });
-    it('streams two MiB through CONNECT and acknowledged WebSocket frames with bounded buffering', async () => {
-        const server = createServer(),
-            wss = new WebSocketServer({ noServer: true });
-        let sawAuth = false;
-        server.on('upgrade', (req, socket, head) => {
-            sawAuth = req.headers.authorization === 'Bearer ' + token;
-            wss.handleUpgrade(req, socket, head, (ws) => {
-                const echo = new PassThrough({ highWaterMark: 65536 }),
-                    streams = Duplex.toWeb(echo);
-                const adapter = {
-                    send: (data) => ws.send(data),
-                    close: (...args) => ws.close(...args),
-                    addEventListener: (name, fn) => {
-                        if (name === 'message')
-                            ws.on(name, (data, binary) =>
-                                fn({
-                                    data: binary
-                                        ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
-                                        : data.toString(),
-                                }),
-                            );
-                        else ws.on(name, fn);
-                    },
-                };
-                bridgeSocket(adapter, {
-                    ...streams,
-                    close: async () => {
-                        echo.destroy();
-                    },
+    it.each([1, 4])(
+        'streams two MiB through CONNECT with a bounded window of %i frames',
+        async (windowSize) => {
+            const server = createServer(),
+                wss = new WebSocketServer({ noServer: true });
+            let sawAuth = false;
+            server.on('upgrade', (req, socket, head) => {
+                sawAuth = req.headers.authorization === 'Bearer ' + token;
+                wss.handleUpgrade(req, socket, head, (ws) => {
+                    const echo = new PassThrough({ highWaterMark: 65536 }),
+                        streams = Duplex.toWeb(echo);
+                    const adapter = {
+                        send: (data) => ws.send(data),
+                        close: (...args) => ws.close(...args),
+                        addEventListener: (name, fn) => {
+                            if (name === 'message')
+                                ws.on(name, (data, binary) =>
+                                    fn({
+                                        data: binary
+                                            ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+                                            : data.toString(),
+                                    }),
+                                );
+                            else ws.on(name, fn);
+                        },
+                    };
+                    if (windowSize === 4) ws.send('window:4');
+                    bridgeSocket(
+                        adapter,
+                        {
+                            ...streams,
+                            close: async () => {
+                                echo.destroy();
+                            },
+                        },
+                        windowSize,
+                    );
                 });
             });
-        });
-        await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-        const gateway = new CloudflareGateway();
-        let client;
-        try {
-            const port = await gateway.start('ws://127.0.0.1:' + server.address().port + '/tunnel', token, true);
-            client = connect(port, '127.0.0.1');
-            const payload = randomBytes(2 * 1024 * 1024);
-            let header = false,
-                buffer = Buffer.alloc(0),
-                parts = [],
-                length = 0;
-            const received = new Promise((resolve, reject) => {
-                client.on('error', reject);
-                client.on('data', (chunk) => {
-                    if (!header) {
-                        buffer = Buffer.concat([buffer, chunk]);
-                        const end = buffer.indexOf('\r\n\r\n');
-                        if (end < 0) return;
-                        expect(buffer.subarray(0, end).toString()).toContain('200 Connection Established');
-                        chunk = buffer.subarray(end + 4);
-                        header = true;
-                        client.write(payload);
-                    }
-                    if (chunk.length) {
-                        parts.push(chunk);
-                        length += chunk.length;
-                        if (length === payload.length) resolve(Buffer.concat(parts));
-                    }
+            await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+            const gateway = new CloudflareGateway();
+            let client;
+            try {
+                const port = await gateway.start('ws://127.0.0.1:' + server.address().port + '/tunnel', token, true);
+                client = connect(port, '127.0.0.1');
+                const payload = randomBytes(2 * 1024 * 1024);
+                let header = false,
+                    buffer = Buffer.alloc(0),
+                    parts = [],
+                    length = 0;
+                const received = new Promise((resolve, reject) => {
+                    client.on('error', reject);
+                    client.on('data', (chunk) => {
+                        if (!header) {
+                            buffer = Buffer.concat([buffer, chunk]);
+                            const end = buffer.indexOf('\r\n\r\n');
+                            if (end < 0) return;
+                            expect(buffer.subarray(0, end).toString()).toContain('200 Connection Established');
+                            chunk = buffer.subarray(end + 4);
+                            header = true;
+                            client.write(payload);
+                        }
+                        if (chunk.length) {
+                            parts.push(chunk);
+                            length += chunk.length;
+                            if (length === payload.length) resolve(Buffer.concat(parts));
+                        }
+                    });
                 });
-            });
-            client.write('CONNECT api-v2.soundcloud.com:443 HTTP/1.1\r\nHost: api-v2.soundcloud.com:443\r\n\r\n');
-            expect(await received).toEqual(payload);
-            expect(sawAuth).toBe(true);
-        } finally {
-            client?.destroy();
-            gateway.close();
-            for (const ws of wss.clients) ws.terminate();
-            wss.close();
-            await new Promise((resolve) => server.close(resolve));
-        }
-    }, 15000);
+                client.write('CONNECT api-v2.soundcloud.com:443 HTTP/1.1\r\nHost: api-v2.soundcloud.com:443\r\n\r\n');
+                expect(await received).toEqual(payload);
+                expect(sawAuth).toBe(true);
+            } finally {
+                client?.destroy();
+                gateway.close();
+                for (const ws of wss.clients) ws.terminate();
+                wss.close();
+                await new Promise((resolve) => server.close(resolve));
+            }
+        },
+        15000,
+    );
 });
