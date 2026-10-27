@@ -12,10 +12,6 @@
         seeApp: 'Take a look',
         heroNote: 'Free. Open source. Windows 10 / 11, x64.',
         sleeveLabel: 'THE NEVER-ENDING SIDE A',
-        recordPause: 'Pause the record animation',
-        recordPlay: 'Resume the record animation',
-        recordCaption: 'THE MUSIC DOESN’T HAVE TO END',
-        demoNote: 'Automatic rotation · visual demo, no audio',
         baseline: 'A FAMILIAR PLAYER. A DIFFERENT NEXT TRACK.',
         learnMore: 'Learn more',
         waveKicker: 'PERSONAL RADIO',
@@ -80,7 +76,6 @@
             'An independent project. Made for listening.<br>SoundCloud and other names belong to their respective owners.',
         feedback: 'Feedback',
     };
-    const russianLabels = { recordPlay: 'Продолжить анимацию пластинки' };
     const sources = {
         spotify: {
             name: ['Spotify', 'Spotify'],
@@ -117,15 +112,13 @@
     for (const element of document.querySelectorAll('[data-label],[data-alt]'))
         attributes.set(element, element.getAttribute(element.dataset.alt ? 'alt' : 'aria-label'));
     const record = document.querySelector('.record-art');
-    const recordButton = document.querySelector('.record-toggle');
+    const recordDisc = document.querySelector('.record-disc');
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
     const reveals = new Set();
     let language = 'ru',
         source = 'spotify',
-        visible = !('IntersectionObserver' in window),
-        focused = true,
+        visible = true,
         entrancePlayed = false;
-    let enabled = true;
     const trackAnimation = (animation) => {
         reveals.add(animation);
         animation.finished.then(
@@ -133,25 +126,13 @@
             () => reveals.delete(animation),
         );
     };
-    const motionAllowed = () => !reduce.matches && !document.hidden && focused && visible;
+    const motionAllowed = () => !document.hidden && visible;
     const syncMotion = () => {
         record.classList.toggle('is-still', !motionAllowed());
-        record.classList.toggle('is-stopped', !enabled);
-        recordButton.setAttribute('aria-pressed', String(enabled));
-        const label = enabled ? 'recordPause' : 'recordPlay';
-        recordButton.dataset.label = label;
-        recordButton.setAttribute(
-            'aria-label',
-            language === 'en'
-                ? english[label]
-                : label === 'recordPlay'
-                  ? russianLabels.recordPlay
-                  : attributes.get(recordButton),
-        );
-        if (enabled && motionAllowed() && !entrancePlayed) {
+        if (!reduce.matches && motionAllowed() && !entrancePlayed) {
             entrancePlayed = true;
             trackAnimation(
-                recordButton.animate(
+                recordDisc.animate(
                     [
                         { opacity: 0.4, transform: 'translate(-18%, 5%) rotate(-6deg)' },
                         { opacity: 1, transform: 'none' },
@@ -172,7 +153,7 @@
             if (reduce.matches || ['idle', 'finished'].includes(animation.playState)) {
                 animation.cancel();
                 reveals.delete(animation);
-            } else if (document.hidden || !focused || (!visible && animation.effect?.target.closest('.record-art')))
+            } else if (document.hidden || (!visible && animation.effect?.target.closest('.record-art')))
                 animation.pause();
             else animation.play();
         }
@@ -224,10 +205,6 @@
             source = button.dataset.source;
             updateSource();
         });
-    recordButton.addEventListener('click', () => {
-        enabled = !enabled;
-        syncMotion();
-    });
     if ('IntersectionObserver' in window) {
         new IntersectionObserver(
             ([entry]) => {
@@ -256,27 +233,9 @@
         );
         for (const section of document.querySelectorAll('[data-reveal]')) observer.observe(section);
     }
-    addEventListener('blur', () => {
-        focused = false;
-        syncMotion();
-    });
-    addEventListener('focus', () => {
-        focused = true;
-        syncMotion();
-    });
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) focused = true;
-        syncMotion();
-    });
+    document.addEventListener('visibilitychange', syncMotion);
     reduce.addEventListener('change', syncMotion);
-    addEventListener('pagehide', () => {
-        focused = false;
-        syncMotion();
-    });
-    addEventListener('pageshow', () => {
-        focused = true;
-        syncMotion();
-    });
+    addEventListener('pageshow', syncMotion);
     let selected;
     try {
         selected = localStorage.getItem('soundcloud-site-language');

@@ -53,7 +53,7 @@ const server = http.createServer(async (req, res) => {
                     });
                     await page.goto(url);
                     await page.evaluate(() => document.fonts.ready);
-                    await page.locator('.record-toggle').scrollIntoViewIfNeeded();
+                    await page.locator('.record-disc').scrollIntoViewIfNeeded();
                     await page.waitForFunction(() =>
                         document
                             .querySelector('.vinyl')
@@ -65,10 +65,15 @@ const server = http.createServer(async (req, res) => {
                                     a.currentTime > 40,
                             ),
                     );
-                    assert.equal(await page.locator('.record-toggle').getAttribute('aria-pressed'), 'true');
+                    assert.equal(
+                        await page
+                            .locator('.record-art button,.record-art [role="button"],.record-art [tabindex]')
+                            .count(),
+                        0,
+                    );
                     await page.waitForFunction(() =>
                         document
-                            .querySelector('.record-toggle')
+                            .querySelector('.record-disc')
                             .getAnimations()
                             .every((a) => a.playState !== 'running'),
                     );
@@ -122,13 +127,7 @@ const server = http.createServer(async (req, res) => {
                     }
                     const links = await page.locator('a.button').evaluateAll((els) => els.map((el) => el.href));
                     assert(links.every((link) => link === 'https://github.com/rvelabs/soundcloud-rpc/releases/latest'));
-                    await page.locator('.record-toggle').click();
-                    assert.equal(await page.locator('.record-toggle').getAttribute('aria-pressed'), 'false');
-                    assert.equal(
-                        await page.locator('.vinyl').evaluate((el) => getComputedStyle(el).animationPlayState),
-                        'paused',
-                    );
-                    await page.locator('.record-toggle').click();
+                    await page.locator('.record-art').click();
                     await page.waitForFunction(
                         () => getComputedStyle(document.querySelector('.vinyl')).animationPlayState === 'running',
                     );
@@ -157,7 +156,18 @@ const server = http.createServer(async (req, res) => {
                             .evaluate((el) => el.open)),
                     );
                     await page.emulateMedia({ reducedMotion: 'reduce' });
-                    await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
+                    await page.locator('.record-art').scrollIntoViewIfNeeded();
+                    await page.waitForFunction(
+                        () =>
+                            document
+                                .getAnimations()
+                                .filter((a) => a.effect?.target?.classList.contains('vinyl'))
+                                .some((a) => a.playState === 'running') &&
+                            document
+                                .getAnimations()
+                                .filter((a) => !a.effect?.target?.classList.contains('vinyl'))
+                                .every((a) => a.playState !== 'running'),
+                    );
                     await page.emulateMedia({ reducedMotion: 'no-preference' });
                     await page.locator('.footer').scrollIntoViewIfNeeded();
                     await page.waitForFunction(
@@ -183,7 +193,8 @@ const server = http.createServer(async (req, res) => {
                         preset,
                         languages: ['ru', 'en'],
                         layout: true,
-                        recordControl: true,
+                        decorativeRecordOnly: true,
+                        spinsWithSystemReducedMotion: true,
                         autoStartWithoutClick: true,
                         platformGuide: true,
                         keyboardFAQ: true,
@@ -193,12 +204,25 @@ const server = http.createServer(async (req, res) => {
                     });
                     await context.close();
                 }
-                const fallback = await browser.newContext({ ...devices['iPhone SE'], javaScriptEnabled: false });
+                const fallback = await browser.newContext({
+                    ...devices['iPhone SE'],
+                    javaScriptEnabled: false,
+                    reducedMotion: 'reduce',
+                });
                 const page = await fallback.newPage();
                 await page.goto(url);
                 assert(await page.locator('h1').isVisible());
                 assert(await page.locator('a.button').first().isVisible());
                 assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+                await page.locator('.record-disc').scrollIntoViewIfNeeded();
+                await page.waitForFunction(() =>
+                    document
+                        .querySelector('.vinyl')
+                        .getAnimations()
+                        .some(
+                            (a) => a.animationName === 'record-spin' && a.playState === 'running' && a.currentTime > 40,
+                        ),
+                );
                 await page.locator('summary').first().click();
                 assert(
                     await page

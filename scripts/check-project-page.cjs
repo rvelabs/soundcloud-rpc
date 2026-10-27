@@ -42,8 +42,10 @@ app.whenReady().then(async () => {
             );
         assert(await recordRunning(), 'record starts before any interaction, without document focus');
         assert.equal(
-            await wc.executeJavaScript("document.querySelector('.record-toggle').getAttribute('aria-pressed')"),
-            'true',
+            await wc.executeJavaScript(
+                "document.querySelectorAll('.record-art button,.record-art [role=button],.record-art [tabindex]').length",
+            ),
+            0,
         );
         await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
             features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
@@ -52,9 +54,12 @@ app.whenReady().then(async () => {
             'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
         );
         assert.equal(
-            await wc.executeJavaScript("document.getAnimations().filter(a=>a.playState==='running').length"),
+            await wc.executeJavaScript(
+                "document.getAnimations().filter(a=>a.playState==='running' && !a.effect?.target?.classList.contains('vinyl')).length",
+            ),
             0,
         );
+        assert(await recordRunning(), 'decorative record rotates with system reduced motion');
         await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
             features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
         });
@@ -95,7 +100,7 @@ app.whenReady().then(async () => {
         await new Promise((r) => setTimeout(r, 70));
         assert.equal(
             await wc.executeJavaScript("getComputedStyle(document.querySelector('.vinyl')).animationPlayState"),
-            'paused',
+            'running',
             await wc.executeJavaScript(
                 "JSON.stringify({classes:document.querySelector('.record-art').className,focus:document.hasFocus(),hidden:document.hidden})",
             ),
@@ -108,7 +113,7 @@ app.whenReady().then(async () => {
         assert.equal(state.schema['@type'], 'SoftwareApplication');
         assert.deepEqual(errors, []);
         await wc.insertCSS(
-            '.header .navigation{height:88px}.hero.wrap{padding-top:36px}.hero .hero-copy h1{font-size:108px;margin-block:20px}.hero .record-art{width:420px;margin:0;align-self:start}.hero .hero-actions,.hero .fineprint,.hero .hero-baseline,.hero .demo-note,.hero .record-caption{display:none}',
+            '.header .navigation{height:88px}.hero.wrap{padding-top:36px}.hero .hero-copy h1{font-size:108px;margin-block:20px}.hero .record-art{width:420px;margin:0;align-self:start}.hero .hero-actions,.hero .fineprint,.hero .hero-baseline{display:none}',
         );
         await wc.executeJavaScript(
             'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
@@ -127,7 +132,9 @@ app.whenReady().then(async () => {
             resumeAfterReducedMotion: true,
             viewportChecks: 24,
             languageSwitch: true,
-            focusPause: true,
+            visibleRecordIgnoresFocus: true,
+            spinsWithSystemReducedMotion: true,
+            decorativeRecordOnly: true,
             schema: true,
             consoleErrors: 0,
             socialPreview: true,

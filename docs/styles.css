@@ -428,7 +428,7 @@ svg {
     letter-spacing: -2px;
     margin: 0;
 }
-.record-toggle {
+.record-disc {
     position: absolute;
     width: 86%;
     aspect-ratio: 1;
@@ -438,8 +438,9 @@ svg {
     border: 0;
     background: none;
     border-radius: 50%;
-    touch-action: manipulation;
     transition: transform 800ms var(--ease);
+    pointer-events: none;
+    user-select: none;
 }
 .vinyl {
     position: absolute;
@@ -507,102 +508,12 @@ svg {
     letter-spacing: 0.3px;
     text-align: center;
 }
-.record-control {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    opacity: 0;
-    transition: opacity 0.25s;
-    border-radius: 50%;
-    background: #0002;
-}
-.record-toggle:hover .record-control,
-.record-toggle:focus-visible .record-control {
-    opacity: 1;
-}
-.pause-mark {
-    width: 22px;
-    height: 28px;
-    border-left: 7px solid #fff;
-    border-right: 7px solid #fff;
-    filter: drop-shadow(0 1px 4px #000);
-}
-.play-mark {
-    display: none;
-    width: 0;
-    height: 0;
-    border-top: 15px solid transparent;
-    border-bottom: 15px solid transparent;
-    border-left: 23px solid #fff;
-    filter: drop-shadow(0 1px 4px #000);
-}
-.record-toggle[aria-pressed='false'] .pause-mark {
-    display: none;
-}
-.record-toggle[aria-pressed='false'] .play-mark {
-    display: block;
-}
-.record-toggle[aria-pressed='false'] .vinyl,
-.record-art.is-still .vinyl,
-.record-art.is-still .sound-bars i,
-.record-art.is-stopped .sound-bars i {
-    animation-play-state: paused;
-}
-.record-caption {
-    position: absolute;
-    bottom: -1%;
-    left: 15%;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    font-family: Arial, sans-serif;
-    font-size: 8px;
-    letter-spacing: 0.7px;
-}
-.sound-bars {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    height: 20px;
-}
-.sound-bars i {
-    width: 2px;
-    background: var(--ink);
-    height: 15px;
-    animation: bar-dance 1.1s ease-in-out infinite alternate;
-}
-.sound-bars i:nth-child(2) {
-    height: 9px;
-    animation-delay: -0.7s;
-}
-.sound-bars i:nth-child(3) {
-    height: 18px;
-    animation-delay: -0.3s;
-}
-.sound-bars i:nth-child(4) {
-    height: 11px;
-    animation-delay: -0.5s;
-}
-.sound-bars i:nth-child(5) {
-    height: 7px;
-    animation-delay: -0.2s;
-}
-.demo-note {
-    position: absolute;
-    bottom: -6%;
-    left: 15%;
-    font-size: 9px;
-    color: var(--muted);
+.record-art.is-still .vinyl {
+    animation-play-state: paused !important;
 }
 @keyframes record-spin {
     to {
         transform: rotate(360deg);
-    }
-}
-@keyframes bar-dance {
-    to {
-        transform: scaleY(0.3);
     }
 }
 h2 {
@@ -1295,13 +1206,6 @@ h3 {
     .record-art {
         margin-top: -25px;
     }
-    .record-caption {
-        font-size: 6px;
-        gap: 6px;
-    }
-    .demo-note {
-        font-size: 7px;
-    }
     .sleeve-top,
     .sleeve-bottom {
         font-size: 6px;
@@ -1544,14 +1448,6 @@ h3 {
     }
     .label-small {
         font-size: 5px;
-    }
-    .record-caption {
-        font-size: 6px;
-        bottom: -1%;
-    }
-    .demo-note {
-        font-size: 8px;
-        bottom: -7%;
     }
     .hero-baseline {
         font-size: 7px;
@@ -1884,7 +1780,7 @@ h3 {
     .record-art:hover .sleeve {
         transform: translate(-4px, 2px) rotate(-11deg);
     }
-    .record-art:hover .record-toggle {
+    .record-art:hover .record-disc {
         transform: translate(5px, -3px);
     }
 }
@@ -1899,6 +1795,7 @@ h3 {
         transition: none !important;
     }
     .vinyl {
-        will-change: auto;
+        will-change: transform;
+        animation: record-spin 24s linear infinite !important;
     }
 }
