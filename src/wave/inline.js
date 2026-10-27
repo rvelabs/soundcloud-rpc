@@ -100,6 +100,7 @@
           <button type="button" data-command="import-close" aria-label="Закрыть">×</button></div>
         <div class="cw-import-source"><input type="url" placeholder="Вставьте ссылку на публичный плейлист" aria-label="Ссылка на плейлист">
           <button type="button" data-command="import-scan">Найти треки</button></div>
+        <button class="cw-import-file" type="button" data-command="import-file" title="CSV с названием и исполнителем или TXT «Исполнитель — Название»">Импорт из CSV/TXT</button>
         <label class="cw-import-title">Название в SoundCloud <input type="text" maxlength="100" aria-label="Название нового плейлиста" disabled></label>
         <div class="cw-import-progress" hidden><div class="cw-import-progress-head"><span class="cw-import-orbit" aria-hidden="true"></span><strong class="cw-import-caption">Готовим импорт</strong><span class="cw-import-count"></span></div><div class="cw-import-meter" role="progressbar" aria-label="Прогресс импорта" aria-valuemin="0" aria-valuemax="100"><i></i></div></div>
         <p class="cw-import-message" role="status">Найденные совпадения можно проверить перед созданием плейлиста.</p>
@@ -260,6 +261,7 @@
             ? t('Создать из найденных')
             : t('Добавить выбранные в SoundCloud');
         $('.cw-import-commit').disabled = (importBusy && !importScanning) || !$('.cw-import-results input:checked');
+        $('.cw-import-file').disabled = importBusy;
     };
     const updateImportRow = (index) => {
         const entry = importMatches[index],
@@ -599,14 +601,18 @@
             else importMessage(t('Дождитесь завершения текущего действия.'));
             return;
         }
-        if (command === 'import-scan') {
+        if (command === 'import-scan' || command === 'import-file') {
             if (importBusy) return;
+            const fromFile = command === 'import-file',
+                previousMatches = importMatches,
+                previousTitle = $('.cw-import-title input').value;
             const link = $('.cw-import-source input').value.trim();
             importBusy = true;
             importScanning = true;
             importMatches = [];
             renderImport();
             button.disabled = true;
+            $('.cw-import-source button').disabled = true;
             importTotal = 0;
             importCompleted = 0;
             updateImportProgress('source');
@@ -616,9 +622,15 @@
             $('.cw-import-title input').value = '';
             $('.cw-import-title input').disabled = true;
             importMessage(t('Читаем плейлист…'));
-            importScanPromise = importer
-                .scan(link)
+            importScanPromise = importer[fromFile ? 'scanFile' : 'scan'](link)
                 .then((result) => {
+                    if (result.cancelled) {
+                        importMatches = previousMatches;
+                        $('.cw-import-title input').value = previousTitle;
+                        $('.cw-import-progress').hidden = true;
+                        importMessage('');
+                        return;
+                    }
                     importMatches = (result.matches || []).map((item, index) => ({
                         ...item,
                         selected: importMatches[index]?.selected,
@@ -636,13 +648,19 @@
                     importMatches = importMatches.map((item) =>
                         item.pending ? { ...item, pending: false, error: 'Проверка остановлена.' } : item,
                     );
-                    importMessage(importError(error) + t(' Найденные треки сохранены — их можно добавить в плейлист.'));
+                    importMessage(
+                        importError(error) +
+                            (importMatches.some((item) => item.soundcloud)
+                                ? t(' Найденные треки сохранены — их можно добавить в плейлист.')
+                                : ''),
+                    );
                     updateImportProgress('error', importCompleted, importTotal);
                 })
                 .finally(() => {
                     importBusy = false;
                     importScanning = false;
                     button.disabled = false;
+                    $('.cw-import-source button').disabled = false;
                     $('.cw-import-source input').disabled = false;
                     $('.cw-import-title input').disabled = false;
                     $('.cw-import-cancel').hidden = true;
@@ -676,6 +694,7 @@
             }
             importBusy = true;
             button.disabled = true;
+            $('.cw-import-file').disabled = true;
             $('.cw-import-source button').disabled = true;
             updateImportProgress('checking', 0, indexes.length);
             importMessage(t('Создаём плейлист в SoundCloud…'));

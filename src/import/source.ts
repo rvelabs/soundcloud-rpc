@@ -1,4 +1,4 @@
-export type SourcePlatform = 'spotify' | 'youtube' | 'yandex';
+export type SourcePlatform = 'spotify' | 'youtube' | 'yandex' | 'file';
 export interface SourceTrack {
     title: string;
     artist: string;

@@ -119,12 +119,15 @@ export class WorkerSetup {
         modules: {
             entry: string;
             protocol: string;
+            source: string;
         },
         progress: (message: string) => void,
+        existing?: { endpoint: string; secret: string },
     ): Promise<{
         endpoint: string;
         secret: string;
         name: string;
+        updated: boolean;
     }> {
         if (this.busy) throw new Error('Настройка уже выполняется.');
         if (!this.token || this.now() > this.expires)
@@ -141,8 +144,9 @@ export class WorkerSetup {
                 subdomain: 'wave-' + suffix,
             };
         }
-        const plan = this.plan,
-            base = '/accounts/' + accountId + '/workers';
+        let plan = this.plan;
+        const base = '/accounts/' + accountId + '/workers';
+        let updated = false;
         try {
             progress('Получаем адрес workers.dev…');
             let subdomain = '';
@@ -173,6 +177,24 @@ export class WorkerSetup {
             }
             if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain))
                 throw new Error('Cloudflare не подтвердил адрес workers.dev. Завершите настройку Workers в браузере.');
+            if (existing && /^[A-Za-z0-9_-]{32,256}$/.test(existing.secret)) {
+                try {
+                    const address = new URL(existing.endpoint),
+                        suffix = '.' + subdomain + '.workers.dev';
+                    const name = address.hostname.endsWith(suffix) ? address.hostname.slice(0, -suffix.length) : '';
+                    if (
+                        address.protocol === 'https:' &&
+                        !address.username &&
+                        !address.password &&
+                        !address.port &&
+                        /^soundcloud-wave-[a-z0-9-]{8,40}$/.test(name)
+                    ) {
+                        plan = { ...plan, name, secret: existing.secret };
+                        this.plan = plan;
+                        updated = true;
+                    }
+                } catch {}
+            }
             const endpoint = 'https://' + plan.name + '.' + subdomain + '.workers.dev';
             const form = new FormData();
             form.append(
@@ -198,7 +220,16 @@ export class WorkerSetup {
                 new Blob([modules.protocol], { type: 'application/javascript+module' }),
                 'protocol.mjs',
             );
-            progress('Загружаем Worker и создаём ключ подключения…');
+            form.append(
+                'playlist-source.mjs',
+                new Blob([modules.source], { type: 'application/javascript+module' }),
+                'playlist-source.mjs',
+            );
+            progress(
+                updated
+                    ? 'Обновляем код Worker, сохраняем адрес и ключ…'
+                    : 'Загружаем Worker и создаём ключ подключения…',
+            );
             await this.api(base + '/scripts/' + plan.name, { method: 'PUT', body: form });
             progress('Включаем HTTPS-адрес Worker…');
             const enabled = await this.api(base + '/scripts/' + plan.name + '/subdomain', {
@@ -216,7 +247,7 @@ export class WorkerSetup {
                 throw new Error(
                     'Cloudflare пока не включил HTTPS-адрес. Повторите создание: мастер использует тот же Worker.',
                 );
-            return { endpoint, secret: plan.secret, name: plan.name };
+            return { endpoint, secret: plan.secret, name: plan.name, updated };
         } catch (error) {
             throw new Error(
                 (error instanceof Error ? error.message : 'Ошибка настройки.') +

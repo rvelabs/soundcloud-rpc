@@ -968,8 +968,8 @@ export class SettingsManager {
                     <button class="button" id="cloudflareAccounts">Подключить аккаунт</button>
                     <div id="cloudflareAccountFields" hidden>
                         <select class="textInput" id="cloudflareAccount" aria-label="Аккаунт Cloudflare"></select>
-                        <p class="description">Создадим отдельный Worker со случайным именем в выбранном аккаунте. Если адрес workers.dev ещё не зарегистрирован, создадим его. Существующие Workers и адрес аккаунта сохраняются.</p>
-                        <button class="button" id="cloudflareDeploy">Создать Worker и подставить адрес</button>
+                        <p class="description">Обновим сохранённый Worker этого клиента в выбранном аккаунте, сохранив адрес и ключ. Если подходящего Worker нет, создадим отдельный со случайным именем. Остальные Workers и адрес аккаунта сохраняются.</p>
+                        <button class="button" id="cloudflareDeploy">Создать или обновить Worker</button>
                         <button class="button" id="cloudflareSetupCancel">Забыть токен</button>
                     </div>
                     <p id="cloudflareSetupStatus" class="description" role="status"></p>
@@ -1432,9 +1432,9 @@ export class SettingsManager {
                 setupBusy(true);setupStatus.textContent='Создаём Worker…';
                 try{const result=await ipcRenderer.invoke('network:setup-deploy',document.getElementById('cloudflareAccount').value);
                     document.getElementById('cloudflareEndpoint').value=result.endpoint;document.getElementById('cloudflareMode').value='auto';
-                    const key=document.getElementById('cloudflareSecret');key.value='';key.placeholder='Ключ создан и сохранён автоматически';
+                    const key=document.getElementById('cloudflareSecret');key.value='';key.placeholder=result.updated?'Адрес и ключ сохранены':'Ключ создан и сохранён автоматически';
                     document.getElementById('cloudflareAccountFields').hidden=true;
-                    setupStatus.textContent='Готово: '+result.endpoint+'. '+(result.applied?'Автоматический режим настроен.':'Настройки сохранены. Обычный прокси имеет приоритет; выключите его для использования Worker.');
+                    setupStatus.textContent=(result.updated?'Worker обновлён: ':'Готово: ')+result.endpoint+'. '+(result.applied?'Автоматический режим настроен.':'Настройки сохранены. Обычный прокси имеет приоритет; выключите его для использования Worker.');
                     document.getElementById('cloudflareStatus').textContent='Адрес и ключ сохранены. Нажмите «Проверить Worker». Первое подключение может занять время, пока обновляется DNS.';
                 }catch(error){setupStatus.textContent=setupError(error)}finally{setupBusy(false)}
             });

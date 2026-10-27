@@ -1,5 +1,36 @@
 export type InterfaceLanguage = 'auto' | 'ru' | 'en';
 export const waveEnglish: Record<string, string> = {
+    'SoundCloud требует повторного входа (HTTP 401).': 'SoundCloud requires you to sign in again (HTTP 401).',
+    'SoundCloud ограничил добавление треков. Повторите позже (HTTP 429).':
+        'SoundCloud has rate-limited playlist writes. Try again later (HTTP 429).',
+    'SoundCloud не разрешил создание плейлиста. Проверьте вход и подтверждение почты (HTTP 403).':
+        'SoundCloud refused to create the playlist. Check sign-in and email verification (HTTP 403).',
+    'Импорт из CSV/TXT': 'Import CSV/TXT',
+    'CSV с названием и исполнителем или TXT «Исполнитель — Название»':
+        'CSV with track and artist columns, or TXT “Artist — Title”',
+    'Читаем плейлист через Worker…': 'Reading the playlist through Worker…',
+    'Читаем плейлист напрямую…': 'Reading the playlist directly…',
+    'Для импорта без VPN обновите Worker: F1 → создайте Worker через мастер или разверните новые файлы Worker. Клиент обновился, код старого Worker — нет.':
+        'To import without a VPN, update your Worker in F1 using the setup wizard or deploy the new Worker files. Updating the client does not update an existing Worker.',
+    'Не удалось загрузить список треков из источника. Настройте резервное подключение Worker в F1 или импортируйте CSV/TXT.':
+        'Could not load the source track list. Configure the fallback Worker in F1 or import CSV/TXT.',
+    'Worker не ответил при загрузке плейлиста. Повторите попытку или импортируйте CSV/TXT.':
+        'Worker did not respond while loading the playlist. Retry or import CSV/TXT.',
+    'Cloudflare не подтвердил резервную загрузку плейлиста. Проверьте Worker или импортируйте CSV/TXT.':
+        'Cloudflare did not confirm playlist loading. Check your Worker or import CSV/TXT.',
+    'Worker отклонил ключ подключения. Проверьте сохранённый ключ.':
+        'Worker rejected the connection key. Check your saved key.',
+    'Источник не открыл плейлист. Нужна публичная ссылка; для личного списка используйте CSV/TXT.':
+        'The source did not expose this playlist. Use a public link, or CSV/TXT for a personal list.',
+    'В CSV не закрыты кавычки. Проверьте файл экспорта.':
+        'The CSV contains an unclosed quoted field. Check the export file.',
+    'Файл плейлиста слишком велик. Максимум 4 МБ.': 'The playlist file is too large. Maximum size: 4 MB.',
+    'Выберите CSV/TXT размером не более 4 МБ.': 'Choose a CSV/TXT file up to 4 MB.',
+    'Нужны названия треков и исполнители: CSV с колонками Track Name / Artist Name(s) или TXT «Исполнитель — Название». Одних ссылок недостаточно.':
+        'Track names and artists are required: CSV with Track Name / Artist Name(s) columns, or TXT “Artist — Title”. Links alone are not enough.',
+    'SoundCloud не подтвердил доступность. Найденные совпадения сохранены — повторите добавление.':
+        'SoundCloud did not confirm availability. Found matches are preserved; retry saving.',
+    'Окно импорта закрыто.': 'The import window is closed.',
     'Вставьте ссылку на плейлист.': 'Paste a playlist link.',
     'Нужна обычная HTTPS-ссылка на плейлист.': 'Use a standard HTTPS playlist link.',
     'Поддерживаются ссылки на плейлисты Яндекс Музыки, Spotify и YouTube Music.':

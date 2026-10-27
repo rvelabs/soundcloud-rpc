@@ -1,6 +1,6 @@
 import { WorkerSetup } from './network/workerSetup';
 import { ConnectionRecovery } from './network/connectionRecovery';
-import { writePartialPlaylist } from './import/partialPlaylist';
+import { saveImportSelection } from './import/saveSelection';
 import { installNativePageCover } from './wave/nativePageCover';
 import {
     app,
@@ -14,6 +14,7 @@ import {
     components,
     safeStorage,
     clipboard,
+    dialog,
     type IpcMainEvent,
     type IpcMainInvokeEvent,
 } from 'electron';
@@ -62,11 +63,12 @@ import { enrichPublicTrack, setPublicMetadataFetch } from './wave/trackMetadata'
 import { installWaveMediaEndCapture } from './wave/mediaEndCapture';
 import { setStationAutoplay } from './wave/nativeAutoplay';
 import { loadSourcePlaylist } from './import/loadSource';
+import { loadLocalPlaylist } from './import/localSource';
 import { findSoundCloudMatch, type ImportMatch } from './import/match';
 import { cancelImportOperation, automaticImportConcurrency, mapImportTracks } from './import/parallel';
 import { createAvailabilityChecker } from './import/availability';
 import { availableParallelism, freemem } from 'node:os';
-import { createSoundCloudPlaylist, addSoundCloudPlaylistTrack } from './import/nativePlaylist';
+import { createSoundCloudPlaylist, addSoundCloudPlaylistTrack, PlaylistWriteError } from './import/nativePlaylist';
 import type { SourcePlaylist } from './import/source';
 import type { SoundFeatures } from './wave/recommendation/types';
 import { audioMonitorScript } from './services/audioMonitorService';
@@ -751,6 +753,8 @@ async function init() {
     } | null = null;
     let importTask: Promise<unknown> | null = null;
     let importScanController: AbortController | null = null;
+    let importCommitController: AbortController | null = null;
+    let importFileDialogOpen = false;
     const importSearchViews = new Set<BrowserView>();
     const closeImportView = (view: BrowserView) => {
         const contents = view.webContents;
@@ -777,11 +781,13 @@ async function init() {
         return view;
     };
     const getImportView = () => {
+        if (mainWindow.isDestroyed() || clientContents.isDestroyed()) throw new Error('Окно импорта закрыто.');
         if (!importView?.webContents || importView.webContents.isDestroyed()) importView = createImportView();
         return importView.webContents;
     };
     mainWindow.once('closed', () => {
         importScanController?.abort();
+        importCommitController?.abort();
         for (const view of importSearchViews) closeImportView(view);
         if (importView) closeImportView(importView);
         disposeWaveViews();
@@ -1641,9 +1647,7 @@ async function init() {
         traceWave('feedback-dislike', waveCurrent);
         await chooseNext('user');
     });
-    ipcMain.handle('playlist-import:scan', async (event, link: unknown) => {
-        if (!isTrustedSoundCloudSender(event) || typeof link !== 'string' || link.length > 1000)
-            throw new Error('Недопустимая ссылка на плейлист.');
+    const scanPlaylist = async (load: (signal: AbortSignal) => Promise<SourcePlaylist>) => {
         if (importTask) throw new Error('Предыдущий импорт ещё выполняется.');
         const controller = new AbortController();
         importScanController = controller;
@@ -1651,7 +1655,7 @@ async function init() {
         const task = (async () => {
             importDraft = null;
             importProgress('source', 0, 0, 'Читаем плейлист…');
-            const source = await loadSourcePlaylist(link, controller.signal);
+            const source = await load(controller.signal);
             controller.signal.throwIfAborted();
             const concurrency = automaticImportConcurrency(availableParallelism(), freemem(), source.tracks.length);
             const availability = createAvailabilityChecker(clientContents.session, controller.signal);
@@ -1731,6 +1735,46 @@ async function init() {
             if (importScanController === controller) importScanController = null;
             if (importTask === task) importTask = null;
         }
+    };
+    ipcMain.handle('playlist-import:scan', (event, link: unknown) => {
+        if (!isTrustedSoundCloudSender(event) || typeof link !== 'string' || link.length > 1000)
+            throw new Error('Недопустимая ссылка на плейлист.');
+        return scanPlaylist((signal) =>
+            loadSourcePlaylist(link, signal, {
+                relay: connectionRecovery.canLoadPlaylistSource()
+                    ? (url, cancel) => connectionRecovery.loadPlaylistSource(url, cancel)
+                    : undefined,
+                preferRelay: store.get('cloudflareMode') === 'always',
+                onRoute: (route) =>
+                    importProgress(
+                        'source',
+                        0,
+                        0,
+                        route === 'relay' ? 'Читаем плейлист через Worker…' : 'Читаем плейлист напрямую…',
+                    ),
+            }),
+        );
+    });
+    ipcMain.handle('playlist-import:scan-file', async (event) => {
+        if (!isTrustedSoundCloudSender(event)) throw new Error('Недоверенная страница импорта.');
+        if (importTask || importFileDialogOpen) throw new Error('Предыдущий импорт ещё выполняется.');
+        importFileDialogOpen = true;
+        try {
+            const selected = await dialog.showOpenDialog(mainWindow, {
+                properties: ['openFile'],
+                filters: [{ name: 'Playlist CSV / TXT', extensions: ['csv', 'txt', 'tsv'] }],
+            });
+            if (
+                selected.canceled ||
+                !selected.filePaths.length ||
+                mainWindow.isDestroyed() ||
+                clientContents.isDestroyed()
+            )
+                return { cancelled: true };
+            return await scanPlaylist((signal) => loadLocalPlaylist(selected.filePaths[0], signal));
+        } finally {
+            importFileDialogOpen = false;
+        }
     });
     ipcMain.handle('playlist-import:commit', async (event, selection: unknown) => {
         const input = selection as {
@@ -1768,49 +1812,39 @@ async function init() {
             return true;
         });
         const playlistTitle = input.title.trim();
+        const controller = new AbortController();
+        importCommitController = controller;
         const task = (async () => {
             const title = playlistTitle;
-            const availability = createAvailabilityChecker(clientContents.session);
-            importProgress('checking', 0, chosen.length, 'Проверяем доступность перед добавлением…');
-            const checks = await mapImportTracks(chosen, {
+            const availability = createAvailabilityChecker(clientContents.session, controller.signal);
+            const result = await saveImportSelection(chosen, {
+                check: availability,
+                stopOnError: (error) => error instanceof PlaylistWriteError && error.fatal,
                 concurrency: automaticImportConcurrency(availableParallelism(), freemem(), chosen.length),
-                run: async (item) => ({
-                    item,
-                    availability: await availability(item.soundcloud!.url).catch(() => ({
-                        status: 'unknown' as const,
-                        reason: 'SoundCloud не ответил при проверке доступности.',
-                    })),
-                }),
-                onComplete: (_result, _index, completed) => importProgress('checking', completed, chosen.length, title),
-            });
-            const available = checks
-                .filter((result) => result.availability.status === 'available')
-                .map((result) => result.item);
-            const failures: {
-                title: string;
-                reason: string;
-            }[] = checks
-                .filter((result) => result.availability.status !== 'available')
-                .map((result) => ({ title: result.item.source.title, reason: result.availability.reason }));
-            if (!available.length)
-                throw new Error('Доступные полные версии не найдены. Плейлист не создан. Повторите поиск.');
-            const view = getImportView();
-            importProgress('creating', 0, available.length, title);
-            const result = await writePartialPlaylist(available, {
-                title: (item) => item.source.title,
+                signal: controller.signal,
                 create: (item) =>
-                    createSoundCloudPlaylist(view, title, item.soundcloud!.url, item.soundcloud!.sourceQuery),
+                    createSoundCloudPlaylist(
+                        getImportView(),
+                        title,
+                        item.soundcloud!.url,
+                        item.soundcloud!.sourceQuery,
+                    ),
                 add: (item) =>
-                    addSoundCloudPlaylistTrack(view, title, item.soundcloud!.url, item.soundcloud!.sourceQuery),
-                progress: (completed, item) => importProgress('adding', completed, available.length, item.source.title),
+                    addSoundCloudPlaylistTrack(
+                        getImportView(),
+                        title,
+                        item.soundcloud!.url,
+                        item.soundcloud!.sourceQuery,
+                    ),
+                progress: (phase, completed, total, detail) => importProgress(phase, completed, total, detail || title),
             });
-            failures.push(...result.failures);
+            const failures = result.failures;
             if (!result.successful.length)
                 throw new Error(
                     'SoundCloud не подтвердил добавление ни одного трека. Найденные совпадения сохранены — можно повторить добавление. ' +
                         (failures[0]?.reason || ''),
                 );
-            importProgress('done', available.length, available.length, title);
+            importProgress('done', chosen.length, chosen.length, title);
             return {
                 title,
                 added: result.added,
@@ -1825,6 +1859,7 @@ async function init() {
         try {
             return await task;
         } finally {
+            if (importCommitController === controller) importCommitController = null;
             if (importView) {
                 closeImportView(importView);
                 importView = null;
@@ -2050,16 +2085,19 @@ async function init() {
                 {
                     entry: readFileSync(path.join(folder, 'worker.mjs'), 'utf8'),
                     protocol: readFileSync(path.join(folder, 'protocol.mjs'), 'utf8'),
+                    source: readFileSync(path.join(folder, 'playlist-source.mjs'), 'utf8'),
                 },
                 (message) => {
                     if (!event.sender.isDestroyed()) event.sender.send('network:setup-progress', message);
                 },
+                connectionRecovery.workerSetupTarget(),
             );
             const applyNow = !store.get('proxyEnabled');
             connectionRecovery.save({ mode: 'auto', endpoint: result.endpoint, secret: result.secret });
             workerSetup.clear();
+            updateController?.acknowledgeWorker();
             await connectionRecovery.configure(true);
-            return { endpoint: result.endpoint, name: result.name, applied: applyNow };
+            return { endpoint: result.endpoint, name: result.name, applied: applyNow, updated: result.updated };
         } finally {
             networkSettingsBusy = false;
         }

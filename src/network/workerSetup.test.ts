@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { WorkerSetup } from './workerSetup';
 const account = 'a'.repeat(32),
     token = 'test_api_token_'.repeat(3);
-const modules = { entry: "import './protocol.mjs';", protocol: 'export const relay=true;' };
+const modules = {
+    entry: "import './protocol.mjs';",
+    protocol: 'export const relay=true;',
+    source: 'export const source=true;',
+};
 const response = (result: unknown, status = 200) =>
     new Response(JSON.stringify({ success: status < 400, result }), {
         status,
@@ -36,7 +40,7 @@ function fixture(
     return { setup: new WorkerSetup(fetcher as typeof fetch), calls, options };
 }
 describe('Cloudflare Worker setup', () => {
-    it('uploads both modules and a generated secret, preserves existing account domain and obtains an HTTPS endpoint', async () => {
+    it('uploads all modules and a generated secret, preserves existing account domain and obtains an HTTPS endpoint', async () => {
         const { setup, calls } = fixture();
         try {
             expect(await setup.authorize(token)).toEqual([{ id: account, name: 'Personal' }]);
@@ -53,11 +57,30 @@ describe('Cloudflare Worker setup', () => {
             expect(metadata.bindings).toEqual([{ name: 'RELAY_TOKEN', type: 'secret_text', text: result.secret }]);
             expect(await (form.get('worker.mjs') as Blob).text()).toBe(modules.entry);
             expect(await (form.get('protocol.mjs') as Blob).text()).toBe(modules.protocol);
+            expect(await (form.get('playlist-source.mjs') as Blob).text()).toBe(modules.source);
             expect(
                 calls.every(
                     (call) => call.url.startsWith('https://api.cloudflare.com/client/v4/') && !call.url.includes(token),
                 ),
             ).toBe(true);
+        } finally {
+            setup.clear();
+        }
+    });
+    it('updates the saved app Worker in its account without rotating its address or key', async () => {
+        const { setup, calls } = fixture();
+        try {
+            await setup.authorize(token);
+            const existing = {
+                endpoint: 'https://soundcloud-wave-1234567890.existing-user.workers.dev',
+                secret: 's'.repeat(64),
+            };
+            const result = await setup.deploy(account, modules, () => {}, existing);
+            expect(result.endpoint).toBe(existing.endpoint);
+            expect(result.secret).toBe(existing.secret);
+            expect(result.updated).toBe(true);
+            const form = calls.find((call) => call.init.body instanceof FormData)!.init.body as FormData;
+            expect(JSON.parse(await (form.get('metadata') as Blob).text()).bindings[0].text).toBe(existing.secret);
         } finally {
             setup.clear();
         }

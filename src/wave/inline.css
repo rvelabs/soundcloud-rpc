@@ -811,6 +811,20 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     margin: 14px 0 !important;
     color: #bbb;
 }
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-file {
+    padding: 7px 10px;
+    margin: 10px 0;
+    border: 1px solid #555;
+    border-radius: 5px;
+    background: transparent;
+    color: #ddd;
+    font-size: 12px;
+    cursor: pointer;
+}
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-file:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
 :is(#codex-wave-inline, #codex-playlist-import) .cw-import-results {
     flex: 1 1 auto;
     min-height: 0;

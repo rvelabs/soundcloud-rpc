@@ -31,4 +31,19 @@ describe('partial playlist writes', () => {
         expect(result.added).toBe(0);
         expect(add).not.toHaveBeenCalled();
     });
+    it('keeps saved tracks when a global write limit stops the remaining operations', async () => {
+        const add = vi.fn(async () => {
+            throw Error('rate limited');
+        });
+        const result = await writePartialPlaylist([1, 2, 3, 4], {
+            title: String,
+            create: async () => 'added' as const,
+            add,
+            progress: () => {},
+            stopOnError: () => true,
+        });
+        expect(result.successful).toEqual([1]);
+        expect(add).toHaveBeenCalledTimes(1);
+        expect(result.failures).toHaveLength(3);
+    });
 });

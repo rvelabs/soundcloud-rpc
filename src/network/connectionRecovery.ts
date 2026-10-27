@@ -4,6 +4,7 @@ import { CloudflareGateway } from './cloudflareGateway';
 import { relayPac, relayTarget, workerEndpoint } from './relayTargets';
 import { RecoveryPolicy } from './recoveryPolicy';
 import { probeSoundCloud, describeRelayDiagnostic, networkErrorCode, type RelayDiagnostic } from './relayDiagnostics';
+import { fetchSourceRelay } from '../import/sourceRelay';
 export class ConnectionRecovery {
     private gateway = new CloudflareGateway();
     private port = 0;
@@ -91,6 +92,29 @@ export class ConnectionRecovery {
     }
     getStatus(): string {
         return this.status;
+    }
+    canLoadPlaylistSource(): boolean {
+        return (
+            this.store.get('cloudflareMode', 'off') !== 'off' &&
+            Boolean(this.store.get('cloudflareEndpoint')) &&
+            Boolean(this.secret())
+        );
+    }
+    workerSetupTarget(): { endpoint: string; secret: string } | undefined {
+        const endpoint = String(this.store.get('cloudflareEndpoint', '')),
+            secret = this.secret();
+        return endpoint && secret ? { endpoint, secret } : undefined;
+    }
+    async loadPlaylistSource(url: string, signal?: AbortSignal): Promise<string> {
+        if (!this.canLoadPlaylistSource()) throw new Error('Для резервной загрузки плейлиста настройте Worker в F1.');
+        const target = session.fromPartition('wave-playlist-relay');
+        return fetchSourceRelay(
+            String(this.store.get('cloudflareEndpoint')),
+            this.secret(),
+            url,
+            target.fetch.bind(target) as typeof fetch,
+            signal,
+        );
     }
     getDiagnostics(): RelayDiagnostic | null {
         return this.diagnostic ? structuredClone(this.diagnostic) : null;

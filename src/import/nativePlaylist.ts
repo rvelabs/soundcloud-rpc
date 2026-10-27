@@ -1,6 +1,24 @@
 import type { WebContents } from 'electron';
 import { trackPath } from '../wave/nativeQueue';
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export class PlaylistWriteError extends Error {
+    constructor(
+        public readonly status: number,
+        public readonly fatal = false,
+    ) {
+        super(
+            status === 401
+                ? 'SoundCloud требует повторного входа (HTTP 401).'
+                : status === 429
+                  ? 'SoundCloud ограничил добавление треков. Повторите позже (HTTP 429).'
+                  : fatal
+                    ? 'SoundCloud не разрешил создание плейлиста. Проверьте вход и подтверждение почты (HTTP ' +
+                      status +
+                      ').'
+                    : 'SoundCloud не сохранил плейлист (код ' + status + ').',
+        );
+    }
+}
 async function until<T>(test: () => Promise<T | null>, message: string): Promise<T> {
     for (let i = 0; i < 40; i++) {
         const result = await test();
@@ -59,7 +77,32 @@ export async function confirmPlaylistWrite(view: WebContents, action: () => Prom
         else if (method === 'Network.loadingFinished' && writes.has(id)) {
             const status = writes.get(id)!;
             if (status >= 200 && status < 300) finish();
-            else fail(new Error(`SoundCloud не сохранил плейлист (код ${status}).`));
+            else {
+                void (async () => {
+                    let fatal = status === 401 || status === 429;
+                    if (status === 403) {
+                        try {
+                            const body = await debug.sendCommand('Network.getResponseBody', { requestId: id });
+                            if (!body.base64Encoded && typeof body.body === 'string' && body.body.length < 64000) {
+                                const data = JSON.parse(body.body),
+                                    message =
+                                        data.error_message ||
+                                        data.error?.message ||
+                                        data.message ||
+                                        data.errors?.[0]?.error_message ||
+                                        data.errors?.[0]?.message ||
+                                        '';
+                                fatal =
+                                    typeof message === 'string' &&
+                                    /verify (?:your )?e-?mail|confirm (?:your )?e-?mail|invalid (?:csrf|oauth|token)|authentication required|insufficient scope/i.test(
+                                        message,
+                                    );
+                            }
+                        } catch {}
+                    }
+                    fail(new PlaylistWriteError(status, fatal));
+                })();
+            }
         } else if (method === 'Network.loadingFailed' && writes.has(id))
             fail(new Error('Запрос сохранения плейлиста оборвался. Повторите добавление.'));
     };
@@ -83,6 +126,29 @@ export async function confirmPlaylistWrite(view: WebContents, action: () => Prom
 async function openAddDialog(view: WebContents, url: string, query: string): Promise<void> {
     const target = trackPath(url);
     if (!target) throw new Error('Некорректная ссылка SoundCloud.');
+    await view.loadURL('https://soundcloud.com' + target);
+    const direct = await until(
+        async () =>
+            view.executeJavaScript(
+                `(()=>{
+        const button=document.querySelector('.listenEngagement .sc-button-addtoset,.listenDetails .sc-button-addtoset');
+        if(!button)return null;button.click();return true;
+    })()`,
+                true,
+            ) as Promise<boolean | null>,
+        'SoundCloud не показал добавление трека в плейлист.',
+    ).catch(() => false);
+    if (direct) {
+        await until(
+            async () =>
+                view.executeJavaScript(
+                    `document.querySelector('.modal .addToPlaylistTabs,.modal .createPlaylistForm,.modal .createPlaylist__title input')?true:null`,
+                    true,
+                ),
+            'SoundCloud не показал окно плейлистов.',
+        );
+        return;
+    }
     await view.loadURL(`https://soundcloud.com/search/sounds?q=${encodeURIComponent(query.trim().slice(0, 120))}`);
     await until(
         async () =>

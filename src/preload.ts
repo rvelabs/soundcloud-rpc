@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('waveInline', {
 });
 contextBridge.exposeInMainWorld('playlistImporter', {
     scan: (url: string) => ipcRenderer.invoke('playlist-import:scan', url),
+    scanFile: () => ipcRenderer.invoke('playlist-import:scan-file'),
     commit: (selection: { indexes: number[]; title: string }) =>
         ipcRenderer.invoke('playlist-import:commit', selection),
     cancel: () => ipcRenderer.send('playlist-import:cancel'),

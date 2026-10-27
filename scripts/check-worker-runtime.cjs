@@ -20,6 +20,11 @@ async function runtime(protocol, entry = echoEntry) {
         modules: [
             { type: 'ESModule', path: path.join(root, 'cloudflare/soundcloud-relay/worker.mjs'), contents: entry },
             { type: 'ESModule', path: path.join(root, 'cloudflare/soundcloud-relay/protocol.mjs'), contents: protocol },
+            {
+                type: 'ESModule',
+                path: path.join(root, 'cloudflare/soundcloud-relay/playlist-source.mjs'),
+                contents: await fs.readFile(path.join(root, 'cloudflare/soundcloud-relay/playlist-source.mjs'), 'utf8'),
+            },
         ],
     });
     try {

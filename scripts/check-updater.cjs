@@ -117,7 +117,7 @@ app.whenReady().then(async () => {
             await published.controller.check();
             assert.equal(published.controller.snapshot().phase, 'available', JSON.stringify(published.failures));
             assert.equal(info.version, require(path.join(repo, 'package.json')).version);
-            assert.equal(info.workerProtocolRevision, 2);
+            assert.equal(info.workerProtocolRevision, require(path.join(repo, 'package.json')).workerProtocolRevision);
             assert.equal(published.installs(), 0);
             console.log(
                 JSON.stringify({

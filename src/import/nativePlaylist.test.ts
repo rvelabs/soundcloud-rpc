@@ -7,7 +7,7 @@ function fixture() {
         isAttached: vi.fn(() => false),
         attach: vi.fn(),
         detach: vi.fn(),
-        sendCommand: vi.fn(async () => {}),
+        sendCommand: vi.fn<(method:string,params?:object)=>Promise<unknown>>(async () => undefined),
     });
     const message = (method: string, params: object) => debug.emit('message', {}, `Network.${method}`, params);
     const request = () =>
@@ -55,5 +55,22 @@ describe('official playlist write completion', () => {
         const f = fixture();
         expect(await confirmPlaylistWrite(f.view, async () => false)).toBe(false);
         expect(f.debug.listenerCount('message')).toBe(0);
+    });
+    it('identifies account confirmation and rate limits as global failures rather than unavailable songs', async () => {
+        for (const status of [401, 403, 429]) {
+            const f = fixture();
+            f.debug.sendCommand.mockImplementation(async (method) =>
+                method === 'Network.getResponseBody'
+                    ? { body: JSON.stringify({ errors: [{ message: 'Please verify your email address' }] }) }
+                    : undefined,
+            );
+            const task = confirmPlaylistWrite(f.view, async () => {
+                f.request();
+                f.message('responseReceived', { requestId: 'write', response: { status } });
+                f.message('loadingFinished', { requestId: 'write' });
+                return true;
+            });
+            await expect(task).rejects.toMatchObject({ status, fatal: true });
+        }
     });
 });

@@ -1,7 +1,7 @@
 {
     "name": "soundcloud-rpc",
-    "version": "0.28.5",
-    "workerProtocolRevision": 2,
+    "version": "0.28.6",
+    "workerProtocolRevision": 3,
     "description": "SoundCloud desktop client with personalized radio, playlist import, Discord Rich Presence and Last.fm",
     "author": {
         "name": "Richard Habitzreuter",
@@ -12,6 +12,7 @@
         "lint": "eslint -c eslint.config.mjs --ext .ts ./src",
         "test": "vitest run",
         "test:worker": "node scripts/check-worker-runtime.cjs",
+        "test:import": "tsc && node scripts/check-playlist-worker.cjs --electron",
         "test:watch": "vitest",
         "test:placement": "electron scripts/check-wave-placement.cjs",
         "copy-header": "cpx \"src/header/**/*\" tsc/header && cpx \"src/wave/*.{html,css,js}\" tsc/wave",
