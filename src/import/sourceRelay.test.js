@@ -12,6 +12,7 @@ describe('public metadata relay', () => {
     it('limits resources to supported playlist metadata rather than a general proxy', () => {
         for (const url of [
             source,
+            'https://open.spotify.com/embed/album/4aawyAB9vmqN3uQ7FjRGTy',
             'https://music.youtube.com/playlist?list=PL-zl0Qa3WDZ-XYzFHodllO2vHmE7kGODR',
             'https://api.music.yandex.ru/playlist/abc-def',
             'https://music.yandex.ru/handlers/playlist.jsx?owner=user&kinds=12',
@@ -22,6 +23,8 @@ describe('public metadata relay', () => {
             'https://127.0.0.1/',
             'https://open.spotify.com.evil.test/embed/playlist/37i9dQZF1DXcBWIGoYBM5M',
             'https://open.spotify.com/account',
+            'https://open.spotify.com/embed/artist/4aawyAB9vmqN3uQ7FjRGTy',
+            'https://open.spotify.com/embed/album/4aawyAB9vmqN3uQ7FjRGTy?token=private',
             'https://api.spotify.com/v1/me',
             'https://www.youtube.com/watch?v=abc',
             'https://music.yandex.ru/handlers/playlist.jsx?owner=user&kinds=12&token=private',
@@ -80,6 +83,42 @@ describe('public metadata relay', () => {
         await expect(
             fetchSourceRelay('https://relay.workers.dev', secret, source, async (url, init) =>
                 handler(new Request(url, init), { RELAY_TOKEN: secret }),
+            ),
+        ).rejects.toMatchObject({ code: 'source' });
+    });
+    it('explains an album refusal from an old Worker and accepts an updated Worker', async () => {
+        const album = 'https://open.spotify.com/embed/album/4aawyAB9vmqN3uQ7FjRGTy';
+        await expect(
+            fetchSourceRelay(
+                'https://relay.workers.dev',
+                secret,
+                album,
+                async () =>
+                    new Response('Unsupported public playlist resource', {
+                        status: 403,
+                        headers: { 'X-SoundCloud-Playlist-Relay': '1' },
+                    }),
+            ),
+        ).rejects.toMatchObject({ code: 'upgrade' });
+        const handler = createPublicPlaylistHandler(async () => new Response('<html>album</html>'));
+        expect(
+            await fetchSourceRelay('https://relay.workers.dev', secret, album, async (url, init) =>
+                handler(new Request(url, init), { RELAY_TOKEN: secret }),
+            ),
+        ).toBe('<html>album</html>');
+        await expect(
+            fetchSourceRelay(
+                'https://relay.workers.dev',
+                secret,
+                album,
+                async () =>
+                    new Response('Refused', {
+                        status: 403,
+                        headers: {
+                            'X-SoundCloud-Playlist-Relay': '1',
+                            'X-SoundCloud-Playlist-Relay-Revision': '4',
+                        },
+                    }),
             ),
         ).rejects.toMatchObject({ code: 'source' });
     });

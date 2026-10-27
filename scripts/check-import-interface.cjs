@@ -61,6 +61,10 @@ app.whenReady().then(async () => {
         );
         await wait(100);
         assert.equal(await run(`document.querySelector('.cw-import-message').textContent`), 'ONLY_NETWORK_ERROR');
+        assert.equal(
+            await run(`document.querySelector('.cw-import-caption').textContent`),
+            'Could not read the source',
+        );
         assert.equal(await run(`document.querySelector('.cw-import-commit').disabled`), true);
         const report = {
             realElectronInterface: true,

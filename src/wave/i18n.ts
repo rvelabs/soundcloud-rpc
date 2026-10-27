@@ -1,5 +1,16 @@
 export type InterfaceLanguage = 'auto' | 'ru' | 'en';
 export const waveEnglish: Record<string, string> = {
+    'Поддерживаются плейлисты Яндекс Музыки, Spotify и YouTube Music, а также альбомы Spotify.':
+        'Supported links: Yandex Music, Spotify and YouTube Music playlists, and Spotify albums.',
+    'Spotify не показал список треков. Нужен доступный публичный плейлист или альбом.':
+        'Spotify did not show the tracks. Use an available public playlist or album.',
+    'Для импорта альбомов Spotify обновите Worker через мастер в F1. Адрес и ключ сохранятся при обновлении в том же аккаунте Cloudflare.':
+        'To import Spotify albums, update your Worker using the F1 wizard. Its address and key are preserved when updating in the same Cloudflare account.',
+    'Плейлисты Яндекс Музыки, Spotify, YouTube Music и альбомы Spotify':
+        'Yandex Music, Spotify and YouTube Music playlists, and Spotify albums',
+    'Ссылка на публичный плейлист или альбом Spotify': 'Public playlist or Spotify album link',
+    'Ссылка на плейлист или альбом Spotify': 'Playlist or Spotify album link',
+    'Не удалось прочитать источник': 'Could not read the source',
     'SoundCloud требует повторного входа (HTTP 401).': 'SoundCloud requires you to sign in again (HTTP 401).',
     'SoundCloud ограничил добавление треков. Повторите позже (HTTP 429).':
         'SoundCloud has rate-limited playlist writes. Try again later (HTTP 429).',

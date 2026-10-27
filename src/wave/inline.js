@@ -96,9 +96,9 @@
       </div></div><p class="cw-status" role="status">Рекомендации SoundCloud + ваш локальный вкус</p>
       <div class="cw-insight" hidden><details><summary>Почему этот трек</summary><p class="cw-reasons"></p><span class="cw-evidence"></span></details><button type="button" data-command="dislike" title="Меньше похожих рекомендаций">Не подходит</button><button type="button" data-command="exclude-artist" title="Исключить этого исполнителя из Моей волны">Не предлагать исполнителя</button></div>
       <dialog class="cw-import-dialog" aria-label="Импорт плейлиста">
-        <div class="cw-import-head"><div><strong>Импорт плейлиста</strong><p>Яндекс Музыка, Spotify или YouTube Music</p></div>
+        <div class="cw-import-head"><div><strong>Импорт плейлиста</strong><p>Плейлисты Яндекс Музыки, Spotify, YouTube Music и альбомы Spotify</p></div>
           <button type="button" data-command="import-close" aria-label="Закрыть">×</button></div>
-        <div class="cw-import-source"><input type="url" placeholder="Вставьте ссылку на публичный плейлист" aria-label="Ссылка на плейлист">
+        <div class="cw-import-source"><input type="url" placeholder="Ссылка на публичный плейлист или альбом Spotify" aria-label="Ссылка на плейлист или альбом Spotify">
           <button type="button" data-command="import-scan">Найти треки</button></div>
         <button class="cw-import-file" type="button" data-command="import-file" title="CSV с названием и исполнителем или TXT «Исполнитель — Название»">Импорт из CSV/TXT</button>
         <label class="cw-import-title">Название в SoundCloud <input type="text" maxlength="100" aria-label="Название нового плейлиста" disabled></label>
@@ -237,7 +237,7 @@
             creating: t('Создаём плейлист'),
             adding: t('Добавляем музыку'),
             done: t('Готово'),
-            error: t('Проверка остановлена'),
+            error: total ? t('Проверка остановлена') : t('Не удалось прочитать источник'),
         };
         $('.cw-import-caption').textContent = captions[phase] || t('Готовим импорт');
         $('.cw-import-count').textContent = total ? `${Math.min(completed, total)} / ${total}` : '';

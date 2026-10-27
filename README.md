@@ -40,7 +40,8 @@ Yandex Music's proprietary model. Cold starts depend on SoundCloud. Tempo, mood 
 available metadata.
 
 Import finds existing SoundCloud uploads; it does not copy audio. Source services may return partial playlists, and
-versions or regional availability can differ. SoundCloud playlists are limited to 500 tracks.
+versions or regional availability can differ. Spotify album links are also supported and become SoundCloud playlists.
+SoundCloud playlists are limited to 500 tracks.
 
 Public playlist metadata can load through your configured Worker when the source fails locally. Private playlists still
 need an authorized export. Files up to 4 MB are supported: CSV/TSV with **Track Name** and **Artist Name(s)** columns,
@@ -52,7 +53,7 @@ Press **F1** → **Резервное подключение SoundCloud**. The w
 address. It needs a Cloudflare API token with **Account Settings: Read** and **Workers Scripts: Edit**, scoped to your
 account. Revoke the setup token after deployment; never publish it or the relay key.
 
-**For playlist import through Worker, update both the client and Worker to 0.28.6.** In F1, choose **Создать или обновить
+**For Spotify album import through Worker, update both the client and Worker to 0.28.7.** In F1, choose **Создать или обновить
 Worker** and enter a new setup token in the app. Updating an existing app-created Worker in the same Cloudflare account
 preserves its address and relay key. The new endpoint fetches only allowlisted public playlist metadata; it does not
 forward your source-platform cookies or account credentials.
@@ -122,7 +123,7 @@ sign-in cookies and tokens.
 обновлениях клиент уведомит; перезапуск выбираете вы. Режим меняется в **F1 → Обновления SoundCloud**. Для старых
 сборок один раз установите новую версию вручную. Worker в Cloudflare обновляется отдельно.
 
-Для импорта через Worker нужны клиент **0.28.6** и обновлённый Worker: **F1 → Создать или обновить Worker**.
+Для импорта альбомов Spotify через Worker нужны клиент **0.28.7** и обновлённый Worker: **F1 → Создать или обновить Worker**.
 Введите новый установочный API-токен внутри приложения. Для ранее созданного клиентом Worker в том же аккаунте
 адрес и ключ сохраняются. Файлы до 4 МБ можно импортировать без доступа к исходному сервису: CSV/TSV с колонками
 названия и исполнителя или TXT со строками «Исполнитель — Название». Приватный плейлист требует доступного вам экспорта.

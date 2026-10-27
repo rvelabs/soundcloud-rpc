@@ -8,7 +8,7 @@ export function publicPlaylistResource(value) {
         if (new Set(params).size !== params.length) return null;
         if (
             url.hostname === 'open.spotify.com' &&
-            /^\/(?:intl-[a-z]{2}\/)?(?:embed\/)?playlist\/[A-Za-z0-9]{22}\/?$/.test(url.pathname) &&
+            /^\/(?:intl-[a-z]{2}\/)?(?:embed\/)?(?:playlist|album)\/[A-Za-z0-9]{22}\/?$/.test(url.pathname) &&
             !params.length
         )
             return url;
@@ -47,6 +47,7 @@ function reply(body, status = 200, extra = {}) {
             'Content-Security-Policy': "default-src 'none'; sandbox",
             'X-Content-Type-Options': 'nosniff',
             'X-SoundCloud-Playlist-Relay': '1',
+            'X-SoundCloud-Playlist-Relay-Revision': '4',
             ...extra,
         },
     });

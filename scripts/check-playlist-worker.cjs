@@ -7,7 +7,8 @@ const root = path.resolve(__dirname, '..'),
     folder = path.join(root, 'cloudflare/soundcloud-relay'),
     secret = crypto.randomBytes(32).toString('hex');
 const id = '37i9dQZF1DXcBWIGoYBM5M',
-    source = 'https://open.spotify.com/embed/playlist/' + id;
+    source = 'https://open.spotify.com/embed/playlist/' + id,
+    album = 'https://open.spotify.com/embed/album/4aawyAB9vmqN3uQ7FjRGTy';
 const titles = [
     'missing-start',
     'removed',
@@ -41,6 +42,9 @@ const body =
         mock.disableNetConnect();
         mock.get('https://open.spotify.com')
             .intercept({ path: '/embed/playlist/' + id, method: 'GET' })
+            .reply(200, body, { headers: { 'content-type': 'text/html' } });
+        mock.get('https://open.spotify.com')
+            .intercept({ path: new URL(album).pathname, method: 'GET' })
             .reply(200, body, { headers: { 'content-type': 'text/html' } })
             .times(process.argv.includes('--electron') ? 2 : 1);
         runtime = new Miniflare({
@@ -68,11 +72,17 @@ const body =
         assert.equal(response.status, 200);
         assert.equal(response.headers.get('x-soundcloud-playlist-relay'), '1');
         assert.equal(await response.text(), body);
+        url.searchParams.set('url', album);
+        const albumResponse = await fetch(url, { headers: { Authorization: 'Bearer ' + secret } });
+        assert.equal(albumResponse.status, 200);
+        assert.equal(albumResponse.headers.get('x-soundcloud-playlist-relay-revision'), '4');
+        assert.equal(await albumResponse.text(), body);
         console.log(
             JSON.stringify({
                 actualWorkerd: true,
                 productionModules: 3,
                 publicMetadataForwarding: true,
+                spotifyAlbumForwarding: true,
                 unauthorizedRejected: true,
                 privateDestinationRejected: true,
             }),
@@ -122,24 +132,30 @@ const body =
                 })),
             });
             try {
-                const target = new URL('/playlist-source', await live.ready);
-                target.searchParams.set('url', source);
-                const response = await fetch(target, { headers: { Authorization: 'Bearer ' + secret } });
-                assert.equal(
-                    response.status,
-                    200,
-                    'Public source status: ' + response.headers.get('x-playlist-source-status'),
-                );
-                const playlist = require(path.join(root, 'tsc/import/source')).parseSpotifyEmbed(await response.text());
-                assert(playlist.tracks.length > 0);
-                console.log(
-                    JSON.stringify({
-                        actualWorkerd: true,
-                        realPublicSpotify: true,
-                        sourceTracks: playlist.tracks.length,
-                        partial: playlist.partial,
-                    }),
-                );
+                for (const resource of [source, album]) {
+                    const target = new URL('/playlist-source', await live.ready);
+                    target.searchParams.set('url', resource);
+                    const response = await fetch(target, { headers: { Authorization: 'Bearer ' + secret } });
+                    assert.equal(
+                        response.status,
+                        200,
+                        'Public source status: ' + response.headers.get('x-playlist-source-status'),
+                    );
+                    const playlist = require(path.join(root, 'tsc/import/source')).parseSpotifyEmbed(
+                        await response.text(),
+                    );
+                    assert(playlist.tracks.length > 0);
+                    if (resource === album) assert.equal(playlist.title, 'Global Warming');
+                    console.log(
+                        JSON.stringify({
+                            actualWorkerd: true,
+                            realPublicSpotify: true,
+                            resource: resource === album ? 'album' : 'playlist',
+                            sourceTracks: playlist.tracks.length,
+                            partial: playlist.partial,
+                        }),
+                    );
+                }
             } finally {
                 await live.dispose();
             }

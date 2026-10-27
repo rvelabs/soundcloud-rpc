@@ -53,6 +53,17 @@ export async function fetchSourceRelay(
         void response.body?.cancel().catch(() => {});
         throw new SourceRelayError('key', 'Worker отклонил ключ подключения. Проверьте сохранённый ключ.');
     }
+    if (
+        response.status === 403 &&
+        new URL(url).pathname.startsWith('/embed/album/') &&
+        Number(response.headers.get('x-soundcloud-playlist-relay-revision') || '0') < 4
+    ) {
+        void response.body?.cancel().catch(() => {});
+        throw new SourceRelayError(
+            'upgrade',
+            'Для импорта альбомов Spotify обновите Worker через мастер в F1. Адрес и ключ сохранятся при обновлении в том же аккаунте Cloudflare.',
+        );
+    }
     if (!response.ok) {
         void response.body?.cancel().catch(() => {});
         const upstream = response.headers.get('x-playlist-source-status');

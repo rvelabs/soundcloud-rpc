@@ -25,9 +25,9 @@ export function classifyPlaylistUrl(input: string): {
         throw new Error('Нужна обычная HTTPS-ссылка на плейлист.');
     const host = url.hostname.toLowerCase();
     if (host === 'open.spotify.com') {
-        const match = url.pathname.match(/^\/(?:intl-[a-z]{2}\/)?playlist\/([A-Za-z0-9]{22})\/?$/);
+        const match = url.pathname.match(/^\/(?:intl-[a-z]{2}\/)?(?:embed\/)?(playlist|album)\/([A-Za-z0-9]{22})\/?$/);
         if (match)
-            return { platform: 'spotify', id: match[1], url: `https://open.spotify.com/embed/playlist/${match[1]}` };
+            return { platform: 'spotify', id: match[2], url: `https://open.spotify.com/embed/${match[1]}/${match[2]}` };
     }
     if (host === 'music.youtube.com' || host === 'www.youtube.com' || host === 'youtube.com') {
         const id = url.searchParams.get('list');
@@ -54,7 +54,7 @@ export function classifyPlaylistUrl(input: string): {
                 url: `https://music.yandex.ru/handlers/playlist.jsx?owner=${encodeURIComponent(legacy[1])}&kinds=${legacy[2]}`,
             };
     }
-    throw new Error('Поддерживаются ссылки на плейлисты Яндекс Музыки, Spotify и YouTube Music.');
+    throw new Error('Поддерживаются плейлисты Яндекс Музыки, Spotify и YouTube Music, а также альбомы Spotify.');
 }
 function clean(value: unknown): string {
     return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
@@ -100,7 +100,7 @@ function playlistResult(
 }
 export function parseSpotifyEmbed(html: string): SourcePlaylist {
     const match = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
-    if (!match) throw new Error('Spotify не показал список треков. Доступны только публичные плейлисты.');
+    if (!match) throw new Error('Spotify не показал список треков. Нужен доступный публичный плейлист или альбом.');
     const json = JSON.parse(match[1]) as {
         props?: {
             pageProps?: {
@@ -121,6 +121,8 @@ export function parseSpotifyEmbed(html: string): SourcePlaylist {
         };
     };
     const entity = json.props?.pageProps?.state?.data?.entity;
+    if (!entity?.trackList?.length)
+        throw new Error('Spotify не показал список треков. Нужен доступный публичный плейлист или альбом.');
     return playlistResult(
         'spotify',
         entity?.name || entity?.title || '',

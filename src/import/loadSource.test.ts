@@ -18,6 +18,17 @@ beforeEach(() => {
     direct.mockReset();
 });
 describe('source loading with independent fallback', () => {
+    it('routes album metadata through Worker when local access is blocked', async () => {
+        direct.mockRejectedValue(Error('net::ERR_CONNECTION_CLOSED'));
+        const relay = vi.fn<(url: string) => Promise<string>>().mockResolvedValue(body);
+        const result = await loadSourcePlaylist(
+            'https://open.spotify.com/intl-ru/album/4aawyAB9vmqN3uQ7FjRGTy?si=x',
+            undefined,
+            { relay },
+        );
+        expect(result.tracks).toHaveLength(1);
+        expect(relay.mock.calls[0][0]).toBe('https://open.spotify.com/embed/album/4aawyAB9vmqN3uQ7FjRGTy');
+    });
     it('loads through the Worker after a blocked direct connection and exposes the chosen route', async () => {
         direct.mockRejectedValue(Error('net::ERR_CONNECTION_CLOSED'));
         const relay = vi.fn(async () => body),

@@ -1,7 +1,7 @@
 {
     "name": "soundcloud-rpc",
-    "version": "0.28.6",
-    "workerProtocolRevision": 3,
+    "version": "0.28.7",
+    "workerProtocolRevision": 4,
     "description": "SoundCloud desktop client with personalized radio, playlist import, Discord Rich Presence and Last.fm",
     "author": {
         "name": "Richard Habitzreuter",

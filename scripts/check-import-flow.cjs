@@ -30,7 +30,7 @@ app.whenReady().then(async () => {
             playlist = { created: false, title: '', tracks: [] };
         session.defaultSession.protocol.handle('https', () => new Response('Local source blocked', { status: 451 }));
         progress('source-start');
-        const source = await loadSourcePlaylist('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M', undefined, {
+        const source = await loadSourcePlaylist('https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy', undefined, {
             relay: (url, signal) =>
                 fetchSourceRelay(
                     'https://fixture.workers.dev',
@@ -172,6 +172,7 @@ app.whenReady().then(async () => {
             actualWorkerd: true,
             blockedDirectSource: true,
             relaySourceLoaded: true,
+            spotifyAlbumSupported: true,
             sourceTracks: 7,
             savedTracks: result.added,
             failedOrBlocked: result.failures.length,

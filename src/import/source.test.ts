@@ -8,6 +8,20 @@ import {
 } from './source';
 import { matchScore } from './match';
 describe('playlist source URLs', () => {
+    it('accepts Spotify albums and embed links without confusing their resource type', () => {
+        const id = '4aawyAB9vmqN3uQ7FjRGTy';
+        for (const path of ['album/', 'intl-ru/album/', 'embed/album/'])
+            expect(classifyPlaylistUrl(`https://open.spotify.com/${path}${id}?si=ignored`)).toEqual({
+                platform: 'spotify',
+                id,
+                url: `https://open.spotify.com/embed/album/${id}`,
+            });
+        expect(classifyPlaylistUrl(`https://open.spotify.com/embed/playlist/${id}`).url).toBe(
+            `https://open.spotify.com/embed/playlist/${id}`,
+        );
+        for (const path of ['artist/', 'track/', 'show/', 'album/not-valid/'])
+            expect(() => classifyPlaylistUrl(`https://open.spotify.com/${path}${id}`)).toThrow();
+    });
     it('accepts only supported HTTPS playlist links', () => {
         expect(classifyPlaylistUrl('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=x').url).toBe(
             'https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M',
@@ -25,6 +39,32 @@ describe('playlist source URLs', () => {
     });
 });
 describe('public playlist parsers', () => {
+    it('reads an album track list and rejects a Spotify error document returned with HTTP 200', () => {
+        const html = (entity: unknown) =>
+            `<script id="__NEXT_DATA__">${JSON.stringify({
+                props: { pageProps: { state: { data: { entity } } } },
+            })}</script>`;
+        expect(
+            parseSpotifyEmbed(
+                html({
+                    type: 'album',
+                    name: 'Album',
+                    trackList: [
+                        { title: 'First', subtitle: 'Artist A, Artist B', uri: 'spotify:track:first' },
+                        { title: 'Second', subtitle: 'Artist A', uri: 'spotify:track:second' },
+                    ],
+                }),
+            ),
+        ).toMatchObject({
+            title: 'Album',
+            partial: false,
+            tracks: [
+                { title: 'First', artist: 'Artist A, Artist B' },
+                { title: 'Second', artist: 'Artist A' },
+            ],
+        });
+        expect(() => parseSpotifyEmbed(html(undefined))).toThrow('плейлист или альбом');
+    });
     it('reads Spotify embed data including artists', () => {
         const data = {
             props: {
