@@ -14,7 +14,7 @@ export function recentPreference(events: Feedback[], now: number): Map<string, n
         )
             latest.set(event.track.id, event);
     const signals = new Map<string, number>();
-    for (const event of [...latest.values()].slice(-12)) {
+    for (const event of [...latest.values()].sort((a, b) => a.at - b.at).slice(-12)) {
         const fraction = event.listenedFraction ?? 0;
         const weight =
             event.kind === 'dislike'

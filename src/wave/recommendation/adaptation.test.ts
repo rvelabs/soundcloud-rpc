@@ -10,6 +10,14 @@ const now = 10 ** 12;
 const controls: Controls = { mood: 'any', tone: 'any', tempo: 'any', discovery: 'new' };
 const track = (id: string, artist = id, genre = 'ambient'): Track => ({ id, title: 'Track ' + id, artist, genre });
 describe('session adaptation and queue diversity', () => {
+    it('keeps a new reaction to an older track among the latest session signals', () => {
+        const old = track('old', 'Old artist', 'oldstyle');
+        const events: Feedback[] = [{ track: old, kind: 'like', at: now - 30 * 60000 }];
+        for (let index = 0; index < 15; index++)
+            events.push({ track: track('other-' + index), kind: 'like', at: now - 20 * 60000 + index });
+        events.push({ track: old, kind: 'skip', listenedFraction: 0.05, at: now });
+        expect(recentPreference(events, now).get('oldstyle')).toBeLessThan(0);
+    });
     it('recognizes punctuation variants of an artist when preparing a batch', () => {
         const pool = Array.from({ length: 30 }, (_, index) =>
             track(String(index), index < 20 ? (index % 2 ? 'Same.Artist' : 'Same Artist') : 'Other ' + index),

@@ -60,6 +60,10 @@ jobs:
             - run: npm run compile
             - run: npm test
             - run: npm run test:worker
+            - if: runner.os == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --no-install-recommends -y openbox pulseaudio
             - if: runner.os == 'macOS'
               timeout-minutes: 6
               run:
@@ -69,7 +73,13 @@ jobs:
               timeout-minutes: 6
               run: |
                   sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-                  xvfb-run -a node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs check-source-pagination.cjs
+                  xvfb-run -a dbus-run-session -- bash -e -c '
+                    openbox >/tmp/soundcloud-openbox.log 2>&1 &
+                    pulseaudio --start --exit-idle-time=-1
+                    pactl load-module module-null-sink sink_name=soundcloud_ci
+                    pactl set-default-sink soundcloud_ci
+                    node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs check-source-pagination.cjs
+                  '
             - uses: actions/upload-artifact@v4
               if: always()
               with:
