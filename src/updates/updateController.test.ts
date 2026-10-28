@@ -56,6 +56,30 @@ function fixture(mode: UpdateMode = 'patch', worker = false) {
 }
 afterEach(() => vi.useRealTimers());
 describe('update policy and lifecycle', () => {
+    it('keeps unsupported and development builds usable without creating a platform updater', async () => {
+        const notify = vi.fn();
+        const controller = new UpdateController(undefined, {
+            currentVersion: '0.30.0',
+            mode: 'patch',
+            installSupported: false,
+            canCheck: false,
+            workerRevision: 4,
+            usesWorker: () => false,
+            pendingWorker: () => 0,
+            setPendingWorker: () => {},
+            changed: () => {},
+            notify,
+            beforeInstall: () => {},
+        });
+        controller.start();
+        controller.setMode('notify');
+        expect((await controller.check()).phase).toBe('idle');
+        expect((await controller.download()).phase).toBe('idle');
+        expect(() => controller.install()).toThrow('not ready');
+        expect(notify).not.toHaveBeenCalled();
+        controller.systemShutdown();
+        controller.dispose();
+    });
     it('ignores late automatic-check results after the user switches automatic checks off', async () => {
         const f = fixture();
         let resolve!: () => void;

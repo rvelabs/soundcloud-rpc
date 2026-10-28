@@ -74,5 +74,8 @@ jobs:
               if: always()
               with:
                   name: runtime-${{ runner.os }}
-                  path: build-runtime-check/
+                  path: |
+                      build-runtime-check/**/results.json
+                      build-runtime-check/**/stdout.log
+                      build-runtime-check/**/stderr.log
                   if-no-files-found: ignore

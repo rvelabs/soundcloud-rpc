@@ -234,11 +234,12 @@ function setupUpdater() {
         process.platform === 'win32' &&
         !process.env.PORTABLE_EXECUTABLE_DIR &&
         existsSync(path.join(process.resourcesPath, 'app-update.yml'));
-    autoUpdater.setFeedURL({ provider: 'github', owner: 'rvelabs', repo: 'soundcloud-rpc', releaseType: 'release' });
-    const metadata = require('../package.json') as { workerProtocolRevision?: number };
+    const backend = supported ? autoUpdater : undefined;
+    backend?.setFeedURL({ provider: 'github', owner: 'rvelabs', repo: 'soundcloud-rpc', releaseType: 'release' });
+    const metadata = require('../package.json') as { version: string; workerProtocolRevision?: number };
     const savedMode = store.get('updateMode', 'patch');
-    updateController = new UpdateController(autoUpdater, {
-        currentVersion: app.getVersion(),
+    updateController = new UpdateController(backend, {
+        currentVersion: app.isPackaged ? app.getVersion() : metadata.version,
         mode: (['patch', 'notify', 'off'].includes(savedMode) ? savedMode : 'patch') as UpdateMode,
         installSupported: supported,
         canCheck: supported,

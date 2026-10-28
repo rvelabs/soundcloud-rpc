@@ -44,7 +44,7 @@ export class UpdateController {
     private notified = new Set<string>();
     private listeners: [string, (...args: unknown[]) => void][] = [];
     constructor(
-        private backend: UpdateBackend,
+        private backend: UpdateBackend | undefined,
         private options: {
             currentVersion: string;
             mode: UpdateMode;
@@ -66,6 +66,10 @@ export class UpdateController {
             installSupported: options.installSupported,
             workerNotice: options.pendingWorker() > 0,
         };
+        if (!backend) {
+            if (options.canCheck || options.installSupported) throw new Error('Update backend is required');
+            return;
+        }
         backend.autoDownload = false;
         backend.autoInstallOnAppQuit = false;
         backend.allowPrerelease = false;
@@ -113,7 +117,7 @@ export class UpdateController {
         });
         this.listen('update-downloaded', () => {
             if (this.disposed) return;
-            this.backend.autoInstallOnAppQuit = this.autoInstall();
+            if (this.backend) this.backend.autoInstallOnAppQuit = this.autoInstall();
             this.publish({ phase: 'ready', percent: 100 });
             this.notifyOnce('ready');
         });
@@ -123,6 +127,7 @@ export class UpdateController {
     }
     private listen<T extends unknown[]>(event: string, listener: (...args: T) => void): void {
         const callback = (...args: unknown[]) => listener(...(args as T));
+        if (!this.backend) return;
         this.backend.on(event, callback);
         this.listeners.push([event, callback]);
     }
@@ -166,7 +171,7 @@ export class UpdateController {
             mode === 'patch' &&
             this.state.phase === 'ready' &&
             this.state.kind === 'patch' &&
-            !this.backend.autoInstallOnAppQuit;
+            !this.backend?.autoInstallOnAppQuit;
         clearTimeout(this.startTimer);
         clearInterval(this.interval);
         this.startTimer = undefined;
@@ -176,7 +181,7 @@ export class UpdateController {
             mode,
             ...(this.ignoreCheck && this.state.phase === 'checking' ? { phase: 'idle' as const } : {}),
         });
-        this.backend.autoInstallOnAppQuit = !rearm && this.autoInstall();
+        if (this.backend) this.backend.autoInstallOnAppQuit = !rearm && this.autoInstall();
         if (mode !== 'patch') this.cancel?.cancel();
         this.start();
         if (rearm) {
@@ -197,6 +202,7 @@ export class UpdateController {
         return this.snapshot();
     }
     check(manual = true): Promise<UpdateState> {
+        const backend = this.backend;
         if (this.checkTask) {
             if (manual) {
                 this.ignoreCheck = false;
@@ -206,6 +212,7 @@ export class UpdateController {
         }
         if (
             this.disposed ||
+            !backend ||
             !this.options.canCheck ||
             (!manual && this.state.mode === 'off') ||
             this.downloadTask ||
@@ -217,7 +224,7 @@ export class UpdateController {
         this.publish({ phase: 'checking' });
         const task = (async () => {
             try {
-                await this.backend.checkForUpdates();
+                await backend.checkForUpdates();
             } catch {
                 if (!this.ignoreCheck) this.publish({ phase: 'error' });
             }
@@ -232,9 +239,11 @@ export class UpdateController {
         return task;
     }
     download(): Promise<UpdateState> {
+        const backend = this.backend;
         if (this.downloadTask) return this.downloadTask;
         if (
             this.disposed ||
+            !backend ||
             !this.options.installSupported ||
             !this.state.version ||
             !['available', 'error'].includes(this.state.phase)
@@ -245,7 +254,7 @@ export class UpdateController {
         this.publish({ phase: 'downloading', percent: 0 });
         const task = (async () => {
             try {
-                await this.backend.downloadUpdate(token);
+                await backend.downloadUpdate(token);
             } catch {
                 this.publish({ phase: token.cancelled ? 'available' : 'error', percent: undefined });
             } finally {
@@ -262,7 +271,7 @@ export class UpdateController {
         return task;
     }
     install(): void {
-        if (this.disposed || !this.options.installSupported || this.state.phase !== 'ready')
+        if (this.disposed || !this.backend || !this.options.installSupported || this.state.phase !== 'ready')
             throw new Error('Update is not ready');
         this.options.beforeInstall();
         this.backend.quitAndInstall(true, true);
@@ -274,14 +283,14 @@ export class UpdateController {
     }
     systemShutdown(): void {
         this.systemEnding = true;
-        this.backend.autoInstallOnAppQuit = false;
+        if (this.backend) this.backend.autoInstallOnAppQuit = false;
     }
     dispose(): void {
         this.disposed = true;
         clearTimeout(this.startTimer);
         clearInterval(this.interval);
         this.cancel?.cancel();
-        for (const [event, listener] of this.listeners) this.backend.removeListener(event, listener);
+        for (const [event, listener] of this.listeners) this.backend?.removeListener(event, listener);
         this.listeners = [];
     }
 }
