@@ -214,6 +214,15 @@ const youtubeBody =
                     const target = new URL('/playlist-source', await live.ready);
                     target.searchParams.set('url', resource);
                     const response = await fetch(target, { headers: { Authorization: 'Bearer ' + secret } });
+                    if (!response.ok)
+                        throw new Error(
+                            'Public source relay: ' +
+                                JSON.stringify({
+                                    status: response.status,
+                                    headers: Object.fromEntries(response.headers),
+                                    body: (await response.text()).slice(0, 400),
+                                }),
+                        );
                     assert.equal(
                         response.status,
                         200,
@@ -234,6 +243,47 @@ const youtubeBody =
                         }),
                     );
                 }
+                const youtube = 'https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI';
+                const request = async (resource, signal, init) => {
+                    const target = new URL('/playlist-source', await live.ready);
+                    target.searchParams.set('url', resource);
+                    const response = await fetch(target, {
+                        method: init?.method || 'GET',
+                        body: init?.body,
+                        signal: signal
+                            ? AbortSignal.any([signal, AbortSignal.timeout(25000)])
+                            : AbortSignal.timeout(25000),
+                        headers: {
+                            Authorization: 'Bearer ' + secret,
+                            ...(init ? { 'Content-Type': 'application/json' } : {}),
+                        },
+                    });
+                    if (!response.ok)
+                        throw new Error(
+                            'YouTube relay: ' +
+                                JSON.stringify({
+                                    status: response.status,
+                                    headers: Object.fromEntries(response.headers),
+                                    body: (await response.text()).slice(0, 400),
+                                }),
+                        );
+                    return response.text();
+                };
+                const playlist = await require(path.join(root, 'tsc/import/youtubePagination')).loadYouTubePages(
+                    await request(youtube),
+                    youtube,
+                    request,
+                );
+                assert(playlist.tracks.length > 100 && !playlist.partial, 'Live YouTube continuation must finish');
+                console.log(
+                    JSON.stringify({
+                        actualWorkerd: true,
+                        realPublicYouTube: true,
+                        sourceTracks: playlist.tracks.length,
+                        pages: playlist.pagesRead,
+                        partial: playlist.partial,
+                    }),
+                );
             } finally {
                 await live.dispose();
             }

@@ -18,7 +18,7 @@ describe('public metadata relay', () => {
             expect(url).toBe('https://www.youtube.com/youtubei/v1/browse');
             expect(init.method).toBe('POST');
             expect(new Headers(init.headers).has('authorization')).toBe(false);
-            expect(new Headers(init.headers).has('cookie')).toBe(false);
+            expect(new Headers(init.headers).get('cookie')).toBe('SOCS=CAI');
             expect(JSON.parse(init.body)).toEqual(continuation);
             return new Response('{}', { headers: { 'content-type': 'application/json' } });
         });

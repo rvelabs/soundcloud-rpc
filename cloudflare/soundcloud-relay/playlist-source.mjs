@@ -131,6 +131,9 @@ export function createPublicPlaylistHandler(requester = fetch) {
                     Accept: 'text/html,application/json;q=0.9',
                     'Accept-Language': 'en-US,en;q=0.8',
                     'User-Agent': 'Mozilla/5.0 SoundCloudDesktopPlaylistImport/1.0',
+                    ...(['www.youtube.com', 'music.youtube.com'].includes(target.hostname)
+                        ? { Cookie: 'SOCS=CAI' }
+                        : {}),
                 };
                 if (target.hostname === 'music.yandex.ru')
                     Object.assign(headers, {

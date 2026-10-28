@@ -34,6 +34,7 @@ async function fetchPublic(url: string, signal?: AbortSignal, init?: SourceReque
             headers: {
                 ...(init ? { 'Content-Type': 'application/json' } : {}),
                 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.7',
+                ...(['www.youtube.com', 'music.youtube.com'].includes(address.hostname) ? { Cookie: 'SOCS=CAI' } : {}),
                 ...(address.hostname === 'music.yandex.ru' && address.pathname.startsWith('/handlers/')
                     ? { Referer: 'https://music.yandex.ru/', 'X-Requested-With': 'XMLHttpRequest' }
                     : {}),
