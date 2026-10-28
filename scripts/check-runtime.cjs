@@ -30,11 +30,17 @@ for (const name of checks) {
     const env = { ...process.env, WAVE_TEST_REPO: root, WAVE_TEST_OUTPUT: output };
     delete env.WAVE_TEST_LIVE;
     delete env.WAVE_TEST_CAPTURE_STALL;
-    const result = spawnSync(executable, [path.join(__dirname, name)], {
+    console.log('RUN ' + name);
+    const headless =
+        process.env.CI && process.platform === 'linux'
+            ? ['--password-store=basic', '--disable-gpu', '--disable-dev-shm-usage']
+            : [];
+    const result = spawnSync(executable, [...headless, path.join(__dirname, name)], {
         cwd: root,
         env,
         windowsHide: true,
         timeout: 90000,
+        killSignal: 'SIGKILL',
         encoding: 'utf8',
         maxBuffer: 4 * 1024 * 1024,
     });

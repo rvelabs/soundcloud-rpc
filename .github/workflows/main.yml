@@ -61,10 +61,18 @@ jobs:
             - run: npm test
             - run: npm run test:worker
             - if: runner.os == 'macOS'
+              timeout-minutes: 6
               run:
                   node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs
                   check-source-pagination.cjs
             - if: runner.os == 'Linux'
+              timeout-minutes: 6
               run: |
                   sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
                   xvfb-run -a node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs check-source-pagination.cjs
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: runtime-${{ runner.os }}
+                  path: build-runtime-check/
+                  if-no-files-found: ignore
