@@ -108,7 +108,10 @@ export class ConnectionRecovery {
         );
     }
     async configurePlaylistSession(target: Session, force = false): Promise<boolean> {
-        if (!this.canLoadPlaylistSource() || (!force && this.store.get('cloudflareMode') !== 'always')) {
+        if (
+            !this.canLoadPlaylistSource() ||
+            (!force && !this.routed && this.store.get('cloudflareMode') !== 'always')
+        ) {
             await target.setProxy({ mode: 'system' });
             await target.closeAllConnections();
             return false;

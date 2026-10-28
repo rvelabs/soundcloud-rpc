@@ -212,7 +212,7 @@ export async function completeSpotifyPlaylist(
     options.signal?.addEventListener('abort', cancel, { once: true });
     try {
         options.signal?.throwIfAborted();
-        await options.configure?.(window.webContents.session, false);
+        const throughRelay = await options.configure?.(window.webContents.session, false);
         void window.loadURL(address).catch(() => {});
         let result = await collectSpotifyRows(
             window.webContents,
@@ -222,7 +222,9 @@ export async function completeSpotifyPlaylist(
             options.progress,
         );
         if (
-            !result.reachable &&
+            result.playlist.partial &&
+            result.playlist.tracks.length < 500 &&
+            !throughRelay &&
             !window.isDestroyed() &&
             (await options.configure?.(window.webContents.session, true).catch(() => false))
         ) {

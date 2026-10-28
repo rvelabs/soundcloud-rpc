@@ -58,16 +58,22 @@ app.whenReady().then(async () => {
                 () => new Response(fixture(308, true), { headers: { 'Content-Type': 'text/html' } }),
             );
         let asked = 0;
+        const routes = [];
         const declined = await completeSpotifyPlaylist(initial, address, {
             parent,
             account,
             russian: false,
+            configure: async (_target, force) => {
+                routes.push(force);
+                return false;
+            },
             ask: async () => {
                 asked++;
                 return false;
             },
         });
         assert.equal(asked, 1);
+        assert.deepEqual(routes, [false, true], 'try the fallback route before asking for sign-in');
         assert.equal(declined.partial, true);
         assert.equal(declined.tracks.length, 100);
         assert.equal(BrowserWindow.getAllWindows().length, 1, 'source window released after refusal');
