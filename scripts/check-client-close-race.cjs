@@ -26,7 +26,9 @@ app.on('web-contents-created', (_event, contents) => {
         armed = true;
         setTimeout(() => {
             const window = BrowserWindow.getAllWindows().find((win) =>
-                win.getBrowserViews().some((view) => view.webContents === contents),
+                win.contentView.children
+                    .filter((view) => view.webContents)
+                    .some((view) => view.webContents === contents),
             );
             contents.close({ waitForBeforeUnload: false });
             window?.destroy();

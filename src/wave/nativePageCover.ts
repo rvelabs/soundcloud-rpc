@@ -1,8 +1,9 @@
-import { BrowserView, type BrowserWindow, type WebContents, type Rectangle, type NativeImage } from 'electron';
+import { attachWindowView, detachWindowView } from '../utils/windowViews';
+import { WebContentsView, type BrowserWindow, type WebContents, type Rectangle, type NativeImage } from 'electron';
 import { nativePresentations as covers } from './nativePresentation';
-export function installNativePageCover(window: BrowserWindow, content: BrowserView): void {
+export function installNativePageCover(window: BrowserWindow, content: WebContentsView): void {
     const contents = content.webContents;
-    let overlay: BrowserView | undefined;
+    let overlay: WebContentsView | undefined;
     let bottom = 0;
     let lastFrame = '';
     let idle: ReturnType<typeof setTimeout> | undefined;
@@ -30,7 +31,7 @@ export function installNativePageCover(window: BrowserWindow, content: BrowserVi
     const dispose = () => {
         clearTimeout(idle);
         if (!overlay) return;
-        if (!window.isDestroyed()) window.removeBrowserView(overlay);
+        if (!window.isDestroyed()) detachWindowView(window, overlay);
         const viewContents = overlay.webContents;
         if (viewContents && !viewContents.isDestroyed()) viewContents.close();
         overlay = undefined;
@@ -57,7 +58,7 @@ export function installNativePageCover(window: BrowserWindow, content: BrowserVi
         try {
             if (!alive()) throw new Error('Окно SoundCloud закрыто.');
             if (!overlay?.webContents || overlay.webContents.isDestroyed()) {
-                overlay = new BrowserView({
+                overlay = new WebContentsView({
                     webPreferences: {
                         nodeIntegration: false,
                         contextIsolation: true,
@@ -86,8 +87,7 @@ export function installNativePageCover(window: BrowserWindow, content: BrowserVi
                 else {image.hidden=true;fallback.hidden=false;}
             })()`);
             if (!alive() || viewContents.isDestroyed()) throw new Error('Окно SoundCloud закрыто.');
-            window.addBrowserView(view);
-            window.setTopBrowserView(view);
+            attachWindowView(window, view);
             await capture(viewContents);
             let finished = false;
             return async () => {
@@ -99,7 +99,7 @@ export function installNativePageCover(window: BrowserWindow, content: BrowserVi
                         await capture(contents);
                     }
                 } finally {
-                    if (!window.isDestroyed() && !viewContents.isDestroyed()) window.removeBrowserView(view);
+                    if (!window.isDestroyed() && !viewContents.isDestroyed()) detachWindowView(window, view);
                     if (!viewContents.isDestroyed())
                         await viewContents
                             .executeJavaScript("document.querySelector('img').removeAttribute('src')")

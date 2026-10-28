@@ -35,6 +35,26 @@ const body =
         },
     }) +
     '</script>';
+const youtubeClient = { clientName: 'WEB', clientVersion: '2.20261027.01.00', hl: 'en', gl: 'US' };
+const youtubeItems = (offset, count, token) => [
+    ...Array.from({ length: count }, (_, index) => ({
+        playlistVideoRenderer: {
+            videoId: 'video-' + (offset + index),
+            title: { simpleText: 'Song ' + (offset + index) },
+            shortBylineText: { simpleText: 'Artist' },
+        },
+    })),
+    ...(token ? [{ continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token } } } }] : []),
+];
+const youtubeBody =
+    '<script>ytcfg.set(' +
+    JSON.stringify({ INNERTUBE_CONTEXT: { client: youtubeClient } }) +
+    ');var ytInitialData = ' +
+    JSON.stringify({
+        metadata: { playlistMetadataRenderer: { title: 'Paged playlist' } },
+        contents: { playlistVideoListRenderer: { contents: youtubeItems(0, 100, 'second') } },
+    }) +
+    ';</script>';
 (async () => {
     let runtime;
     try {
@@ -47,6 +67,34 @@ const body =
             .intercept({ path: new URL(album).pathname, method: 'GET' })
             .reply(200, body, { headers: { 'content-type': 'text/html' } })
             .times(process.argv.includes('--electron') ? 2 : 1);
+        mock.get('https://www.youtube.com')
+            .intercept({
+                path: '/youtubei/v1/browse',
+                method: 'POST',
+            })
+            .reply(
+                200,
+                JSON.stringify({
+                    onResponseReceivedActions: [
+                        { appendContinuationItemsAction: { continuationItems: youtubeItems(100, 100, 'third') } },
+                    ],
+                }),
+                { headers: { 'content-type': 'application/json' } },
+            );
+        mock.get('https://www.youtube.com')
+            .intercept({
+                path: '/youtubei/v1/browse',
+                method: 'POST',
+            })
+            .reply(
+                200,
+                JSON.stringify({
+                    onResponseReceivedActions: [
+                        { appendContinuationItemsAction: { continuationItems: youtubeItems(200, 108) } },
+                    ],
+                }),
+                { headers: { 'content-type': 'application/json' } },
+            );
         runtime = new Miniflare({
             host: '127.0.0.1',
             port: 0,
@@ -75,14 +123,44 @@ const body =
         url.searchParams.set('url', album);
         const albumResponse = await fetch(url, { headers: { Authorization: 'Bearer ' + secret } });
         assert.equal(albumResponse.status, 200);
-        assert.equal(albumResponse.headers.get('x-soundcloud-playlist-relay-revision'), '4');
+        assert.equal(albumResponse.headers.get('x-soundcloud-playlist-relay-revision'), '5');
         assert.equal(await albumResponse.text(), body);
+        const { loadYouTubePages } = require(path.join(root, 'tsc/import/youtubePagination'));
+        const continuationResponses = [];
+        const youtube = await loadYouTubePages(
+            youtubeBody,
+            'https://www.youtube.com/playlist?list=PL_fixture_playlist',
+            async (target, signal, init) => {
+                const endpoint = new URL('/playlist-source', base);
+                endpoint.searchParams.set('url', target);
+                const response = await fetch(endpoint, {
+                    method: init?.method || 'GET',
+                    body: init?.body,
+                    signal,
+                    headers: { Authorization: 'Bearer ' + secret, 'Content-Type': 'application/json' },
+                });
+                continuationResponses.push({
+                    status: response.status,
+                    upstream: response.headers.get('x-playlist-source-status'),
+                    message: response.status === 200 ? 'ok' : await response.text(),
+                });
+                assert.equal(response.status, 200);
+                return response.text();
+            },
+        );
+        assert.equal(
+            youtube.tracks.length,
+            308,
+            JSON.stringify({ continuationResponses, reason: youtube.partialReason }),
+        );
+        assert.equal(youtube.partial, false);
         console.log(
             JSON.stringify({
                 actualWorkerd: true,
                 productionModules: 3,
                 publicMetadataForwarding: true,
                 spotifyAlbumForwarding: true,
+                youtubeContinuationTracks: youtube.tracks.length,
                 unauthorizedRejected: true,
                 privateDestinationRejected: true,
             }),

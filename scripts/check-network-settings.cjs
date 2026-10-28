@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, safeStorage } = require('electron');
 const fs = require('fs'),
     path = require('path'),
     assert = require('assert/strict');
@@ -21,8 +21,8 @@ app.whenReady().then(async () => {
         const { ConnectionRecovery } = require(path.join(repo, 'tsc/network/connectionRecovery.js'));
         const { ProxyService } = require(path.join(repo, 'tsc/services/proxyService.js'));
         win = new BrowserWindow({ width: 1100, height: 850, show: true });
-        const main = new BrowserView({ webPreferences: { partition: 'network-fixture-account', sandbox: true } });
-        win.addBrowserView(main);
+        const main = new WebContentsView({ webPreferences: { partition: 'network-fixture-account', sandbox: true } });
+        win.contentView.addChildView(main);
         main.setBounds({ x: 0, y: 0, width: 1100, height: 850 });
         await main.webContents.loadURL('about:blank');
         const errors = [];
@@ -116,7 +116,7 @@ app.whenReady().then(async () => {
         const settings = new SettingsManager(win, store, new TranslationService());
         assert.equal(settings.getView(), null);
         settings.toggle();
-        const view = win.getBrowserViews().find((v) => v !== main);
+        const view = win.contentView.children.filter((view) => view.webContents).find((v) => v !== main);
         view.webContents.on('console-message', (_e, level, message) => {
             if (level >= 3 && /Uncaught|SyntaxError/.test(message)) errors.push(message);
         });
@@ -129,7 +129,7 @@ app.whenReady().then(async () => {
         );
         assert.equal(state.mode, 'off');
         assert.equal(state.secret, '');
-        assert(state.saved.includes('сохранён'), JSON.stringify(state));
+        assert(state.saved.includes('saved'), JSON.stringify(state));
         assert.deepEqual(state.options, ['off', 'auto', 'always']);
         await view.webContents.executeJavaScript('document.getElementById("cloudflareSave").click()');
         await wait(80);
@@ -170,7 +170,7 @@ app.whenReady().then(async () => {
         assert.equal(deployed.endpoint, 'https://created.example.workers.dev');
         assert.equal(deployed.mode, 'auto');
         assert.equal(deployed.key, '');
-        assert(deployed.status.includes('Готово'));
+        assert(deployed.status.includes('Ready'));
         assert.deepEqual(errors, []);
         await service.configure();
         win.showInactive();

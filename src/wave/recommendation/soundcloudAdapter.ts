@@ -295,9 +295,11 @@ export class SoundCloudRecommender {
     rank(limit = 10): WaveCandidate[] {
         return this.session
             .rank(limit)
-            .map(({ track, reasons }): WaveCandidate | undefined => {
+            .map(({ track, reasons, evidence }): WaveCandidate | undefined => {
                 const candidate = this.candidates.get(track.id);
-                return candidate ? { ...candidate, recommendationReasons: reasons } : undefined;
+                return candidate
+                    ? { ...candidate, recommendationReasons: reasons, recommendationEvidence: evidence }
+                    : undefined;
             })
             .filter((candidate): candidate is WaveCandidate => Boolean(candidate));
     }
@@ -317,7 +319,11 @@ export class SoundCloudRecommender {
                 limit,
                 recentArtists,
             )
-            .map(({ track, reasons }) => ({ ...byId.get(track.id)!, recommendationReasons: reasons }));
+            .map(({ track, reasons, evidence }) => ({
+                ...byId.get(track.id)!,
+                recommendationReasons: reasons,
+                recommendationEvidence: evidence,
+            }));
     }
     reserve(candidate: WaveCandidate, accepted = false): void {
         this.session.reserve(candidate.url);

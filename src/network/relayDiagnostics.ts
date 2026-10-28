@@ -202,7 +202,45 @@ function bootstrapAssets(html: string): string[] {
     }
     return selected;
 }
-export function describeRelayDiagnostic(report?: RelayDiagnostic): string {
+function describeEnglish(report?: RelayDiagnostic): string {
+    if (!report) return 'Worker has not been tested yet.';
+    if (report.success)
+        return 'Worker is reachable: SoundCloud HTML, interface assets, API and authentication respond. This checks connectivity, not your sign-in or the open page state.';
+    const setup: Record<string, string> = {
+        'missing-endpoint': 'Save the Worker HTTPS address first.',
+        'invalid-endpoint': 'Invalid Worker address. Enter an HTTPS address without a key or query parameters.',
+        'missing-key': 'Worker key is missing or cannot be decrypted. Enter RELAY_TOKEN and save the connection.',
+        gateway: 'Could not start the local Worker connection. Copy the diagnostics.',
+    };
+    if (report.setupFailure && setup[report.setupFailure]) return setup[report.setupFailure];
+    const tunnel = [...report.tunnels].reverse().find((item) => item.failure);
+    if (tunnel?.httpStatus) {
+        const errors: Record<number, string> = {
+            401: 'Worker rejected the key. It must match RELAY_TOKEN.',
+            403: 'Worker access was denied. Check Cloudflare Access and Worker rules.',
+            404: 'Worker tunnel was not found. Check its address and deployed code.',
+            429: 'Cloudflare rate limit reached. Check account limits and retry later.',
+        };
+        return `HTTP ${tunnel.httpStatus}: ${errors[tunnel.httpStatus] || 'Worker could not open the origin connection. Copy the diagnostics.'}`;
+    }
+    if (tunnel?.networkCode === 'ENOTFOUND' || tunnel?.networkCode === 'EAI_AGAIN')
+        return 'Could not resolve the Worker address. Check it and allow time for DNS after deployment.';
+    if (tunnel?.failure === 'handshake-timeout')
+        return 'Worker connection timed out. Its address may be unreachable from this network. Copy the diagnostics.';
+    const failed = report.stages.find((item) => item.outcome !== 'ok');
+    if (failed?.outcome === 'cancelled') return 'Connection check cancelled: settings changed or the window closed.';
+    if (failed?.outcome === 'http')
+        return `SoundCloud ${failed.stage} returned HTTP ${failed.httpStatus} through Worker. Check service availability in the Worker region.`;
+    if (failed?.outcome === 'unexpected-page')
+        return 'Tunnel responded with an unexpected document instead of SoundCloud. An access check may be present.';
+    if (failed?.networkCode?.includes('CERT_') || failed?.networkCode?.includes('VERIFY'))
+        return 'SoundCloud certificate verification failed. Verification remains enabled; copy the diagnostics for details.';
+    if (report.tunnels.some((item) => item.opened))
+        return `Worker opened a tunnel, but loading SoundCloud ${failed?.stage || 'website'} failed. A timeout or network restriction may apply. Copy the diagnostics.`;
+    return `Could not connect to Worker${tunnel?.networkCode ? ' (' + tunnel.networkCode + ')' : ''}. Check whether its address is reachable from this network; creating another Worker on the same network may not help.`;
+}
+export function describeRelayDiagnostic(report?: RelayDiagnostic, language: 'ru' | 'en' = 'ru'): string {
+    if (language === 'en') return describeEnglish(report);
     if (!report) return 'Проверка Worker ещё не выполнялась.';
     if (report.success)
         return 'Worker доступен: HTML, ресурсы интерфейса, API и узел авторизации SoundCloud отвечают. Это проверка подключения, а не входа в аккаунт или состояния открытой страницы.';

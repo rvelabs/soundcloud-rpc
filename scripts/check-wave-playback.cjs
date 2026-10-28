@@ -82,9 +82,11 @@ app.whenReady().then(async () => {
     try {
         let window, contents;
         for (let index = 0; index < 200; index++) {
-            window = BrowserWindow.getAllWindows().find((item) => item.getBrowserViews().length >= 2);
-            contents = window
-                ?.getBrowserViews()
+            window = BrowserWindow.getAllWindows().find(
+                (item) => item.contentView.children.filter((view) => view.webContents).length >= 2,
+            );
+            contents = window?.contentView.children
+                .filter((view) => view.webContents)
                 .find((view) => view.webContents.getURL().startsWith('https://soundcloud.com/'))?.webContents;
             if (
                 contents &&

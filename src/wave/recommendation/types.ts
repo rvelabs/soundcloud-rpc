@@ -50,6 +50,7 @@ export interface Recommendation {
     score: number;
     reasons: string[];
     measuredTempoMatch: boolean;
+    evidence?: import('./evidence').PreferenceEvidence[];
 }
 export interface Context {
     now: number;
@@ -60,4 +61,6 @@ export interface Context {
     recentArtists?: string[];
     seed?: number;
     sequenceOffset?: number;
+    anchor?: Track;
+    preferenceSignals?: Map<string, number>;
 }

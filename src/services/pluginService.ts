@@ -1,5 +1,5 @@
 import { IpcRegistry } from '../utils/ipcRegistry';
-import { app, ipcMain, type BrowserView } from 'electron';
+import { app, ipcMain, type WebContentsView } from 'electron';
 import { readFileSync, existsSync, readdirSync, statSync, watch, mkdirSync } from 'fs';
 import path, { join, basename, extname } from 'path';
 import type ElectronStore from 'electron-store';
@@ -20,7 +20,7 @@ export class PluginService {
     private emitter = new EventEmitter();
     private stopWatching?: () => void;
     private refreshTimer?: ReturnType<typeof setTimeout>;
-    private contentView: BrowserView | null = null;
+    private contentView: WebContentsView | null = null;
     private ipc: IpcRegistry;
     constructor(store: ElectronStore, allowed: ConstructorParameters<typeof IpcRegistry>[1] = () => false) {
         this.ipc = new IpcRegistry(ipcMain, allowed);
@@ -181,7 +181,7 @@ export class PluginService {
         `;
         this.contentView.webContents.executeJavaScript(cleanup).catch(() => {});
     }
-    public setContentView(view: BrowserView): void {
+    public setContentView(view: WebContentsView): void {
         this.contentView = view;
     }
     public injectAllContentScripts(): void {

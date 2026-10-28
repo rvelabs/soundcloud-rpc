@@ -137,14 +137,18 @@ describe('standalone recommendation modules', () => {
             recommend([found, unrelated], [], { ...controls, genre: 'shoegaze' }, { now }).map((item) => item.track.id),
         ).toEqual(['result']);
     });
-    it('gives new directions room while familiar mode follows known taste', () => {
+    it('explores with relevance evidence rather than promoting an unrelated genre blindly', () => {
         const liked = track('liked', 'A', 'shoegaze');
         const catalog = [track('similar', 'B', 'shoegaze'), track('explore', 'C', 'house')];
         const events = [event(liked, 'like')];
         expect(recommend(catalog, events, { ...controls, discovery: 'familiar' }, { now }, 1)[0].track.id).toBe(
             'similar',
         );
-        expect(recommend(catalog, events, { ...controls, discovery: 'new' }, { now }, 1)[0].track.id).toBe('explore');
+        expect(recommend(catalog, events, { ...controls, discovery: 'new' }, { now }, 1)[0].track.id).toBe('similar');
+        const related = { ...catalog[1], source: 'related' as const, relatedTo: [liked.id] };
+        expect(
+            recommend([catalog[0], related], events, { ...controls, discovery: 'new' }, { now }, 1)[0].track.id,
+        ).toBe('explore');
     });
     it('re-ranks immediately after controls change and does not repeat reserved tracks', async () => {
         const catalog = [track('slow', 'A', 'ambient', 80, 0.1), track('fast', 'B', 'techno', 160, 0.9)];

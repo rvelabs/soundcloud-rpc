@@ -6,11 +6,27 @@ import { PassThrough, Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import { randomBytes } from 'node:crypto';
 import { CloudflareGateway } from './cloudflareGateway';
-import { relayTarget, relayPac } from './relayTargets';
+import { relayTarget, relayPac, playlistBrowserTarget, playlistBrowserPac } from './relayTargets';
 import { runInNewContext } from 'node:vm';
 import { allowedHost, bridgeSocket, createRelayHandler } from '../../cloudflare/soundcloud-relay/protocol.mjs';
 const token = 'a'.repeat(48);
 describe('Cloudflare transport', () => {
+    it('routes Spotify source windows separately without broadening the SoundCloud PAC', () => {
+        const source = runInNewContext(
+            Buffer.from(playlistBrowserPac(54322).split(',')[1], 'base64').toString() + ';FindProxyForURL',
+        );
+        const soundcloud = runInNewContext(
+            Buffer.from(relayPac(54322).split(',')[1], 'base64').toString() + ';FindProxyForURL',
+        );
+        for (const host of ['open.spotify.com', 'accounts.spotify.com', 'spclient.wg.spotify.com', 'encore.scdn.co']) {
+            expect(playlistBrowserTarget(host)).toBe(true);
+            expect(allowedHost(host)).toBe(true);
+            expect(source('https://' + host, host)).toBe('PROXY 127.0.0.1:54322');
+            expect(soundcloud('https://' + host, host)).toBe('DIRECT');
+        }
+        for (const host of ['spotify.com.evil.test', 'localhost', '169.254.169.254', 'accounts-spotify.com'])
+            expect(playlistBrowserTarget(host)).toBe(false);
+    });
     it('keeps Chromium routing, the gateway and the deployed Worker aligned for every service destination', () => {
         const script = Buffer.from(relayPac(54322).split(',')[1], 'base64').toString();
         const route = runInNewContext(script + ';FindProxyForURL');

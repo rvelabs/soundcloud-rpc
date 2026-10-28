@@ -14,10 +14,13 @@ export function publicPlaylistResource(value) {
             return url;
         if (
             ['music.youtube.com', 'www.youtube.com'].includes(url.hostname) &&
-            url.pathname === '/playlist' &&
-            params.length === 1 &&
-            params[0] === 'list' &&
-            /^[\w-]{12,80}$/.test(url.searchParams.get('list') || '')
+            ((url.pathname === '/playlist' &&
+                params.length === 1 &&
+                params[0] === 'list' &&
+                /^[\w-]{12,80}$/.test(url.searchParams.get('list') || '')) ||
+                (url.pathname === '/youtubei/v1/browse' &&
+                    params.every((key) => key === 'key') &&
+                    (!params.length || /^[\w-]{20,100}$/.test(url.searchParams.get('key') || ''))))
         )
             return url;
         if (
@@ -47,14 +50,14 @@ function reply(body, status = 200, extra = {}) {
             'Content-Security-Policy': "default-src 'none'; sandbox",
             'X-Content-Type-Options': 'nosniff',
             'X-SoundCloud-Playlist-Relay': '1',
-            'X-SoundCloud-Playlist-Relay-Revision': '4',
+            'X-SoundCloud-Playlist-Relay-Revision': '5',
             ...extra,
         },
     });
 }
 export function createPublicPlaylistHandler(requester = fetch) {
     return async (request, env) => {
-        if (request.method !== 'GET') return reply('Method not allowed', 405);
+        if (!['GET', 'POST'].includes(request.method)) return reply('Method not allowed', 405);
         if (
             typeof env.RELAY_TOKEN !== 'string' ||
             env.RELAY_TOKEN.length < 32 ||
@@ -66,6 +69,56 @@ export function createPublicPlaylistHandler(requester = fetch) {
             return reply('Invalid source request', 400);
         let target = publicPlaylistResource(input.searchParams.get('url') || '');
         if (!target) return reply('Unsupported public playlist resource', 403);
+        let body;
+        if (request.method === 'POST') {
+            if (target.pathname !== '/youtubei/v1/browse') return reply('Unsupported continuation', 403);
+            const reader = request.body?.getReader();
+            if (!reader) return reply('Missing continuation', 400);
+            const bodyDeadline = setTimeout(() => {
+                void reader.cancel().catch(() => {});
+            }, 5000);
+            try {
+                const chunks = [];
+                let bytes = 0;
+                for (;;) {
+                    const part = await reader.read();
+                    if (part.done) break;
+                    bytes += part.value.byteLength;
+                    if (bytes > 16384) return reply('Continuation too large', 413);
+                    chunks.push(part.value);
+                }
+                const joined = new Uint8Array(bytes);
+                let offset = 0;
+                for (const chunk of chunks) {
+                    joined.set(chunk, offset);
+                    offset += chunk.byteLength;
+                }
+                const data = JSON.parse(new TextDecoder().decode(joined));
+                const client = data?.context?.client;
+                if (
+                    !data ||
+                    Object.keys(data).some((key) => !['context', 'continuation'].includes(key)) ||
+                    !data.context ||
+                    Object.keys(data.context).join(',') !== 'client' ||
+                    !client ||
+                    Object.keys(client).some((key) => !['clientName', 'clientVersion', 'hl', 'gl'].includes(key)) ||
+                    !['WEB', 'WEB_REMIX'].includes(client.clientName) ||
+                    !/^[\d.]{5,40}$/.test(client.clientVersion || '') ||
+                    !/^[a-z-]{2,10}$/i.test(client.hl || '') ||
+                    !/^[A-Z]{2}$/.test(client.gl || '') ||
+                    typeof data.continuation !== 'string' ||
+                    !/^[\x21-\x7e]{1,12000}$/.test(data.continuation)
+                )
+                    return reply('Invalid continuation', 400);
+                body = JSON.stringify(data);
+            } catch {
+                return reply('Invalid continuation', 400);
+            } finally {
+                clearTimeout(bodyDeadline);
+                void reader.cancel().catch(() => {});
+                reader.releaseLock();
+            }
+        } else if (target.pathname === '/youtubei/v1/browse') return reply('Continuation requires POST', 405);
         const controller = new AbortController(),
             timer = setTimeout(() => controller.abort(), 15000);
         const cancel = () => controller.abort();
@@ -85,15 +138,17 @@ export function createPublicPlaylistHandler(requester = fetch) {
                         'X-Requested-With': 'XMLHttpRequest',
                     });
                 const response = await requester(target.href, {
-                    method: 'GET',
+                    method: body ? 'POST' : 'GET',
+                    body,
                     redirect: 'manual',
-                    headers,
+                    headers: { ...headers, ...(body ? { 'Content-Type': 'application/json' } : {}) },
                     signal: controller.signal,
                     cache: 'no-store',
                 });
                 if (response.status >= 300 && response.status < 400) {
                     const location = response.headers.get('location');
                     void response.body?.cancel().catch(() => {});
+                    if (body) return reply('Continuation redirect rejected', 502);
                     const next = location && publicPlaylistResource(new URL(location, target).href);
                     if (!next)
                         return reply('Unsupported redirect from source', 502, {

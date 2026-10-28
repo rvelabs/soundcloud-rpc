@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs'),
     path = require('node:path'),
@@ -17,10 +17,10 @@ app.whenReady().then(async () => {
         const { UpdateController } = require(path.join(repo, 'tsc/updates/updateController'));
         const { presentUpdate } = require(path.join(repo, 'tsc/updates/presentation'));
         window = new BrowserWindow({ show: false, width: 1100, height: 850 });
-        const header = new BrowserView({
+        const header = new WebContentsView({
             webPreferences: { preload: path.join(repo, 'tsc/header/headerPreload.js'), sandbox: true },
         });
-        window.addBrowserView(header);
+        window.contentView.addChildView(header);
         header.setBounds({ x: 0, y: 0, width: 1100, height: 32 });
         const values = new Map();
         let settings,

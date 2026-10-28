@@ -44,3 +44,27 @@ jobs:
                       build/*.blockmap
                       build/latest.yml
                   if-no-files-found: error
+    compatibility:
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, macos-latest]
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            - run: npm run compile
+            - run: npm test
+            - run: npm run test:worker
+            - if: runner.os == 'macOS'
+              run:
+                  node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs
+                  check-source-pagination.cjs
+            - if: runner.os == 'Linux'
+              run: |
+                  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+                  xvfb-run -a node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs check-source-pagination.cjs

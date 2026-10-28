@@ -1,4 +1,4 @@
-import { BrowserView, BrowserWindow, nativeImage } from 'electron';
+import { WebContentsView, BrowserWindow, nativeImage } from 'electron';
 import * as path from 'path';
 import { TranslationService } from './translationService';
 import { RESOURCES_PATH } from '../main';
@@ -21,7 +21,7 @@ export class ThumbarService {
         win: BrowserWindow | null,
         isPlaying: boolean,
         isLiked: boolean,
-        mainWindow: BrowserView | null,
+        mainWindow: WebContentsView | null,
         onNext?: () => boolean,
     ): void {
         if (!win || !mainWindow || win.isDestroyed() || mainWindow.webContents.isDestroyed()) return;

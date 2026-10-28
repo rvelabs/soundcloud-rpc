@@ -1,3 +1,4 @@
+import { attachWindowView } from './utils/windowViews';
 import { WorkerSetup } from './network/workerSetup';
 import { ConnectionRecovery } from './network/connectionRecovery';
 import { saveImportSelection } from './import/saveSelection';
@@ -7,7 +8,7 @@ import {
     BrowserWindow,
     Menu,
     ipcMain,
-    BrowserView,
+    WebContentsView,
     Tray,
     nativeImage,
     shell,
@@ -69,7 +70,7 @@ import { enrichPublicTrack, setPublicMetadataFetch } from './wave/trackMetadata'
 import { installWaveMediaEndCapture } from './wave/mediaEndCapture';
 import { installAudioFeatureCapture } from './wave/audioFeatureCapture';
 import { setStationAutoplay } from './wave/nativeAutoplay';
-import { loadSourcePlaylist } from './import/loadSource';
+import { PlaylistSourceReader } from './import/sourceReader';
 import { loadLocalPlaylist } from './import/localSource';
 import { findSoundCloudMatch, type ImportMatch } from './import/match';
 import { cancelImportOperation, automaticImportConcurrency, mapImportTracks } from './import/parallel';
@@ -387,17 +388,11 @@ function setupTray() {
         }
     });
 }
-async function getLanguage() {
-    if (!contentView) return;
-    const langInfo = await contentView.webContents.executeJavaScript(`
-        const langEl = document.querySelector('html');
-        new Promise(resolve => {
-            resolve({
-                lang: langEl ? langEl.getAttribute('lang') : 'en',
-            });
-        })
-    `);
-    translationService.setLanguage(langInfo.lang);
+function getLanguage() {
+    const selected = store.get('waveInterfaceLanguage', 'auto');
+    translationService.setLanguage(
+        selected === 'ru' || (selected === 'auto' && app.getLocale().toLowerCase().startsWith('ru')) ? 'ru' : 'en',
+    );
 }
 function createBrowserWindow(windowState: { width: number; height: number; x?: number; y?: number }): BrowserWindow {
     const window = new BrowserWindow({
@@ -561,8 +556,8 @@ function setupWindowControls() {
     });
     adjustContentViews();
 }
-let headerView: BrowserView | null;
-let contentView: BrowserView;
+let headerView: WebContentsView | null;
+let contentView: WebContentsView;
 const windowIpc = new IpcRegistry(ipcMain, (event, channel) => {
     if (isQuitting) return false;
     if (/^(wave-inline:|playlist-import:|soundcloud:)/.test(channel)) return isTrustedSoundCloudSender(event);
@@ -622,7 +617,7 @@ async function init() {
     mainWindow.on('restore', updateWaveVisibility);
     mainWindow.on('hide', updateWaveVisibility);
     mainWindow.on('show', updateWaveVisibility);
-    headerView = new BrowserView({
+    headerView = new WebContentsView({
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -636,7 +631,7 @@ async function init() {
             ...(isMac ? { spellcheck: false } : {}),
         },
     });
-    mainWindow.addBrowserView(headerView);
+    attachWindowView(mainWindow, headerView);
     const notifyWindowState = () => {
         if (headerView?.webContents && !headerView.webContents.isDestroyed() && !mainWindow.isDestroyed())
             headerView.webContents.send('window-state-changed', mainWindow.isMaximized());
@@ -644,11 +639,10 @@ async function init() {
     mainWindow.on('maximize', notifyWindowState);
     mainWindow.on('unmaximize', notifyWindowState);
     headerView.setBounds({ x: 0, y: 0, width: mainWindow.getBounds().width, height: 32 });
-    headerView.setAutoResize({ width: true, height: false });
     headerView.webContents.loadFile(path.join(__dirname, 'header', 'header.html'));
     const currentAccountId = store.get('currentAccountId', 'default');
     const sessionPartition = currentAccountId === 'default' ? undefined : `persist:sc_${currentAccountId}`;
-    contentView = new BrowserView({
+    contentView = new WebContentsView({
         webPreferences: {
             ...(sessionPartition ? { partition: sessionPartition } : {}),
             nodeIntegration: false,
@@ -664,7 +658,7 @@ async function init() {
             ...(isMac ? { spellcheck: false } : {}),
         },
     });
-    mainWindow.addBrowserView(contentView);
+    attachWindowView(mainWindow, contentView);
     const clientContents = contentView.webContents;
     const clientWindow = mainWindow;
     const windowTasks = new WindowTasks(() => !clientWindow.isDestroyed() && !clientContents.isDestroyed());
@@ -675,7 +669,6 @@ async function init() {
         width: mainWindow.getBounds().width,
         height: mainWindow.getBounds().height - 32,
     });
-    contentView.setAutoResize({ width: true, height: true });
     installNativePageCover(mainWindow, contentView);
     setPublicMetadataFetch((input, init) =>
         clientContents.session.fetch(input instanceof URL ? input.href : input, {
@@ -686,7 +679,7 @@ async function init() {
     waveListening.reset();
     const discoveryPage = new IdleResource(
         () => {
-            const view = new BrowserView({
+            const view = new WebContentsView({
                 webPreferences: {
                     session: clientContents.session,
                     nodeIntegration: false,
@@ -709,6 +702,7 @@ async function init() {
     );
     clientContents.setUserAgent(globalUserAgent);
     translationService = new TranslationService();
+    getLanguage();
     themeService = new ThemeService(
         store,
         (event, channel) =>
@@ -761,8 +755,8 @@ async function init() {
     let nativeQueueResetTask: Promise<void> | null = null;
     let lastQueueInspection = 0;
     let waveShuffle = false;
-    let waveLikeView: BrowserView | null = null;
-    let importView: BrowserView | null = null;
+    let waveLikeView: WebContentsView | null = null;
+    let importView: WebContentsView | null = null;
     const importJournal = new ImportJournal(libraryStore, currentAccountId);
     let importDraft: ImportJob | null = importJournal.current() || null;
     const availabilityRoute = () =>
@@ -781,14 +775,14 @@ async function init() {
     let importScanController: AbortController | null = null;
     let importCommitController: AbortController | null = null;
     let importFileDialogOpen = false;
-    const importSearchViews = new Set<BrowserView>();
-    const closeImportView = (view: BrowserView) => {
+    const importSearchViews = new Set<WebContentsView>();
+    const closeImportView = (view: WebContentsView) => {
         const contents = view.webContents;
         if (contents && !contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
         importSearchViews.delete(view);
     };
     const createImportView = (search = false) => {
-        const view = new BrowserView({
+        const view = new WebContentsView({
             webPreferences: {
                 session: clientContents.session,
                 nodeIntegration: false,
@@ -890,7 +884,7 @@ async function init() {
     };
     const getLikeView = () => {
         if (!waveLikeView?.webContents || waveLikeView.webContents.isDestroyed()) {
-            waveLikeView = new BrowserView({
+            waveLikeView = new WebContentsView({
                 webPreferences: {
                     session: clientContents.session,
                     nodeIntegration: false,
@@ -1736,6 +1730,9 @@ async function init() {
         if (!isTrustedSoundCloudSender(event) || !['auto', 'ru', 'en'].includes(String(language)))
             throw new Error('Invalid interface language');
         store.set('waveInterfaceLanguage', language);
+        getLanguage();
+        settingsManager?.updateTranslations(translationService);
+        if (updateController) broadcastUpdate(updateController.snapshot());
         sendInline('interface-language', language);
         return language;
     });
@@ -1828,7 +1825,7 @@ async function init() {
         if (importTask) throw new Error('Предыдущий импорт ещё выполняется.');
         const controller = new AbortController();
         importScanController = controller;
-        const slots = new Map<number, BrowserView>();
+        const slots = new Map<number, WebContentsView>();
         const task = (async () => {
             importProgress('source', 0, 0, 'Читаем плейлист…');
             const source = await load(controller.signal);
@@ -1843,6 +1840,8 @@ async function init() {
                 title: source.title,
                 tracks: source.tracks,
                 partial: source.partial,
+                partialReason: source.partialReason,
+                expectedTracks: source.expectedTracks,
                 concurrency,
             });
             const job = importJournal.begin(source);
@@ -1916,6 +1915,8 @@ async function init() {
                 title: job.title || source.title,
                 platform: source.platform,
                 partial: source.partial,
+                partialReason: source.partialReason,
+                expectedTracks: source.expectedTracks,
                 matches,
                 selectedIndexes: job.selected,
                 savedUrls: job.savedUrls,
@@ -1965,19 +1966,14 @@ async function init() {
         if (!isTrustedSoundCloudSender(event) || typeof link !== 'string' || link.length > 1000)
             throw new Error('Недопустимая ссылка на плейлист.');
         return scanPlaylist((signal) =>
-            loadSourcePlaylist(link, signal, {
-                relay: connectionRecovery.canLoadPlaylistSource()
-                    ? (url, cancel) => connectionRecovery.loadPlaylistSource(url, cancel)
-                    : undefined,
-                preferRelay: store.get('cloudflareMode') === 'always',
-                onRoute: (route) =>
-                    importProgress(
-                        'source',
-                        0,
-                        0,
-                        route === 'relay' ? 'Читаем плейлист через Worker…' : 'Читаем плейлист напрямую…',
-                    ),
-            }),
+            new PlaylistSourceReader({
+                parent: clientWindow,
+                account: String(currentAccountId),
+                connection: connectionRecovery,
+                relayFirst: () => store.get('cloudflareMode') === 'always',
+                russian: () => translationService.getLanguage() === 'ru',
+                progress: (read, total, message) => importProgress('source', read, total, message),
+            }).read(link, signal),
         );
     });
     windowIpc.handle('playlist-import:scan-file', async (event) => {
@@ -2244,7 +2240,7 @@ async function init() {
     });
     windowIpc.handle('network:status', (event) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
-        return connectionRecovery.getStatus();
+        return connectionRecovery.getStatus(translationService.getLanguage() === 'ru' ? 'ru' : 'en');
     });
     windowIpc.handle('network:save', async (event, input: unknown) => {
         if (!settingsManager.owns(event.sender)) throw new Error('Недоверенная страница настроек.');
@@ -2254,7 +2250,7 @@ async function init() {
             connectionRecovery.save(input);
             await proxyService.apply();
             await connectionRecovery.configure(true);
-            return connectionRecovery.getStatus();
+            return connectionRecovery.getStatus(translationService.getLanguage() === 'ru' ? 'ru' : 'en');
         } finally {
             networkSettingsBusy = false;
         }
@@ -2265,7 +2261,7 @@ async function init() {
         networkSettingsBusy = true;
         try {
             await connectionRecovery.testRelay();
-            return connectionRecovery.getTestMessage();
+            return connectionRecovery.getTestMessage(translationService.getLanguage() === 'ru' ? 'ru' : 'en');
         } finally {
             networkSettingsBusy = false;
         }
@@ -2862,16 +2858,28 @@ function initializeShortcuts() {
     });
     console.log(`Initialized ${shortcutService.count} keyboard shortcuts`);
 }
+let initialization: Promise<void> | undefined;
+function initializeClient(): Promise<void> {
+    if (initialization) return initialization;
+    const task = init();
+    initialization = task;
+    const clear = () => {
+        if (initialization === task) initialization = undefined;
+    };
+    void task.then(clear, clear);
+    return task;
+}
+function startupFailed(error: unknown): void {
+    console.error('Client startup failed:', error);
+    dialog.showErrorBox(
+        'SoundCloud',
+        'Не удалось загрузить локальные данные. Они сохранены без изменений. ' +
+            (error instanceof Error ? error.message : String(error)),
+    );
+    app.quit();
+}
 app.on('ready', () => {
-    void init().catch((error) => {
-        console.error('Client startup failed:', error);
-        dialog.showErrorBox(
-            'SoundCloud',
-            'Не удалось загрузить локальные данные. Они сохранены без изменений. ' +
-                (error instanceof Error ? error.message : String(error)),
-        );
-        app.quit();
-    });
+    void initializeClient().catch(startupFailed);
 });
 app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') {
@@ -2879,8 +2887,8 @@ app.on('window-all-closed', function () {
     }
 });
 app.on('activate', function () {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-        init();
+    if (!isQuitting && (!mainWindow || mainWindow.isDestroyed())) {
+        void initializeClient().catch(startupFailed);
     }
 });
 let libraryClosed = false;
@@ -2943,64 +2951,7 @@ export function queueToastNotification(message: string) {
     }
 }
 function setupTranslationHandlers() {
-    ipcMain.handle('get-translations', () => {
-        return {
-            client: translationService.translate('client'),
-            darkMode: translationService.translate('darkMode'),
-            adBlocker: translationService.translate('adBlocker'),
-            enableAdBlocker: translationService.translate('enableAdBlocker'),
-            changesAppRestart: translationService.translate('changesAppRestart'),
-            proxy: translationService.translate('proxy'),
-            proxyHost: translationService.translate('proxyHost'),
-            proxyPort: translationService.translate('proxyPort'),
-            enableProxy: translationService.translate('enableProxy'),
-            enableLastFm: translationService.translate('enableLastFm'),
-            lastfm: translationService.translate('lastfm'),
-            lastFmApiKey: translationService.translate('lastFmApiKey'),
-            lastFmSecret: translationService.translate('lastFmApiSecret'),
-            createApiKeyLastFm: translationService.translate('createApiKeyLastFm'),
-            noCallbackUrl: translationService.translate('noCallbackUrl'),
-            webhooks: translationService.translate('webhooks'),
-            discord: translationService.translate('discord'),
-            enableWebhooks: translationService.translate('enableWebhooks'),
-            webhookUrl: translationService.translate('webhookUrl'),
-            webhookTrigger: translationService.translate('webhookTrigger'),
-            webhookDescription: translationService.translate('webhookDescription'),
-            showWebhookExample: translationService.translate('showWebhookExample'),
-            enableRichPresence: translationService.translate('enableRichPresence'),
-            displayWhenPaused: translationService.translate('displayWhenPaused'),
-            displaySmallIcon: translationService.translate('displaySmallIcon'),
-            displayButtons: translationService.translate('displayButtons'),
-            useArtistInStatusLine: translationService.translate('useArtistInStatusLine'),
-            enableRichPresencePreview: translationService.translate('enableRichPresencePreview'),
-            richPresencePreview: translationService.translate('richPresencePreview'),
-            richPresencePreviewDescription: translationService.translate('richPresencePreviewDescription'),
-            applyChanges: translationService.translate('applyChanges'),
-            minimizeToTray: translationService.translate('minimizeToTray'),
-            enableNavigationControls: translationService.translate('enableNavigationControls'),
-            enableTrackParser: translationService.translate('enableTrackParser'),
-            trackParserDescription: translationService.translate('trackParserDescription'),
-            enableAutoUpdater: translationService.translate('enableAutoUpdater'),
-            customThemes: translationService.translate('customThemes'),
-            selectCustomTheme: translationService.translate('selectCustomTheme'),
-            noTheme: translationService.translate('noTheme'),
-            openThemesFolder: translationService.translate('openThemesFolder'),
-            refreshThemes: translationService.translate('refreshThemes'),
-            customThemeDescription: translationService.translate('customThemeDescription'),
-            plugins: translationService.translate('plugins'),
-            openPluginsFolder: translationService.translate('openPluginsFolder'),
-            refreshPlugins: translationService.translate('refreshPlugins'),
-            pluginsDescription: translationService.translate('pluginsDescription'),
-            noPluginsFound: translationService.translate('noPluginsFound'),
-            pressF1ToOpenSettings: translationService.translate('pressF1ToOpenSettings'),
-            closeSettings: translationService.translate('closeSettings'),
-            noActivityToShow: translationService.translate('noActivityToShow'),
-            richPresencePreviewTitle: translationService.translate('richPresencePreviewTitle'),
-            hidePromotions: translationService.translate('hidePromotions'),
-            hideEventsNearYou: translationService.translate('hideEventsNearYou'),
-            hideArtistUpsells: translationService.translate('hideArtistUpsells'),
-        };
-    });
+    windowIpc.handle('get-translations', () => translationService.getAll());
 }
 function setupAudioHandler() {
     windowIpc.on('soundcloud:track-progress', (event, data: unknown) => {

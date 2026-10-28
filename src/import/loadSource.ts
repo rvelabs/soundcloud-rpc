@@ -1,13 +1,8 @@
 import { net } from 'electron';
 import { readTextLimited } from '../utils/readText';
 import { SourceRelayError } from './sourceRelay';
-import {
-    classifyPlaylistUrl,
-    parseSpotifyEmbed,
-    parseYandexPlaylist,
-    parseYouTubePlaylist,
-    type SourcePlaylist,
-} from './source';
+import { loadYouTubePages, type SourceRequest, type SourceRequestInit } from './youtubePagination';
+import { classifyPlaylistUrl, parseSpotifyEmbed, parseYandexPlaylist, type SourcePlaylist } from './source';
 const allowedHosts = new Set([
     'open.spotify.com',
     'music.yandex.ru',
@@ -15,7 +10,7 @@ const allowedHosts = new Set([
     'music.youtube.com',
     'www.youtube.com',
 ]);
-async function fetchPublic(url: string, signal?: AbortSignal): Promise<string> {
+async function fetchPublic(url: string, signal?: AbortSignal, init?: SourceRequestInit): Promise<string> {
     let current = url;
     for (let redirect = 0; redirect < 3; redirect++) {
         signal?.throwIfAborted();
@@ -31,10 +26,13 @@ async function fetchPublic(url: string, signal?: AbortSignal): Promise<string> {
             throw new Error('Источник перенаправил запрос на неподдерживаемый адрес.');
         const timeout = AbortSignal.timeout(6500);
         const response = await net.fetch(current, {
+            method: init?.method || 'GET',
+            body: init?.body,
             redirect: 'manual',
             credentials: 'omit',
             signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
             headers: {
+                ...(init ? { 'Content-Type': 'application/json' } : {}),
                 'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.7',
                 ...(address.hostname === 'music.yandex.ru' && address.pathname.startsWith('/handlers/')
                     ? { Referer: 'https://music.yandex.ru/', 'X-Requested-With': 'XMLHttpRequest' }
@@ -42,13 +40,21 @@ async function fetchPublic(url: string, signal?: AbortSignal): Promise<string> {
             },
         });
         if (response.status >= 300 && response.status < 400) {
+            void response.body?.cancel().catch(() => {});
+            if (init) throw new Error('Источник перенаправил запрос продолжения.');
             const location = response.headers.get('location');
             if (!location) throw new Error('Источник перенаправил запрос без адреса.');
             current = new URL(location, current).href;
             continue;
         }
-        if (response.status === 451) throw new Error('Источник недоступен в текущем регионе.');
-        if (!response.ok) throw new Error(`Источник ответил кодом ${response.status}.`);
+        if (!response.ok) {
+            void response.body?.cancel().catch(() => {});
+            throw new Error(
+                response.status === 451
+                    ? 'Источник недоступен в текущем регионе.'
+                    : `Источник ответил кодом ${response.status}.`,
+            );
+        }
         return readTextLimited(response);
     }
     throw new Error('Слишком много перенаправлений от источника.');
@@ -57,9 +63,10 @@ export async function loadSourcePlaylist(
     link: string,
     signal?: AbortSignal,
     options: {
-        relay?: (url: string, signal?: AbortSignal) => Promise<string>;
+        relay?: SourceRequest;
         preferRelay?: boolean;
         onRoute?: (route: 'direct' | 'relay') => void;
+        onPage?: (playlist: SourcePlaylist) => void;
     } = {},
 ): Promise<SourcePlaylist> {
     const source = classifyPlaylistUrl(link);
@@ -69,16 +76,25 @@ export async function loadSourcePlaylist(
             : ['direct', 'relay']
         : ['direct'];
     const failures: unknown[] = [];
+    let best: SourcePlaylist | undefined;
     for (const route of routes) {
         signal?.throwIfAborted();
         options.onRoute?.(route);
         try {
-            return await loadSource(source, route === 'relay' ? options.relay! : fetchPublic, signal);
+            const result = await loadSource(
+                source,
+                route === 'relay' ? options.relay! : fetchPublic,
+                signal,
+                options.onPage,
+            );
+            if (!result.partial || result.partialReason === 'limit') return result;
+            if (!best || result.tracks.length > best.tracks.length) best = result;
         } catch (error) {
             signal?.throwIfAborted();
             failures.push(error);
         }
     }
+    if (best) return best;
     const relayError = failures.find((error) => error instanceof SourceRelayError);
     if (relayError) throw relayError;
     const last = failures[failures.length - 1];
@@ -89,8 +105,9 @@ export async function loadSourcePlaylist(
 }
 async function loadSource(
     source: ReturnType<typeof classifyPlaylistUrl>,
-    request: (url: string, signal?: AbortSignal) => Promise<string>,
+    request: SourceRequest,
     signal?: AbortSignal,
+    progress?: (playlist: SourcePlaylist) => void,
 ): Promise<SourcePlaylist> {
     const url =
         source.platform === 'yandex' && source.url.includes('/playlists/')
@@ -100,14 +117,20 @@ async function loadSource(
     if (source.platform === 'spotify') return parseSpotifyEmbed(body);
     if (source.platform === 'youtube') {
         try {
-            return parseYouTubePlaylist(body);
+            return await loadYouTubePages(body, source.url, request, signal, progress);
         } catch {
             signal?.throwIfAborted();
             const fallback = await request(
                 `https://www.youtube.com/playlist?list=${encodeURIComponent(source.id)}`,
                 signal,
             );
-            return parseYouTubePlaylist(fallback);
+            return loadYouTubePages(
+                fallback,
+                `https://www.youtube.com/playlist?list=${encodeURIComponent(source.id)}`,
+                request,
+                signal,
+                progress,
+            );
         }
     }
     try {

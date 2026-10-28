@@ -1,7 +1,7 @@
 import { createServer, type Server, type IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
 import { EventEmitter } from 'node:events';
-import { relayTarget, workerEndpoint } from './relayTargets';
+import { relayTarget, playlistBrowserTarget, workerEndpoint } from './relayTargets';
 import { networkErrorCode, type TunnelDiagnostic } from './relayDiagnostics';
 interface Tunnel extends EventEmitter {
     send(data: Buffer | string, callback?: (error?: Error) => void): void;
@@ -37,7 +37,7 @@ export class CloudflareGateway {
         server.on('connect', (req, stream, head) => {
             const socket = stream as Socket;
             const match = /^([a-z0-9.-]+):443$/i.exec(req.url || '');
-            if (!match || !relayTarget(match[1]) || this.tunnels.size >= 64) {
+            if (!match || (!relayTarget(match[1]) && !playlistBrowserTarget(match[1])) || this.tunnels.size >= 64) {
                 socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
                 return;
             }

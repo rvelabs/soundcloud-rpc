@@ -16,6 +16,7 @@ const checks = scripts.length
           'check-minimized-start.cjs',
           'check-module-lifecycle.cjs',
           'check-import-interface.cjs',
+          'check-source-pagination.cjs',
           'check-network-settings.cjs',
           'check-update-interface.cjs',
           'check-updater.cjs',
@@ -42,7 +43,8 @@ for (const name of checks) {
     const passed = result.status === 0 && !result.error;
     results.push({ name, passed, exitCode: result.status, error: result.error?.message });
     console.log(`${passed ? 'PASS' : 'FAIL'} ${name}`);
-    if (!passed) console.error((result.stderr || result.stdout || String(result.error)).slice(-6000));
+    if (!passed)
+        console.error([result.stderr, result.stdout, result.error?.message].filter(Boolean).join('\n').slice(-6000));
 }
 fs.writeFileSync(path.join(directory, 'results.json'), JSON.stringify(results, null, 2));
 console.log(directory);

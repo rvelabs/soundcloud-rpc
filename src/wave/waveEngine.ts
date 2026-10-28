@@ -20,6 +20,7 @@ export interface WaveCandidate {
     catalogCheckedAt?: number;
     playability?: 'available' | 'blocked' | 'preview' | 'protected' | 'unknown';
     recommendationReasons?: string[];
+    recommendationEvidence?: import('./recommendation/evidence').PreferenceEvidence[];
     durationSeconds?: number;
     features?: SoundFeatures;
 }

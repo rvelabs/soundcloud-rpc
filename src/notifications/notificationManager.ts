@@ -1,9 +1,10 @@
-import { BrowserView, BrowserWindow, ipcMain, type IpcMainEvent } from 'electron';
+import { attachWindowView, detachWindowView } from '../utils/windowViews';
+import { WebContentsView, BrowserWindow, ipcMain, type IpcMainEvent } from 'electron';
 import type { ThemeColors } from '../utils/colorExtractor';
 import { join } from 'path';
 const isMac = process.platform === 'darwin';
 export class NotificationManager {
-    private view: BrowserView | null = null;
+    private view: WebContentsView | null = null;
     private queue: string[] = [];
     private isDisplaying = false;
     private parentWindow: BrowserWindow;
@@ -15,9 +16,9 @@ export class NotificationManager {
         this.parentWindow = parentWindow;
         parentWindow.once('closed', () => this.dispose());
     }
-    private ensureView(): BrowserView {
+    private ensureView(): WebContentsView {
         if (this.view) return this.view;
-        this.view = new BrowserView({
+        this.view = new WebContentsView({
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
@@ -31,13 +32,14 @@ export class NotificationManager {
                 ...(isMac ? { spellcheck: false } : {}),
             },
         });
+        this.view.setBackgroundColor('#00000000');
         return this.view;
     }
     private teardownView(): void {
         if (!this.view) return;
         const view = this.view;
         try {
-            this.parentWindow.removeBrowserView(view);
+            detachWindowView(this.parentWindow, view);
         } catch {}
         try {
             if (!view.webContents.isDestroyed()) view.webContents.close();
@@ -67,7 +69,7 @@ export class NotificationManager {
         const width = 400;
         const height = 70;
         const view = this.ensureView();
-        this.parentWindow.addBrowserView(view);
+        attachWindowView(this.parentWindow, view);
         view.setBounds({
             x: Math.floor((bounds.width - width) / 2),
             y: bounds.height - height - 100,
@@ -153,7 +155,7 @@ export class NotificationManager {
         const view = this.view;
         this.view = null;
         if (view) {
-            if (!this.parentWindow.isDestroyed()) this.parentWindow.removeBrowserView(view);
+            if (!this.parentWindow.isDestroyed()) detachWindowView(this.parentWindow, view);
             if (!view.webContents.isDestroyed()) view.webContents.close();
         }
     }

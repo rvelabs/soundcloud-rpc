@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type ElectronStore from 'electron-store';
-import type { BrowserView } from 'electron';
+import type { WebContentsView } from 'electron';
 import { WebhookService } from './webhookService';
 import { LastFmService } from './lastFmService';
 const request = vi.hoisted(() => vi.fn());
@@ -110,7 +110,7 @@ describe('listening integrations under overlapping events', () => {
     });
     it('scrobbles late duration once, never invents repeats, and excludes short tracks', async () => {
         const { store } = memory();
-        const service = new LastFmService({ webContents: {} } as BrowserView, store);
+        const service = new LastFmService({ webContents: {} } as WebContentsView, store);
         disposables.push(service);
         await service.updateTrackInfo(track('A', '0:00', ''));
         await vi.advanceTimersByTimeAsync(1000);
@@ -125,7 +125,7 @@ describe('listening integrations under overlapping events', () => {
     });
     it('does not scrobble a long pause, or let an old HTTP response claim the next track', async () => {
         const { store } = memory();
-        const service = new LastFmService({ webContents: {} } as BrowserView, store);
+        const service = new LastFmService({ webContents: {} } as WebContentsView, store);
         disposables.push(service);
         await service.updateTrackInfo(track('A'));
         await vi.advanceTimersByTimeAsync(60000);
@@ -159,7 +159,7 @@ describe('listening integrations under overlapping events', () => {
             }),
         });
         request.mockResolvedValue({ json: async () => ({ session: { key: 'new-session' } }) });
-        const service = new LastFmService({ webContents: contents } as unknown as BrowserView, store);
+        const service = new LastFmService({ webContents: contents } as unknown as WebContentsView, store);
         disposables.push(service);
         await service.authenticate();
         await Promise.resolve();

@@ -10,6 +10,10 @@ export interface SourcePlaylist {
     title: string;
     tracks: SourceTrack[];
     partial: boolean;
+    expectedTracks?: number;
+    readTracks?: number;
+    pagesRead?: number;
+    partialReason?: 'limit' | 'network' | 'repeated' | 'authorization' | 'source' | 'upgrade';
 }
 export function classifyPlaylistUrl(input: string): {
     platform: SourcePlatform;
@@ -71,7 +75,7 @@ function textRuns(value: unknown): string {
     };
     return clean(item.simpleText || item.content || item.runs?.map((part) => part.text || '').join(''));
 }
-function playlistResult(
+export function playlistResult(
     platform: SourcePlatform,
     title: string,
     tracks: SourceTrack[],
@@ -83,7 +87,9 @@ function playlistResult(
         const name = clean(track.title),
             artist = clean(track.artist);
         if (!name || !artist) continue;
-        const key = `${name.toLowerCase()}\u0000${artist.toLowerCase()}`;
+        const key =
+            track.sourceId ||
+            `${name.toLowerCase()}\u0000${artist.toLowerCase()}\u0000${Math.round(track.durationSeconds || 0)}`;
         if (seen.has(key)) continue;
         seen.add(key);
         unique.push({
@@ -181,12 +187,17 @@ export function parseYandexPlaylist(value: unknown): SourcePlaylist {
             durationSeconds: track?.durationMs ? track.durationMs / 1000 : undefined,
         };
     });
-    return playlistResult(
-        'yandex',
-        playlist?.title || playlist?.name || '',
-        tracks,
-        typeof playlist?.trackCount === 'number' && playlist.trackCount > tracks.length,
-    );
+    const available = tracks.filter((track) => track.title && track.artist);
+    return {
+        ...playlistResult(
+            'yandex',
+            playlist?.title || playlist?.name || '',
+            tracks,
+            typeof playlist?.trackCount === 'number' && playlist.trackCount > available.length,
+        ),
+        readTracks: available.length,
+        expectedTracks: playlist.trackCount,
+    };
 }
 export function resolveYandexPlaylist(html: string): {
     owner: string;
@@ -199,7 +210,7 @@ export function resolveYandexPlaylist(html: string): {
     if (owner && kind) return { owner: owner[1], kind: kind[1] };
     throw new Error('Яндекс Музыка не показала данные публичного плейлиста.');
 }
-function extractObject(source: string, start: number): string | null {
+export function extractObject(source: string, start: number): string | null {
     let depth = 0,
         inString = false,
         escaped = false;
@@ -221,7 +232,12 @@ export function parseYouTubePlaylist(html: string): SourcePlaylist {
     const serialized = start >= 0 ? extractObject(html, start) : null;
     if (!serialized)
         throw new Error('YouTube Music не открыл список треков. Возможно, требуется вход или подтверждение cookie.');
-    const data = JSON.parse(serialized) as unknown;
+    return parseYouTubeData(
+        JSON.parse(serialized),
+        clean(html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)?.[1]),
+    );
+}
+export function parseYouTubeData(data: unknown, fallbackTitle = ''): SourcePlaylist {
     const tracks: SourceTrack[] = [];
     let title = '';
     const visit = (value: unknown, depth = 0): void => {
@@ -306,6 +322,6 @@ export function parseYouTubePlaylist(html: string): SourcePlaylist {
         }
     };
     visit(data);
-    if (!title) title = clean(html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)?.[1]);
+    if (!title) title = fallbackTitle;
     return playlistResult('youtube', title, tracks, true);
 }

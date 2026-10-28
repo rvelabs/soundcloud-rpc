@@ -1,13 +1,15 @@
+import { attachWindowView, detachWindowView } from '../utils/windowViews';
 import { escapeHtml } from '../utils/html';
+import { interfaceEnglish, interfaceText, settingsMarkup } from '../i18n/interfaceText';
 import { readFileSync } from 'node:fs';
-import { BrowserView, BrowserWindow, type WebContents } from 'electron';
+import { WebContentsView, BrowserWindow, type WebContents } from 'electron';
 import type ElectronStore from 'electron-store';
 import { TranslationService } from '../services/translationService';
 import type { ThemeColors } from '../utils/colorExtractor';
 import { join } from 'path';
 const isMac = process.platform === 'darwin';
 export class SettingsManager {
-    private view: BrowserView | null = null;
+    private view: WebContentsView | null = null;
     private isVisible = false;
     private parentWindow: BrowserWindow;
     private store: ElectronStore;
@@ -17,6 +19,7 @@ export class SettingsManager {
     private customCSS = '';
     private idleMs = 30000;
     private idleTimer?: ReturnType<typeof setTimeout>;
+    private language = '';
     constructor(parentWindow: BrowserWindow, store: ElectronStore, translationService: TranslationService) {
         this.parentWindow = parentWindow;
         this.store = store;
@@ -51,9 +54,9 @@ export class SettingsManager {
         if (contents.isLoadingMainFrame()) contents.once('did-finish-load', scroll);
         else scroll();
     }
-    private createView(): BrowserView {
+    private createView(): WebContentsView {
         if (this.view) return this.view;
-        this.view = new BrowserView({
+        this.view = new WebContentsView({
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
@@ -67,7 +70,8 @@ export class SettingsManager {
                 ...(isMac ? { spellcheck: false } : {}),
             },
         });
-        this.parentWindow.addBrowserView(this.view);
+        this.view.setBackgroundColor('#00000000');
+        attachWindowView(this.parentWindow, this.view);
         this.view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
         this.view.webContents.on('will-navigate', (event) => event.preventDefault());
         this.view.setBounds({ x: 0, y: -10000, width: 0, height: 0 });
@@ -93,7 +97,7 @@ export class SettingsManager {
         clearTimeout(this.idleTimer);
         if (!this.view) return;
         try {
-            this.parentWindow.removeBrowserView(this.view);
+            detachWindowView(this.parentWindow, this.view);
         } catch {}
         try {
             if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
@@ -114,7 +118,9 @@ export class SettingsManager {
     }
     private getHtml(): string {
         const theme = this.store.get('theme', 'dark');
-        return `
+        this.language = this.translationService.getLanguage();
+        return settingsMarkup(this.language)`
+        <script>window.__settingsLanguage=${JSON.stringify(this.language)};window.__settingsText=${JSON.stringify(interfaceEnglish).replace(/</g, '\\u003c')};</script>
         <style>
             ${readFileSync(join(__dirname, 'settings.css'), 'utf8')}
         </style>
@@ -286,7 +292,7 @@ export class SettingsManager {
                     <option value="always" ${this.store.get('cloudflareMode') === 'always' ? 'selected' : ''}>Всегда через Worker</option>
                 </select>
                 <input class="textInput" id="cloudflareEndpoint" placeholder="https://your-worker.workers.dev" value="${String(this.store.get('cloudflareEndpoint', '')).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)}">
-                <input class="textInput" id="cloudflareSecret" type="password" autocomplete="new-password" placeholder="${this.store.get('cloudflareSecretEncrypted') ? 'Ключ сохранён. Оставьте пустым, чтобы сохранить его.' : 'Ключ Worker (RELAY_TOKEN)'}">
+                <input class="textInput" id="cloudflareSecret" type="password" autocomplete="new-password" placeholder="${this.store.get('cloudflareSecretEncrypted') ? interfaceText('Ключ сохранён. Оставьте пустым, чтобы сохранить его.', this.translationService.getLanguage()) : interfaceText('Ключ Worker (RELAY_TOKEN)', this.translationService.getLanguage())}">
                 <button id="cloudflareSave" class="button">Сохранить подключение</button>
                 <button id="cloudflareTest" class="button" title="Проверяет сохранённые настройки">Проверить Worker</button>
                 <button id="cloudflareCopyDiagnostics" class="button">Скопировать диагностику подключения</button>
@@ -555,11 +561,17 @@ export class SettingsManager {
             document.head.appendChild(style);
         })()`);
     }
-    public getView(): BrowserView | null {
+    public getView(): WebContentsView | null {
         return this.view;
     }
     public updateTranslations(translationService: TranslationService): void {
         this.translationService = translationService;
+        if (this.view && this.language !== translationService.getLanguage()) {
+            const visible = this.isVisible;
+            this.teardownView();
+            if (visible) this.show();
+            return;
+        }
         if (!this.view) return;
         this.view.webContents.send('update-translations');
     }

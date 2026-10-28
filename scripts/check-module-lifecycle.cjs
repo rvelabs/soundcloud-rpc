@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron');
 const fs = require('node:fs'),
     path = require('node:path'),
     assert = require('node:assert/strict');
@@ -153,8 +153,8 @@ app.whenReady().then(async () => {
         const second = showHomepageConfirmDialog(win, 'https://example.org/two');
         assert.equal(await first, false);
         await wait(200);
-        const confirm = win
-            .getBrowserViews()
+        const confirm = win.contentView.children
+            .filter((view) => view.webContents)
             .find(
                 (view) =>
                     view.webContents &&
@@ -166,7 +166,7 @@ app.whenReady().then(async () => {
         assert.equal(await second, false);
         assert.equal(ipcMain.listenerCount('homepage-confirm-result'), 0);
         passed.push('replacing a confirmation resolves the previous request and removes its IPC listener');
-        const account = new BrowserView({ webPreferences: { partition: 'module-proxy-fixture', sandbox: true } });
+        const account = new WebContentsView({ webPreferences: { partition: 'module-proxy-fixture', sandbox: true } });
         await account.webContents.loadURL('about:blank');
         const { ProxyService } = load('services/proxyService.js');
         store.set('proxyEnabled', true);

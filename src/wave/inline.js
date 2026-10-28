@@ -601,9 +601,15 @@
                     importMessage(
                         t('{title}: проверьте совпадения перед добавлением.', { title: result.title }) +
                             (result.partial
-                                ? t(
-                                      ' Источник показал только часть треков. Для полного списка используйте импорт CSV/TXT.',
-                                  )
+                                ? result.partialReason === 'limit'
+                                    ? t(' Получены первые 500 треков — это лимит плейлиста SoundCloud.')
+                                    : result.partialReason === 'upgrade'
+                                      ? t(
+                                            ' Чтобы дочитать список, обновите Worker через F1. Найденную часть уже можно сохранить.',
+                                        )
+                                      : t(
+                                            ' Источник показал только часть треков. Для полного списка используйте импорт CSV/TXT.',
+                                        )
                                 : ''),
                     );
                     updateImportProgress('done', importMatches.length, importMatches.length);
@@ -756,10 +762,11 @@
                 .map((reason) => t(reason))
                 .slice(0, 3)
                 .join(' · ') || t('Подбор по вашему вкусу и настройкам');
-        $('.cw-evidence').textContent =
-            item?.bpm && item.bpmConfidence >= 0.65
-                ? [item.genre, t('BPM из метаданных: ') + item.bpm].filter(Boolean).join(' · ')
-                : [item?.genre, t('Темп без подтверждённого BPM оценивается по тегам')].filter(Boolean).join(' · ');
+        $('.cw-evidence').textContent = item?.recommendationEvidence?.length
+            ? item.recommendationEvidence.map((evidence) => t(evidence.text)).join(' · ')
+            : item?.bpm && item.bpmConfidence >= 0.65
+              ? [item.genre, t('BPM из метаданных: ') + item.bpm].filter(Boolean).join(' · ')
+              : [item?.genre, t('Темп без подтверждённого BPM оценивается по тегам')].filter(Boolean).join(' · ');
     };
     $('.cw-import-results').addEventListener('change', (event) => {
         const index = Number(event.target.dataset.index);
@@ -802,7 +809,7 @@
                 updateImportSummary();
             }
             if (importScanning) updateImportSummary();
-            importMessage(`${state.detail || t('Импорт')}${state.total ? ` · ${state.completed}/${state.total}` : ''}`);
+            importMessage(`${t(state.detail || 'Импорт')}${state.total ? ` · ${state.completed}/${state.total}` : ''}`);
         });
     api.on('active', updateActive);
     api.on('track', updateTrack);

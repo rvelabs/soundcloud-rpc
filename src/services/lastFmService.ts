@@ -1,6 +1,6 @@
 import { DeliveryOutbox } from './deliveryOutbox';
 import type { DataStore } from '../storage/asyncDataStore';
-import { BrowserView } from 'electron';
+import { WebContentsView } from 'electron';
 import type ElectronStore from 'electron-store';
 import * as crypto from 'crypto';
 import fetch from 'cross-fetch';
@@ -52,7 +52,7 @@ function generateApiSignature(params: Record<string, string>, secret: string): s
 }
 export class LastFmService {
     private isAuthenticating: boolean = false;
-    private readonly window: BrowserView;
+    private readonly window: WebContentsView;
     private readonly store: ElectronStore;
     private currentScrobbleState: ScrobbleState | null = null;
     private pauseStartTime: number = 0;
@@ -66,7 +66,7 @@ export class LastFmService {
             .update(String(this.store.get('lastFmSessionKey') || ''))
             .digest('hex');
     }
-    constructor(window: BrowserView, store: ElectronStore, dataStore: DataStore = store) {
+    constructor(window: WebContentsView, store: ElectronStore, dataStore: DataStore = store) {
         this.window = window;
         this.store = store;
         this.outbox = new DeliveryOutbox(

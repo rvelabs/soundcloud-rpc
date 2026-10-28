@@ -9,6 +9,40 @@ const secret = 'a'.repeat(64),
 const call = (url = source, headers = { Authorization: 'Bearer ' + secret }) =>
     new Request('https://relay.workers.dev/playlist-source?url=' + encodeURIComponent(url), { headers });
 describe('public metadata relay', () => {
+    it('forwards only bounded public YouTube continuation bodies without account credentials', async () => {
+        const continuation = {
+            context: { client: { clientName: 'WEB', clientVersion: '2.20261027.01.00', hl: 'en', gl: 'US' } },
+            continuation: 'public-next-page',
+        };
+        const upstream = vi.fn(async (url, init) => {
+            expect(url).toBe('https://www.youtube.com/youtubei/v1/browse');
+            expect(init.method).toBe('POST');
+            expect(new Headers(init.headers).has('authorization')).toBe(false);
+            expect(new Headers(init.headers).has('cookie')).toBe(false);
+            expect(JSON.parse(init.body)).toEqual(continuation);
+            return new Response('{}', { headers: { 'content-type': 'application/json' } });
+        });
+        const handler = createPublicPlaylistHandler(upstream);
+        const request = (value) =>
+            new Request(
+                'https://relay.workers.dev/playlist-source?url=' +
+                    encodeURIComponent('https://www.youtube.com/youtubei/v1/browse'),
+                {
+                    method: 'POST',
+                    headers: { Authorization: 'Bearer ' + secret, Cookie: 'NOT_FORWARDED' },
+                    body: JSON.stringify(value),
+                },
+            );
+        expect((await handler(request(continuation), { RELAY_TOKEN: secret })).status).toBe(200);
+        expect(
+            (await handler(request({ ...continuation, browseId: 'unsupported' }), { RELAY_TOKEN: secret })).status,
+        ).toBe(400);
+        expect(
+            (await handler(request({ ...continuation, continuation: 'a'.repeat(17000) }), { RELAY_TOKEN: secret }))
+                .status,
+        ).toBe(413);
+        expect(upstream).toHaveBeenCalledTimes(1);
+    });
     it('limits resources to supported playlist metadata rather than a general proxy', () => {
         for (const url of [
             source,

@@ -10,6 +10,8 @@ import {
     words,
 } from './preferences';
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
+import { artistIdentity, recentPreference, transitionAffinity } from './sessionSignals';
+import { preferenceEvidence } from './evidence';
 const toneHints = {
     bass: new Set(['bass', '808', 'sub', 'phonk', 'trap', 'dubstep', 'drill']),
     bright: new Set(['bright', 'synth', 'pop', 'trance', 'hyperpop', 'vocal', 'sparkle']),
@@ -86,6 +88,7 @@ function scoreTrack(
     controls: Controls,
     context: Context,
     compare: (a: Track, b: Track) => number,
+    recentArtist: number,
 ): Recommendation {
     const tags = tokensOf(track);
     const reasons: string[] = [];
@@ -94,7 +97,10 @@ function scoreTrack(
         Math.sqrt(Math.max(1, tags.length));
     const affinity = Math.max(-3.5, Math.min(3.5, tokenAffinity));
     const seedSimilarity = Math.max(0, ...profile.positiveSeeds.map((seed) => compare(track, seed)));
-    const negativeSimilarity = Math.max(0, ...profile.negativeSeeds.map((seed) => compare(track, seed)));
+    const negativeSimilarity = Math.max(
+        0,
+        ...profile.negativeSeeds.map((seed) => compare(track, seed) * (profile.dislikedIds.has(seed.id) ? 1 : 0.3)),
+    );
     const familiarFactor = ['familiar', 'favorites'].includes(controls.discovery)
         ? 2.2
         : controls.discovery === 'new'
@@ -113,10 +119,19 @@ function scoreTrack(
     }
     if (affinity > 0.5) reasons.push('совпадение жанра и тегов с историей');
     if (negativeSimilarity > 0.5) reasons.push('похож на пропущенное');
-    if (!seedSimilarity && controls.discovery === 'new') {
-        score += 1.8;
+    if (seedSimilarity > 0.15 && seedSimilarity < 0.65 && controls.discovery === 'new') {
+        score += 0.6;
         reasons.push('новое направление');
     }
+    const sessionAffinity =
+        tags.reduce((sum, token) => sum + (context.preferenceSignals?.get(token) || 0), 0) /
+        Math.sqrt(Math.max(1, tags.length));
+    score +=
+        sessionAffinity < -0.8
+            ? -Math.min(5, (-sessionAffinity - 0.8) * 4 + 0.4)
+            : Math.max(-0.4, Math.min(1.5, sessionAffinity * (sessionAffinity < 0 ? 0.5 : 1)));
+    if (sessionAffinity > 0.35) reasons.push('учтены реакции в этой сессии');
+    score += transitionAffinity(track, context.anchor);
     const requested = normalize(controls.genre || '');
     if (requested) {
         score += 4;
@@ -180,12 +195,17 @@ function scoreTrack(
     const preferredEnergy = profile.sound.energy;
     if (preferredEnergy !== undefined && energy !== undefined && Number.isFinite(energy))
         score += (1 - Math.abs(preferredEnergy - energy)) * 0.8;
-    const recentArtist = (context.recentArtists || []).findIndex((name) => normalize(name) === normalize(track.artist));
     if (recentArtist >= 0) score -= 5 / (1 + recentArtist * 0.6);
     score += 0.4 / Math.sqrt(Math.max(0, track.sourceRank || 0) + 1);
     score += hash(track.id, context.seed || 1) * 0.12;
     if (!reasons.length) reasons.push('новый трек из каталога');
-    return { track, score, reasons, measuredTempoMatch: bpm !== undefined && tempoMatches(bpm, controls.tempo) };
+    return {
+        track,
+        score,
+        reasons,
+        measuredTempoMatch: bpm !== undefined && tempoMatches(bpm, controls.tempo),
+        evidence: preferenceEvidence(track, controls, context),
+    };
 }
 export function recommend(
     candidates: Track[],
@@ -196,6 +216,7 @@ export function recommend(
     suppliedProfile?: TasteProfile,
 ): Recommendation[] {
     const profile = suppliedProfile || buildProfile(events, context.now);
+    context = { ...context, preferenceSignals: context.preferenceSignals || recentPreference(events, context.now) };
     const favorites = new Set([...profile.likedIds, ...profile.positiveSeeds.map((track) => track.id)]);
     const favoriteMode = controls.discovery === 'favorites';
     const cooldown = favoriteMode ? Math.min(3, Math.max(0, favorites.size - 1)) : 100;
@@ -262,16 +283,30 @@ export function recommend(
             ? [...left].filter((token) => right.has(token)).length / Math.sqrt(left.size * right.size)
             : 0;
     };
+    const artistCache = new Map<string, string>();
+    const artistOf = (track: Track): string => {
+        let value = artistCache.get(track.artist);
+        if (value === undefined) {
+            value = artistIdentity(track.artist);
+            artistCache.set(track.artist, value);
+        }
+        return value;
+    };
+    const recent = (context.recentArtists || []).map(artistIdentity);
+    const recentIndexes = new Map<string, number>();
+    recent.forEach((name, index) => {
+        if (!recentIndexes.has(name)) recentIndexes.set(name, index);
+    });
     const recordings = new Map<string, Recommendation>();
     for (const track of pool) {
-        const item = scoreTrack(track, profile, controls, context, compare);
+        const item = scoreTrack(track, profile, controls, context, compare, recentIndexes.get(artistOf(track)) ?? -1);
         const key = recordingKey(track);
         const previous = recordings.get(key);
         if (!previous || item.score > previous.score) recordings.set(key, item);
     }
     const scored = [...recordings.values()];
     const chosen: Recommendation[] = [];
-    const usedArtists = new Set((context.recentArtists || []).slice(0, 2).map(normalize));
+    const usedArtists = new Set(recent.slice(0, 2));
     while (scored.length && chosen.length < limit) {
         let group = scored;
         if (controls.discovery === 'balanced') {
@@ -284,13 +319,35 @@ export function recommend(
         }
         const highest = Math.max(...group.map((e) => e.score));
         const eligible = group.filter((entry) => entry.score >= highest - 3);
-        const diverse = eligible.filter((entry) => !usedArtists.has(normalize(entry.track.artist)));
-        const options = diverse.length ? diverse : group;
+        const diverse = eligible.filter((entry) => !usedArtists.has(artistOf(entry.track)));
+        const noImmediateRepeat = group.filter(
+            (entry) =>
+                artistOf(entry.track) !== (chosen.length ? artistOf(chosen[chosen.length - 1].track) : recent[0]),
+        );
+        const fair = (diverse.length ? diverse : noImmediateRepeat.length ? noImmediateRepeat : group).filter(
+            (entry) => {
+                const artist = artistOf(entry.track);
+                return (
+                    [
+                        ...chosen.slice(-5).map((item) => artistOf(item.track)),
+                        ...recent.slice(0, Math.max(0, 5 - chosen.length)),
+                    ].filter((name) => name === artist).length < 2
+                );
+            },
+        );
+        const options = fair.length
+            ? fair
+            : diverse.length
+              ? diverse
+              : noImmediateRepeat.length
+                ? noImmediateRepeat
+                : group;
         let next = options[0],
             best = -Infinity;
         for (const entry of options) {
             const adjusted =
-                entry.score - chosen.reduce((sum, selected) => sum + compare(entry.track, selected.track) * 0.75, 0);
+                entry.score -
+                Math.max(0, ...chosen.slice(-4).map((selected) => compare(entry.track, selected.track))) * 0.75;
             if (adjusted > best || (adjusted === best && entry.track.id.localeCompare(next.track.id) < 0)) {
                 next = entry;
                 best = adjusted;
@@ -298,7 +355,7 @@ export function recommend(
         }
         scored.splice(scored.indexOf(next), 1);
         chosen.push(next);
-        usedArtists.add(normalize(next.track.artist));
+        usedArtists.add(artistOf(next.track));
     }
     return chosen;
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, session, nativeImage } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, nativeImage } = require('electron');
 const assert = require('node:assert/strict'),
     fs = require('node:fs'),
     path = require('node:path');
@@ -20,10 +20,10 @@ app.whenReady().then(async () => {
         const partition = session.fromPartition('native-cover-fixture');
         partition.protocol.handle('https', () => new Response(html, { headers: { 'content-type': 'text/html' } }));
         win = new BrowserWindow({ width: 900, height: 650, show: true, webPreferences: { sandbox: true } });
-        const content = new BrowserView({
+        const content = new WebContentsView({
             webPreferences: { session: partition, sandbox: true, backgroundThrottling: false },
         });
-        win.addBrowserView(content);
+        win.contentView.addChildView(content);
         const fit = () => {
             const [w, h] = win.getContentSize();
             content.setBounds({ x: 0, y: 0, width: w, height: h });
@@ -48,14 +48,18 @@ app.whenReady().then(async () => {
             wc.getURL().includes('/search'),
             'underlying official page reached search: ' +
                 JSON.stringify({
-                    views: win
-                        .getBrowserViews()
+                    views: win.contentView.children
+                        .filter((view) => view.webContents)
                         .map((v) => ({ url: v.webContents.getURL().slice(0, 90), bounds: v.getBounds() })),
                     errors,
                 }),
         );
-        assert.equal(win.getBrowserViews().length, 2, 'cover attached before search');
-        const cover = win.getBrowserViews().find((v) => v !== content),
+        assert.equal(
+            win.contentView.children.filter((view) => view.webContents).length,
+            2,
+            'cover attached before search',
+        );
+        const cover = win.contentView.children.filter((view) => view.webContents).find((v) => v !== content),
             bounds = cover.getBounds();
         assert.equal(bounds.height, content.getBounds().height - 50, 'native transport remains uncovered');
         await wait(150);
@@ -89,7 +93,7 @@ app.whenReady().then(async () => {
         console.log('fixture: await playback');
         await operation;
         assert.equal(wc.getURL(), 'https://soundcloud.com/discover');
-        assert.equal(win.getBrowserViews().length, 1);
+        assert.equal(win.contentView.children.filter((view) => view.webContents).length, 1);
         assert.equal(
             await wc.executeJavaScript('document.querySelector(".playControls__play").title'),
             'Приостановить',
@@ -105,7 +109,7 @@ app.whenReady().then(async () => {
             if (wc.getURL().includes('/search')) break;
             await wait(30);
         }
-        const zoomCover = win.getBrowserViews().find((v) => v !== content);
+        const zoomCover = win.contentView.children.filter((view) => view.webContents).find((v) => v !== content);
         assert(zoomCover, 'zoomed search has a cover');
         assert(
             Math.abs(content.getBounds().height - zoomCover.getBounds().height - 62.5) <= 2,
@@ -117,11 +121,11 @@ app.whenReady().then(async () => {
         await wc.executeJavaScript('window.failAction=true');
         await assert.rejects(playInNativePlayer(wc, 'https://soundcloud.com/test/next', 'Next'));
         assert.equal(wc.getURL(), 'https://soundcloud.com/discover');
-        assert.equal(win.getBrowserViews().length, 1);
+        assert.equal(win.contentView.children.filter((view) => view.webContents).length, 1);
         all.push('failure after search restores original route and uncovers');
         await wc.executeJavaScript('document.querySelector(".headerSearch__input").remove()');
         await assert.rejects(playInNativePlayer(wc, 'https://soundcloud.com/absent/track', 'Absent'));
-        assert.equal(win.getBrowserViews().length, 1);
+        assert.equal(win.contentView.children.filter((view) => view.webContents).length, 1);
         all.push('failure restores presentation without leaking a view');
         assert.deepEqual(errors, []);
         fs.writeFileSync(path.join(out, 'cover-results.json'), JSON.stringify({ passed: all }, null, 2));

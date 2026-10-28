@@ -1,6 +1,7 @@
-import { BrowserView, BrowserWindow, ipcMain, type IpcMainEvent } from 'electron';
+import { attachWindowView, detachWindowView } from '../utils/windowViews';
+import { WebContentsView, BrowserWindow, ipcMain, type IpcMainEvent } from 'electron';
 import { join } from 'path';
-let confirmPopupView: BrowserView | null = null;
+let confirmPopupView: WebContentsView | null = null;
 let cancelPending: (() => void) | undefined;
 const devMode = process.argv.includes('--dev');
 const isMac = process.platform === 'darwin';
@@ -21,13 +22,13 @@ export async function showHomepageConfirmDialog(mainWindow: BrowserWindow, url: 
     if (!mainWindow) return false;
     cancelPending?.();
     if (confirmPopupView) {
-        mainWindow.removeBrowserView(confirmPopupView);
+        detachWindowView(mainWindow, confirmPopupView);
         if (!confirmPopupView.webContents.isDestroyed()) confirmPopupView.webContents.close();
         confirmPopupView = null;
     }
     const requestId = `homepage-confirm-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const safeUrl = escapeHtml(url);
-    confirmPopupView = new BrowserView({
+    confirmPopupView = new WebContentsView({
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -41,9 +42,9 @@ export async function showHomepageConfirmDialog(mainWindow: BrowserWindow, url: 
             ...(isMac ? { spellcheck: false } : {}),
         },
     });
-    mainWindow.addBrowserView(confirmPopupView);
+    confirmPopupView.setBackgroundColor('#00000000');
+    attachWindowView(mainWindow, confirmPopupView);
     updateHomepageConfirmBounds(mainWindow);
-    confirmPopupView.setAutoResize({ width: true, height: true });
     const html = `
         <style>
             @font-face {
@@ -182,7 +183,7 @@ export async function showHomepageConfirmDialog(mainWindow: BrowserWindow, url: 
             mainWindow.removeListener('closed', cancel);
             view.webContents.removeListener('destroyed', cancel);
             if (cancelPending === cancel) cancelPending = undefined;
-            if (!mainWindow.isDestroyed()) mainWindow.removeBrowserView(view);
+            if (!mainWindow.isDestroyed()) detachWindowView(mainWindow, view);
             if (!view.webContents.isDestroyed()) view.webContents.close();
             if (confirmPopupView === view) confirmPopupView = null;
             resolve(result);

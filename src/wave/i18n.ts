@@ -1,5 +1,21 @@
+import { interfaceEnglish } from '../i18n/interfaceText';
 export type InterfaceLanguage = 'auto' | 'ru' | 'en';
 export const waveEnglish: Record<string, string> = {
+    ...interfaceEnglish,
+    ' Получены первые 500 треков — это лимит плейлиста SoundCloud.':
+        ' Read the first 500 tracks, the SoundCloud playlist limit.',
+    ' Чтобы дочитать список, обновите Worker через F1. Найденную часть уже можно сохранить.':
+        ' Update your Worker in F1 to read the remaining pages. You can save the tracks already found.',
+    'Темп подтверждён BPM': 'Tempo confirmed by BPM',
+    'Точный темп не подтверждён': 'Exact tempo is unconfirmed',
+    'Настроение по тегам': 'Mood inferred from tags',
+    'Настроение не распознано по аудио': 'Mood has not been identified from audio',
+    'Звучание по локальному аудиоанализу': 'Sound measured locally from player audio',
+    'Звучание по тегам': 'Sound inferred from tags',
+    'Звучание пока не измерено': 'Sound has not been measured yet',
+    'Язык не подтверждён': 'Language is unconfirmed',
+    'Язык по метаданным и тегам': 'Language from metadata and tags',
+    'учтены реакции в этой сессии': 'your reactions in this session',
     'Воспроизведение подтверждено': 'Playback confirmed',
     'Доступен по метаданным': 'Available according to metadata',
     'громкость аудиосигнала': 'measured signal loudness',

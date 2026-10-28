@@ -1,10 +1,12 @@
 import { safeStorage, session, type Session, type WebContents } from 'electron';
 import type ElectronStore from 'electron-store';
 import { CloudflareGateway } from './cloudflareGateway';
-import { relayPac, relayTarget, workerEndpoint } from './relayTargets';
+import { relayPac, relayTarget, workerEndpoint, playlistBrowserPac } from './relayTargets';
 import { RecoveryPolicy } from './recoveryPolicy';
 import { probeSoundCloud, describeRelayDiagnostic, networkErrorCode, type RelayDiagnostic } from './relayDiagnostics';
 import { fetchSourceRelay } from '../import/sourceRelay';
+import type { SourceRequestInit } from '../import/youtubePagination';
+import { interfaceText } from '../i18n/interfaceText';
 export class ConnectionRecovery {
     private gateway = new CloudflareGateway();
     private port = 0;
@@ -90,8 +92,13 @@ export class ConnectionRecovery {
             networkSession.webRequest.onCompleted(null);
         });
     }
-    getStatus(): string {
-        return this.status;
+    getStatus(language: 'ru' | 'en' = 'ru'): string {
+        if (language === 'en' && this.diagnostic && this.status.startsWith(describeRelayDiagnostic(this.diagnostic)))
+            return (
+                describeRelayDiagnostic(this.diagnostic, language) +
+                (this.status.endsWith('Автоперезагрузки остановлены.') ? ' Automatic reloads stopped.' : '')
+            );
+        return interfaceText(this.status, language);
     }
     canLoadPlaylistSource(): boolean {
         return (
@@ -100,12 +107,35 @@ export class ConnectionRecovery {
             Boolean(this.secret())
         );
     }
+    async configurePlaylistSession(target: Session, force = false): Promise<boolean> {
+        if (!this.canLoadPlaylistSource() || (!force && this.store.get('cloudflareMode') !== 'always')) {
+            await target.setProxy({ mode: 'system' });
+            await target.closeAllConnections();
+            return false;
+        }
+        const generation = this.generation;
+        if (!this.port) {
+            const task =
+                this.gatewayTask || this.gateway.start(String(this.store.get('cloudflareEndpoint')), this.secret());
+            this.gatewayTask = task;
+            try {
+                const port = await task;
+                if (generation !== this.generation) return false;
+                this.port = port;
+            } finally {
+                if (this.gatewayTask === task) this.gatewayTask = undefined;
+            }
+        }
+        await target.setProxy({ mode: 'pac_script', pacScript: playlistBrowserPac(this.port) });
+        await target.closeAllConnections();
+        return true;
+    }
     workerSetupTarget(): { endpoint: string; secret: string } | undefined {
         const endpoint = String(this.store.get('cloudflareEndpoint', '')),
             secret = this.secret();
         return endpoint && secret ? { endpoint, secret } : undefined;
     }
-    async loadPlaylistSource(url: string, signal?: AbortSignal): Promise<string> {
+    async loadPlaylistSource(url: string, signal?: AbortSignal, init?: SourceRequestInit): Promise<string> {
         if (!this.canLoadPlaylistSource()) throw new Error('Для резервной загрузки плейлиста настройте Worker в F1.');
         const target = session.fromPartition('wave-playlist-relay');
         return fetchSourceRelay(
@@ -114,13 +144,14 @@ export class ConnectionRecovery {
             url,
             target.fetch.bind(target) as typeof fetch,
             signal,
+            init,
         );
     }
     getDiagnostics(): RelayDiagnostic | null {
         return this.diagnostic ? structuredClone(this.diagnostic) : null;
     }
-    getTestMessage(): string {
-        return describeRelayDiagnostic(this.diagnostic);
+    getTestMessage(language: 'ru' | 'en' = 'ru'): string {
+        return describeRelayDiagnostic(this.diagnostic, language);
     }
     private criticalResource(url: string, type: string): boolean {
         const host = new URL(url).hostname;

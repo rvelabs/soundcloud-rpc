@@ -1,5 +1,6 @@
 import { workerEndpoint } from '../network/relayTargets';
 import { readTextLimited } from '../utils/readText';
+import type { SourceRequestInit } from './youtubePagination';
 export class SourceRelayError extends Error {
     constructor(
         public readonly code: 'upgrade' | 'key' | 'source' | 'network',
@@ -14,6 +15,7 @@ export async function fetchSourceRelay(
     url: string,
     fetcher: typeof fetch,
     signal?: AbortSignal,
+    init?: SourceRequestInit,
 ): Promise<string> {
     const target = new URL(workerEndpoint(endpoint));
     target.protocol = 'https:';
@@ -23,7 +25,9 @@ export async function fetchSourceRelay(
     let response: Response;
     try {
         response = await fetcher(target.href, {
-            headers: { Authorization: 'Bearer ' + secret },
+            method: init?.method || 'GET',
+            body: init?.body,
+            headers: { Authorization: 'Bearer ' + secret, ...(init ? { 'Content-Type': 'application/json' } : {}) },
             credentials: 'omit',
             redirect: 'error',
             cache: 'no-store',
@@ -37,6 +41,14 @@ export async function fetchSourceRelay(
         );
     }
     const supported = response.headers.get('x-soundcloud-playlist-relay') === '1';
+    if (
+        init &&
+        [403, 405].includes(response.status) &&
+        Number(response.headers.get('x-soundcloud-playlist-relay-revision')) < 5
+    ) {
+        void response.body?.cancel().catch(() => {});
+        throw new SourceRelayError('upgrade', 'Для чтения продолжения YouTube обновите Worker через F1.');
+    }
     if (!supported) {
         void response.body?.cancel().catch(() => {});
         if (response.status !== 404)

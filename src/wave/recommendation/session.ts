@@ -1,10 +1,11 @@
 import { effectiveMood } from './preferences';
-import { buildProfile, normalize } from './profile';
+import { buildProfile } from './profile';
 import type { TasteProfile } from './profile';
 import { discoverySeeds } from './discovery';
 import { recommend } from './ranker';
 import { defaultControls } from './types';
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
+import { artistIdentity, recentPreference } from './sessionSignals';
 export interface CandidateProvider {
     related(seeds: Track[]): Promise<Track[]>;
 }
@@ -16,10 +17,17 @@ export class RecommendationSession {
     private reservedIds = new Set<string>();
     private rotation = 0;
     private acceptedIds = new Set<string>();
+    private selectionTrail: Array<{ id: string; artist: string }> = [];
     private selectionPosition = 0;
     accept(id: string): void {
         if (this.acceptedIds.has(id)) return;
         this.acceptedIds.add(id);
+        const track = this.candidates.get(id);
+        if (track)
+            this.selectionTrail = [
+                { id, artist: track.artist },
+                ...this.selectionTrail.filter((item) => item.id !== id),
+            ].slice(0, 12);
         if (this.acceptedIds.size > 500) this.acceptedIds.delete(this.acceptedIds.values().next().value!);
         this.selectionPosition++;
         this.invalidateRanking();
@@ -32,11 +40,11 @@ export class RecommendationSession {
     }
     private excludedArtists = new Set<string>();
     setExcludedArtists(artists: string[]): void {
-        this.excludedArtists = new Set(artists.map(normalize));
+        this.excludedArtists = new Set(artists.map(artistIdentity));
         this.invalidateRanking();
     }
     private allowed(track: Track): boolean {
-        return !this.excludedArtists.has(normalize(track.artist));
+        return !this.excludedArtists.has(artistIdentity(track.artist));
     }
     private controls: Controls = { ...defaultControls };
     private activity?: Context['activity'];
@@ -49,6 +57,7 @@ export class RecommendationSession {
     private anchor?: Track;
     setAnchor(track?: Track): void {
         this.anchor = track;
+        this.invalidateRanking();
     }
     profile(): TasteProfile {
         const minute = Math.floor(this.now() / 60000);
@@ -89,10 +98,12 @@ export class RecommendationSession {
         this.candidateEpoch++;
         this.candidates.clear();
         this.reservedIds.clear();
+        this.selectionTrail = this.selectionTrail.filter((item) => this.recentIds.includes(item.id));
     }
     removeCandidates(ids: string[]): void {
         this.invalidateRanking();
         for (const id of ids) {
+            this.selectionTrail = this.selectionTrail.filter((item) => item.id !== id || this.recentIds.includes(id));
             this.candidates.delete(id);
             this.reservedIds.delete(id);
         }
@@ -104,7 +115,9 @@ export class RecommendationSession {
         if (this.reservedIds.size > 1000) this.reservedIds.delete(this.reservedIds.values().next().value!);
     }
     release(id: string): void {
-        if (this.reservedIds.delete(id)) this.invalidateRanking();
+        const previous = this.selectionTrail.length;
+        this.selectionTrail = this.selectionTrail.filter((item) => item.id !== id || this.recentIds.includes(id));
+        if (this.reservedIds.delete(id) || previous !== this.selectionTrail.length) this.invalidateRanking();
     }
     addCandidates(tracks: Track[]): void {
         if (tracks.length) this.invalidateRanking();
@@ -121,10 +134,11 @@ export class RecommendationSession {
         this.profileCache = undefined;
         if (this.events.length > 5000) this.events.splice(0, this.events.length - 5000);
         if (event.kind === 'play' || event.kind === 'skip' || event.kind === 'complete') {
+            const previousId = this.recentIds[0];
             this.reservedIds.delete(event.track.id);
             this.recentIds = this.recentIds.filter((id) => id !== event.track.id);
             this.recentIds.unshift(event.track.id);
-            if (this.recentArtists[0] !== event.track.artist) this.recentArtists.unshift(event.track.artist);
+            if (previousId !== event.track.id) this.recentArtists.unshift(event.track.artist);
             this.recentIds = this.recentIds.slice(0, 100);
             this.recentArtists = this.recentArtists.slice(0, 20);
         }
@@ -136,9 +150,14 @@ export class RecommendationSession {
             recentTrackIds: this.recentIds,
             reservedTrackIds: includeReserved ? [...this.reservedIds] : [],
             allowUnverified: includeReserved,
-            recentArtists: this.recentArtists,
+            recentArtists: [
+                ...this.selectionTrail.filter((item) => !this.recentIds.includes(item.id)).map((item) => item.artist),
+                ...this.recentArtists,
+            ],
             seed: this.rotation + 1,
             sequenceOffset: this.selectionPosition,
+            anchor: this.anchor,
+            preferenceSignals: recentPreference(this.events, this.now()),
         };
     }
     rank(limit = 10): Recommendation[] {

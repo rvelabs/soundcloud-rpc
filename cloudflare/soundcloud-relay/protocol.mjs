@@ -1,6 +1,9 @@
 export function allowedHost(host) {
     return (
-        typeof host === 'string' && /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:soundcloud\.com|sndcdn\.com)$/.test(host)
+        typeof host === 'string' &&
+        /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*(?:soundcloud\.com|sndcdn\.com|spotify\.com|scdn\.co|spotifycdn\.com|spotifycdn\.net)$/.test(
+            host,
+        )
     );
 }
 export function bridgeSocket(ws, socket, windowSize = 1) {

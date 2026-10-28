@@ -1,3 +1,4 @@
+const settingsText = (text) => (window.__settingsLanguage === 'ru' ? text : window.__settingsText?.[text] || text);
 const ipcRenderer = {
     send: (channel, ...args) => window.settingsAPI.send(channel, ...args),
     invoke: (channel, ...args) => window.settingsAPI.invoke(channel, ...args),
@@ -231,14 +232,14 @@ const setupBusy = (busy) => {
     document.getElementById('cloudflareAccount').disabled = busy;
 };
 ipcRenderer.on('network:setup-progress', (_event, message) => {
-    setupStatus.textContent = String(message);
+    setupStatus.textContent = settingsText(String(message));
 });
 document.getElementById('cloudflareTokenPage').addEventListener('click', () => {
     void shell.openExternal('https://dash.cloudflare.com/profile/api-tokens');
 });
 document.getElementById('cloudflareAccounts').addEventListener('click', async () => {
     setupBusy(true);
-    setupStatus.textContent = 'Получаем аккаунты Cloudflare…';
+    setupStatus.textContent = settingsText('Получаем аккаунты Cloudflare…');
     const input = document.getElementById('cloudflareApiToken');
     try {
         const token = input.value;
@@ -253,7 +254,9 @@ document.getElementById('cloudflareAccounts').addEventListener('click', async ()
             select.append(option);
         }
         document.getElementById('cloudflareAccountFields').hidden = false;
-        setupStatus.textContent = 'Выберите аккаунт и нажмите «Создать Worker». Токен будет забыт через 10 минут.';
+        setupStatus.textContent = settingsText(
+            'Выберите аккаунт и нажмите «Создать Worker». Токен будет забыт через 10 минут.',
+        );
     } catch (error) {
         document.getElementById('cloudflareAccountFields').hidden = true;
         setupStatus.textContent = setupError(error);
@@ -266,14 +269,14 @@ document.getElementById('cloudflareSetupCancel').addEventListener('click', async
         await ipcRenderer.invoke('network:setup-cancel');
         document.getElementById('cloudflareApiToken').value = '';
         document.getElementById('cloudflareAccountFields').hidden = true;
-        setupStatus.textContent = 'Токен удалён из памяти.';
+        setupStatus.textContent = settingsText('Токен удалён из памяти.');
     } catch (error) {
         setupStatus.textContent = setupError(error);
     }
 });
 document.getElementById('cloudflareDeploy').addEventListener('click', async () => {
     setupBusy(true);
-    setupStatus.textContent = 'Создаём Worker…';
+    setupStatus.textContent = settingsText('Создаём Worker…');
     try {
         const result = await ipcRenderer.invoke(
             'network:setup-deploy',
@@ -283,17 +286,22 @@ document.getElementById('cloudflareDeploy').addEventListener('click', async () =
         document.getElementById('cloudflareMode').value = 'auto';
         const key = document.getElementById('cloudflareSecret');
         key.value = '';
-        key.placeholder = result.updated ? 'Адрес и ключ сохранены' : 'Ключ создан и сохранён автоматически';
+        key.placeholder = result.updated
+            ? settingsText('Адрес и ключ сохранены')
+            : settingsText('Ключ создан и сохранён автоматически');
         document.getElementById('cloudflareAccountFields').hidden = true;
         setupStatus.textContent =
-            (result.updated ? 'Worker обновлён: ' : 'Готово: ') +
+            (result.updated ? settingsText('Worker обновлён: ') : settingsText('Готово: ')) +
             result.endpoint +
             '. ' +
             (result.applied
-                ? 'Автоматический режим настроен.'
-                : 'Настройки сохранены. Обычный прокси имеет приоритет; выключите его для использования Worker.');
-        document.getElementById('cloudflareStatus').textContent =
-            'Адрес и ключ сохранены. Нажмите «Проверить Worker». Первое подключение может занять время, пока обновляется DNS.';
+                ? settingsText('Автоматический режим настроен.')
+                : settingsText(
+                      'Настройки сохранены. Обычный прокси имеет приоритет; выключите его для использования Worker.',
+                  ));
+        document.getElementById('cloudflareStatus').textContent = settingsText(
+            'Адрес и ключ сохранены. Нажмите «Проверить Worker». Первое подключение может занять время, пока обновляется DNS.',
+        );
     } catch (error) {
         setupStatus.textContent = setupError(error);
     } finally {
@@ -312,19 +320,21 @@ for (const [id, channel] of [
         const button = document.getElementById(id),
             status = document.getElementById('cloudflareStatus');
         button.disabled = true;
-        status.textContent = 'Проверяем подключение…';
+        status.textContent = settingsText('Проверяем подключение…');
         try {
-            status.textContent = await ipcRenderer.invoke(
-                channel,
-                ...(channel === 'network:save'
-                    ? [
-                          {
-                              mode: document.getElementById('cloudflareMode').value,
-                              endpoint: document.getElementById('cloudflareEndpoint').value,
-                              secret: document.getElementById('cloudflareSecret').value,
-                          },
-                      ]
-                    : []),
+            status.textContent = settingsText(
+                await ipcRenderer.invoke(
+                    channel,
+                    ...(channel === 'network:save'
+                        ? [
+                              {
+                                  mode: document.getElementById('cloudflareMode').value,
+                                  endpoint: document.getElementById('cloudflareEndpoint').value,
+                                  secret: document.getElementById('cloudflareSecret').value,
+                              },
+                          ]
+                        : []),
+                ),
             );
             if (channel === 'network:save') document.getElementById('cloudflareSecret').value = '';
         } catch (error) {
@@ -485,8 +495,9 @@ for (const [id, channel] of [
         try {
             renderUpdates(await ipcRenderer.invoke(channel));
         } catch {
-            document.getElementById('updates-status').textContent =
-                'Не удалось выполнить действие / Could not complete the action';
+            document.getElementById('updates-status').textContent = settingsText(
+                'Не удалось выполнить действие / Could not complete the action',
+            );
         } finally {
             button.disabled =
                 id === 'updates-check' && latestUpdateState

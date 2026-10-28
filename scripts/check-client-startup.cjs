@@ -15,15 +15,17 @@ app.whenReady().then(async () => {
     try {
         let window;
         for (let i = 0; i < 300; i++) {
-            window = BrowserWindow.getAllWindows().find((win) => win.getBrowserViews().length >= 2);
+            window = BrowserWindow.getAllWindows().find(
+                (win) => win.contentView.children.filter((view) => view.webContents).length >= 2,
+            );
             if (window) break;
             await new Promise((r) => setTimeout(r, 100));
         }
         assert(window, 'client window created');
         let page;
         for (let i = 0; i < 300; i++) {
-            page = window
-                .getBrowserViews()
+            page = window.contentView.children
+                .filter((view) => view.webContents)
                 .find((view) => view.webContents.getURL().startsWith('https://soundcloud.com/'));
             if (
                 page &&
@@ -57,7 +59,7 @@ app.whenReady().then(async () => {
         assert(translated, 'interface language survives a full page reload');
         const attached = new Set([
             window.webContents.id,
-            ...window.getBrowserViews().map((view) => view.webContents.id),
+            ...window.contentView.children.filter((view) => view.webContents).map((view) => view.webContents.id),
         ]);
         const background = webContents.getAllWebContents().filter((wc) => !attached.has(wc.id));
         window.destroy();

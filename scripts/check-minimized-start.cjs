@@ -71,11 +71,15 @@ app.whenReady().then(() =>
 require(path.join(repo, 'tsc/main.js'));
 app.whenReady().then(async () => {
     try {
+        app.emit('activate');
+        app.emit('activate');
         let win, page;
         for (let i = 0; i < 200; i++) {
-            win = BrowserWindow.getAllWindows().find((win) => win.getBrowserViews().length >= 2);
-            page = win
-                ?.getBrowserViews()
+            win = BrowserWindow.getAllWindows().find(
+                (win) => win.contentView.children.filter((view) => view.webContents).length >= 2,
+            );
+            page = win?.contentView.children
+                .filter((view) => view.webContents)
                 .find((view) => view.webContents?.getURL().startsWith('https://soundcloud.com/'));
             if (
                 page &&
@@ -87,6 +91,13 @@ app.whenReady().then(async () => {
             await new Promise((r) => setTimeout(r, 50));
         }
         assert(page, 'main client ready');
+        assert.equal(
+            BrowserWindow.getAllWindows().filter(
+                (window) => window.contentView.children.filter((view) => view.webContents).length >= 2,
+            ).length,
+            1,
+            'concurrent activation creates only one client window',
+        );
         const wc = page.webContents;
         const stallCapture = process.env.WAVE_TEST_CAPTURE_STALL === '1';
         if (stallCapture) {
