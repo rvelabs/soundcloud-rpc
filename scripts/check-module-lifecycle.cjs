@@ -82,7 +82,14 @@ app.whenReady().then(async () => {
         await wait(180);
         assert.equal(await wc.executeJavaScript('updates.length'), count);
         passed.push('pause and ARIA-only heart updates work; 1,000 unrelated DOM mutations emit no extra playback IPC');
-        await wc.executeJavaScript(`window.dispatchEvent(new Event('beforeunload'))`);
+        await wc.executeJavaScript(
+            `const event=new Event('beforeunload',{cancelable:true});event.preventDefault();window.dispatchEvent(event);paint(31)`,
+        );
+        await wait(165);
+        assert.equal(await wc.executeJavaScript('updates.at(-1).data.title'), 'Track 31');
+        assert.equal(await wc.executeJavaScript('liveObservers'), 6);
+        passed.push('canceled navigation preserves the native-player monitor');
+        await wc.executeJavaScript(`window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:false}))`);
         assert.equal(await wc.executeJavaScript('liveObservers'), 0);
         passed.push('all audio-monitor observers disconnect on unload');
         const pluginDir = path.join(profile, 'plugins'),

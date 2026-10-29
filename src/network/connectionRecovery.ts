@@ -107,6 +107,13 @@ export class ConnectionRecovery {
             Boolean(this.secret())
         );
     }
+    prefersPlaylistRelay(): boolean {
+        return (
+            this.canLoadPlaylistSource() &&
+            !this.store.get('proxyEnabled') &&
+            (this.routed || this.store.get('cloudflareMode') === 'always')
+        );
+    }
     async configurePlaylistSession(target: Session, force = false): Promise<boolean> {
         if (
             !this.canLoadPlaylistSource() ||

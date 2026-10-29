@@ -6,12 +6,14 @@ export class PreparedQueue<
     private items: T[] = [];
     private pending: Promise<void> | null = null;
     private generation = 0;
+    private cancellation = 0;
     private waiters = new Set<() => void>();
     private wake(): void {
         for (const wake of [...this.waiters]) wake();
     }
-    clear(): void {
+    clear(preserveWaiting = false): void {
         this.generation++;
+        if (!preserveWaiting) this.cancellation++;
         this.items = [];
         this.pending = null;
         this.wake();
@@ -57,8 +59,8 @@ export class PreparedQueue<
     async take(shuffle = false): Promise<T | undefined> {
         if (this.items.length)
             return this.items.splice(shuffle ? Math.floor(Math.random() * this.items.length) : 0, 1)[0];
-        const generation = this.generation;
-        while (!this.items.length && this.pending && generation === this.generation) {
+        const cancellation = this.cancellation;
+        while (!this.items.length && this.pending && cancellation === this.cancellation) {
             await new Promise<void>((resolve) => {
                 const wake = () => {
                     this.waiters.delete(wake);
@@ -67,7 +69,7 @@ export class PreparedQueue<
                 this.waiters.add(wake);
             });
         }
-        if (generation !== this.generation) return undefined;
+        if (cancellation !== this.cancellation) return undefined;
         return this.items.splice(shuffle ? Math.floor(Math.random() * this.items.length) : 0, 1)[0];
     }
 }

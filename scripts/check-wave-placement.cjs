@@ -220,8 +220,9 @@ app.whenReady()
             })()`);
                 assert.equal(partial.argCount, 1);
                 assert.equal(partial.rows.length, 3);
-                assert.ok(partial.rows[0].includes('Track 0'));
-                assert.ok(partial.rows[2].includes('Track 2'));
+        assert.ok(partial.rows[0].includes('Match 0'));
+        assert.ok(partial.rows[2].includes('Match 2'));
+        assert.deepEqual(await win.webContents.executeJavaScript(`[...document.querySelectorAll('.cw-import-original')].filter(e=>!e.hidden).map(e=>e.textContent)`), ['Artist 0 — Track 0', 'Artist 2 — Track 2']);
                 assert.equal(partial.pending, 'Проверяем…');
                 assert.equal(partial.cancel, true);
                 assert.equal(partial.commitDisabled, false);

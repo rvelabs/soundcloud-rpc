@@ -1,6 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import { PreparedQueue } from './preparedQueue';
 describe('prepared wave queue', () => {
+    it('keeps an awaiting transition attached to the replacement discovery buffer', async () => {
+        const queue = new PreparedQueue<{ url: string }>();
+        let finish!: (items: { url: string }[]) => void;
+        const old = queue.prepare(
+            () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                }),
+        );
+        const waiting = queue.take();
+        queue.clear(true);
+        const fresh = queue.prepare(async () => [{ url: 'replacement' }]);
+        finish([{ url: 'stale' }]);
+        await Promise.all([old, fresh]);
+        expect((await waiting)?.url).toBe('replacement');
+        expect(queue.length).toBe(0);
+    });
+    it('cancels awaiting transitions on an explicit reset even if a new producer publishes', async () => {
+        const queue = new PreparedQueue<{ url: string }>();
+        let finish!: (items: { url: string }[]) => void;
+        const old = queue.prepare(
+            () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                }),
+        );
+        const waiting = queue.take();
+        queue.clear();
+        await queue.prepare(async () => [{ url: 'new-settings' }]);
+        finish([{ url: 'old-settings' }]);
+        await old;
+        expect(await waiting).toBeUndefined();
+        expect((await queue.take())?.url).toBe('new-settings');
+    });
     it('returns unchosen alternatives for the next selection without duplicating or cycling the committed buffer', async () => {
         const queue = new PreparedQueue<{ url: string }>();
         await queue.prepare(async () => [{ url: 'first' }, { url: 'second' }, { url: 'third' }]);

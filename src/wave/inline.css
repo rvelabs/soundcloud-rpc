@@ -27,8 +27,7 @@
     min-height: 276px;
     background:
         radial-gradient(ellipse at 78% 18%, #803b2b, transparent 65%),
-        radial-gradient(ellipse at 18% 92%, #582758, transparent 65%),
-        #211b25;
+        radial-gradient(ellipse at 18% 92%, #582758, transparent 65%), #211b25;
     overflow: hidden;
 }
 :is(#codex-wave-inline, #codex-playlist-import) .cw-content {
@@ -441,7 +440,8 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     border-top: 1px solid #383838;
 }
 :is(#codex-wave-inline, #codex-playlist-import) .cw-import-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
     gap: 12px;
     align-items: start;
     padding: 10px 4px;
@@ -464,6 +464,15 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
 :is(#codex-wave-inline, #codex-playlist-import) .cw-import-row small {
     color: #aaa;
     overflow-wrap: anywhere;
+}
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-row .cw-import-original {
+    display: block;
+    color: #d4d4d4;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-row .cw-import-original[hidden] {
+    display: none;
 }
 :is(#codex-wave-inline, #codex-playlist-import) .cw-import-footer {
     display: flex;

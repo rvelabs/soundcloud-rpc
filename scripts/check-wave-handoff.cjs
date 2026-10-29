@@ -10,7 +10,21 @@ app.setPath('userData', profile);
 const balanced = process.env.WAVE_TEST_BALANCED === '1';
 const healthy = process.env.WAVE_TEST_HEALTHY_HANDOFF === '1';
 const manual = process.env.WAVE_TEST_MANUAL_HANDOFF === '1';
-const ids = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+const delayedBadge = process.env.WAVE_TEST_DELAYED_BADGE === '1';
+const cachedPlay = process.env.WAVE_TEST_CACHED_PLAY === '1';
+const extended = delayedBadge || cachedPlay;
+const ids = [
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    ...(extended ? Array.from({ length: 8 }, (_, index) => 'extra-' + index) : []),
+];
+const targetTracks = extended ? 12 : 7;
 const seed = balanced ? 'https://soundcloud.com/artist/three' : 'https://soundcloud.com/seed/favorite';
 fs.writeFileSync(
     path.join(profile, 'config.json'),
@@ -83,11 +97,12 @@ const fixture = `<!doctype html><meta charset="utf-8"><style>body{margin:0;backg
 <main id="content"><div class="l-main"><div class="l-content">${ids.map((id) => `<div class="sound"><a class="soundTitle__title" href="https://soundcloud.com/artist/${id}">${id}</a><div class="soundTitle__playButton"><button class="playButton" onclick="playTrack('${id}')">Play</button></div><button class="sc-button-more" onclick="showMore('${id}')">More</button></div>`).join('')}</div></div></main>
 <ul class="queue__itemsContainer"></ul><div class="playControls"><button class="playControls__play"></button><button class="skipControl__next" onclick="window.nextClicks=(window.nextClicks||0)+1; if(${healthy})nextQueued()">Next</button><a class="playbackSoundBadge__titleLink"></a><a class="playbackSoundBadge__lightLink">Artist</a><div class="playbackTimeline__timePassed"><span>0:00</span></div><div class="playbackTimeline__duration"><span>1:30</span></div></div>
 <script>
+window.sitePlay=HTMLMediaElement.prototype.play;
 window.maxQueued=0;new MutationObserver(()=>{window.maxQueued=Math.max(window.maxQueued,document.querySelectorAll('.queue__itemsContainer .queueItemView').length)}).observe(document.querySelector('.queue__itemsContainer'),{childList:true});
 window.showMore=(id)=>{document.querySelector('.dropdownMenu')?.remove();const menu=document.createElement('div');menu.className='dropdownMenu';menu.innerHTML='<button class="addToNextUp" title="Add to Next up">Add</button>';const button=menu.firstChild;button.onclick=()=>{button.classList.add('sc-button-selected');const row=document.createElement('li');row.className='queueItemView';row.innerHTML='<a href="https://soundcloud.com/artist/'+id+'">'+id+'</a><button class="queueItemView__remove" onclick="this.parentElement.remove()">Remove</button>';document.querySelector('.queue__itemsContainer').append(row)};document.body.append(menu)};window.audio=new Audio();audio.volume=0.01;window.played=[];window.endedAt=[];window.nativeAutoplay=0;
-window.playTrack=(id)=>{played.push({id,at:Date.now()});document.querySelector('.playbackSoundBadge__titleLink').href='https://soundcloud.com/artist/'+id;document.querySelector('.playbackSoundBadge__titleLink').textContent=id;document.querySelector('.playControls__play').classList.add('playing');audio.src=${JSON.stringify(source)};void audio.play();};
+window.playTrack=(id)=>{played.push({id,at:Date.now()});const badge=()=>{document.querySelector('.playbackSoundBadge__titleLink').href='https://soundcloud.com/artist/'+id;document.querySelector('.playbackSoundBadge__titleLink').textContent=id;};if(!${delayedBadge}||played.length<3)badge();document.querySelector('.playControls__play').classList.add('playing');audio.src=${JSON.stringify(source)};void (${cachedPlay}?sitePlay.call(audio):audio.play());if(${delayedBadge}&&played.length>=3)setTimeout(badge,150);};
 audio.addEventListener('ended',()=>{endedAt.push({id:document.querySelector('.playbackSoundBadge__titleLink').pathname.split('/').pop(),at:Date.now()})},true);
-window.nextQueued=()=>{const link=document.querySelector('.queue__itemsContainer a');if(link){const id=link.pathname.split('/').pop();link.closest('li').remove();playTrack(id)}};audio.addEventListener('ended',()=>{nativeAutoplay++;if(${healthy})nextQueued()});
+window.nextQueued=()=>{const link=document.querySelector('.queue__itemsContainer a');if(link){const id=link.pathname.split('/').pop();link.closest('li').remove();playTrack(id)}};audio.addEventListener('ended',()=>{nativeAutoplay++;if(${healthy}||(${delayedBadge}&&played.length<3))nextQueued()});
 document.querySelector('.playControls__play').onclick=()=>{if(audio.paused){void audio.play();document.querySelector('.playControls__play').classList.add('playing')}else{audio.pause();document.querySelector('.playControls__play').classList.remove('playing')}};
 setInterval(()=>{document.querySelector('.playbackTimeline__timePassed span').textContent='0:0'+Math.floor(audio.currentTime)},250);
 setInterval(()=>{if(audio.currentTime>1.5 && window.__waveMediaEndState)window.__waveMediaEndState.queueReady=true},40);
@@ -134,15 +149,18 @@ app.whenReady().then(async () => {
             }
             await contents.executeJavaScript("document.querySelector('.skipControl__next').click()", true);
         }
-        for (let index = 0; index < 280; index++) {
-            if (await contents.executeJavaScript('played.length>=7')) break;
+        for (let index = 0; index < (extended ? 480 : 280); index++) {
+            if (await contents.executeJavaScript('played.length>=' + targetTracks)) break;
             await wait(100);
         }
         const state = await contents.executeJavaScript(
             '({played,endedAt,nativeAutoplay,maxQueued,time:audio.currentTime,paused:audio.paused})',
         );
-        assert(state.played.length >= 7, JSON.stringify(state));
-        assert(state.maxQueued <= 2, 'native lookahead is bounded while further alternatives remain adaptable: ' + state.maxQueued);
+        assert(state.played.length >= targetTracks, JSON.stringify(state));
+        assert(
+            state.maxQueued <= 2,
+            'native lookahead is bounded while further alternatives remain adaptable: ' + state.maxQueued,
+        );
         assert(
             state.played.every((item) => ids.includes(item.id)),
             'no unrelated native-autoplay track starts',
@@ -185,6 +203,15 @@ app.whenReady().then(async () => {
                 'one native click per user request',
             );
         if (!healthy && !manual && !balanced) {
+            for (let index = 0; delayedBadge && index < 50; index++) {
+                if (
+                    await contents.executeJavaScript(
+                        "(async()=>{const state=await waveInline.ready();return state.candidate?.url===document.querySelector('.playbackSoundBadge__titleLink').href&&!state.diagnostics.choosing&&!state.diagnostics.transitionPending})()",
+                    )
+                )
+                    break;
+                await wait(25);
+            }
             const dislike = await contents.executeJavaScript(
                 `(async()=>{const previous=document.querySelector('.playbackSoundBadge__titleLink').href;await waveInline.dislike(previous);return {previous,current:document.querySelector('.playbackSoundBadge__titleLink').href,playing:!audio.paused}})()`,
                 true,
@@ -194,7 +221,16 @@ app.whenReady().then(async () => {
                 'dislike clears the prepared queue and starts a fresh choice: ' + JSON.stringify(dislike),
             );
         }
+        const capture = await contents.executeJavaScript('window.__waveMediaEndSnapshot()');
+        assert(
+            capture.endedEvents >= targetTracks - 1 - (manual ? 1 : 0),
+            'media completion remains observed across the entire sequence, excluding the manually skipped track',
+        );
+        assert(capture.media.length <= 8, 'diagnostics retain at most eight weak media references');
         const report = {
+            capturedEndEvents: capture.endedEvents,
+            delayedBadge,
+            cachedPlay,
             healthyNativeQueue: healthy,
             balancedPrebuffer: balanced,
             dislikeRecalculatesQueue: !healthy && !manual && !balanced,
@@ -214,4 +250,4 @@ app.whenReady().then(async () => {
         app.exit(1);
     }
 });
-setTimeout(() => app.exit(2), 45000).unref();
+setTimeout(() => app.exit(2), extended ? 75000 : 45000).unref();

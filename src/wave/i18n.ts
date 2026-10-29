@@ -18,6 +18,10 @@ export const waveEnglish: Record<string, string> = {
     'учтены реакции в этой сессии': 'your reactions in this session',
     'Воспроизведение подтверждено': 'Playback confirmed',
     'Доступен по метаданным': 'Available according to metadata',
+    'Проверьте исполнителя': 'Check the original artist',
+    'Проверьте версию трека': 'Check the track version',
+    'SoundCloud ограничил частоту запросов. Повторите проверку.':
+        'SoundCloud limited the request rate. Try checking again later.',
     'громкость аудиосигнала': 'measured signal loudness',
     'Продолжить сохранённый импорт': 'Resume saved import',
     ' Источник показал только часть треков. Для полного списка используйте импорт CSV/TXT.':

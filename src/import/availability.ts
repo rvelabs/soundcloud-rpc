@@ -80,6 +80,20 @@ export function confirmTrackPlayback(session: Session, url: string, route = ''):
         reason: 'Воспроизведение подтверждено штатным плеером.',
     });
 }
+export function cacheTrackAvailability(session: Session, url: string, route: string, value: TrackAvailability): void {
+    const path = trackPath(url);
+    if (
+        !path ||
+        !Number.isFinite(value.checkedAt) ||
+        Date.now() - value.checkedAt < 0 ||
+        Date.now() - value.checkedAt > 2 * 60000
+    )
+        return;
+    const key = route + ':' + path;
+    const old = sessionCache.get(session)?.get(key);
+    if (old && old.until > Date.now() && old.value.evidence === 'playback') return;
+    remember(session, key, value);
+}
 export function createAvailabilityChecker(
     session: Session,
     signal?: AbortSignal,

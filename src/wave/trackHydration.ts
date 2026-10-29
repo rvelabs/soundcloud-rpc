@@ -1,4 +1,7 @@
 export interface CatalogTrack {
+    title?: string;
+    description?: string;
+    user?: { username?: string };
     permalink_url?: string;
     streamable?: boolean;
     state?: string;

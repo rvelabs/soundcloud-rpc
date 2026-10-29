@@ -10,7 +10,12 @@ const allowedHosts = new Set([
     'music.youtube.com',
     'www.youtube.com',
 ]);
-async function fetchPublic(url: string, signal?: AbortSignal, init?: SourceRequestInit): Promise<string> {
+export async function fetchPublic(
+    url: string,
+    signal?: AbortSignal,
+    init?: SourceRequestInit,
+    request: typeof fetch = net.fetch as typeof fetch,
+): Promise<string> {
     let current = url;
     for (let redirect = 0; redirect < 3; redirect++) {
         signal?.throwIfAborted();
@@ -25,7 +30,7 @@ async function fetchPublic(url: string, signal?: AbortSignal, init?: SourceReque
         )
             throw new Error('Источник перенаправил запрос на неподдерживаемый адрес.');
         const timeout = AbortSignal.timeout(6500);
-        const response = await net.fetch(current, {
+        const response = await request(current, {
             method: init?.method || 'GET',
             body: init?.body,
             redirect: 'manual',
@@ -65,14 +70,16 @@ export async function loadSourcePlaylist(
     signal?: AbortSignal,
     options: {
         relay?: SourceRequest;
+        direct?: SourceRequest;
         preferRelay?: boolean;
+        country?: string;
         onRoute?: (route: 'direct' | 'relay') => void;
         onPage?: (playlist: SourcePlaylist) => void;
     } = {},
 ): Promise<SourcePlaylist> {
     const source = classifyPlaylistUrl(link);
     const routes: ('direct' | 'relay')[] = options.relay
-        ? options.preferRelay
+        ? options.preferRelay && !(source.platform === 'yandex' && options.country === 'RU')
             ? ['relay', 'direct']
             : ['direct', 'relay']
         : ['direct'];
@@ -84,7 +91,7 @@ export async function loadSourcePlaylist(
         try {
             const result = await loadSource(
                 source,
-                route === 'relay' ? options.relay! : fetchPublic,
+                route === 'relay' ? options.relay! : options.direct || fetchPublic,
                 signal,
                 options.onPage,
             );

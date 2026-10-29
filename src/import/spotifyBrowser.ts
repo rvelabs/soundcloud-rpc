@@ -85,11 +85,14 @@ export async function collectSpotifyRows(
     signal: AbortSignal | undefined,
     deadline: number,
     progress?: (page: SourcePlaylist) => void,
+    navigationFailed?: () => boolean,
 ): Promise<{ playlist: SourcePlaylist; reachable: boolean }> {
     const tracks = new Map<string, SourceTrack & { position: number }>();
+    const legacyKeys = new Map<string, string>();
     initial.tracks.forEach((track, position) =>
         tracks.set(track.sourceId || `${track.artist}|${track.title}`, { ...track, position: position + 1 }),
     );
+    for (const [key, track] of tracks) if (!track.sourceId) legacyKeys.set(`${track.artist}|${track.title}`, key);
     let total = initial.expectedTracks,
         title = initial.title,
         reachable = false,
@@ -97,6 +100,10 @@ export async function collectSpotifyRows(
     let best = initial;
     while (!contents.isDestroyed() && Date.now() < deadline) {
         signal?.throwIfAborted();
+        if (navigationFailed?.()) {
+            best = { ...best, partial: true, partialReason: 'network' };
+            break;
+        }
         const snapshot = (await contents
             .executeJavaScript(`(${spotifySnapshot.toString()})()`)
             .catch(() => null)) as ReturnType<typeof spotifySnapshot> | null;
@@ -106,11 +113,11 @@ export async function collectSpotifyRows(
             title = snapshot.title || title;
             const before = tracks.size;
             for (const track of snapshot.tracks) {
-                for (const [key, old] of tracks)
-                    if (!old.sourceId && old.artist === track.artist && old.title === track.title) {
-                        tracks.delete(key);
-                        break;
-                    }
+                const legacy = legacyKeys.get(`${track.artist}|${track.title}`);
+                if (legacy) {
+                    tracks.delete(legacy);
+                    legacyKeys.delete(`${track.artist}|${track.title}`);
+                }
                 tracks.set(track.sourceId!, track);
             }
             stable = tracks.size === before ? stable + 1 : 0;
@@ -213,28 +220,38 @@ export async function completeSpotifyPlaylist(
     try {
         options.signal?.throwIfAborted();
         const throughRelay = await options.configure?.(window.webContents.session, false);
-        void window.loadURL(address).catch(() => {});
+        let navigationFailed = false;
+        const load = () => {
+            navigationFailed = false;
+            void window.loadURL(address).catch((error) => {
+                if (error?.code !== 'ERR_ABORTED' && error?.errno !== -3) navigationFailed = true;
+            });
+        };
+        load();
         let result = await collectSpotifyRows(
             window.webContents,
             initial,
             options.signal,
             Date.now() + 12000,
             options.progress,
+            () => navigationFailed,
         );
         if (
             result.playlist.partial &&
             result.playlist.tracks.length < 500 &&
+            !result.reachable &&
             !throughRelay &&
             !window.isDestroyed() &&
             (await options.configure?.(window.webContents.session, true).catch(() => false))
         ) {
-            void window.loadURL(address).catch(() => {});
+            load();
             result = await collectSpotifyRows(
                 window.webContents,
                 result.playlist,
                 options.signal,
                 Date.now() + 12000,
                 options.progress,
+                () => navigationFailed,
             );
         }
         if (!result.playlist.partial || window.isDestroyed() || !result.reachable) return result.playlist;

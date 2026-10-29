@@ -1,7 +1,19 @@
 const { cp, mkdir, readdir, rm } = require('node:fs/promises');
 const path = require('node:path');
+const { build } = require('esbuild');
 const root = path.resolve(__dirname, '..');
 async function main() {
+    await build({
+        entryPoints: [path.join(root, 'src', 'preload.ts')],
+        outfile: path.join(root, 'tsc', 'preload.js'),
+        bundle: true,
+        platform: 'node',
+        format: 'cjs',
+        target: 'es2020',
+        external: ['electron'],
+        sourcemap: true,
+        legalComments: 'none',
+    });
     const wave = path.join(root, 'tsc', 'wave');
     await mkdir(wave, { recursive: true });
     await cp(path.join(root, 'src', 'header'), path.join(root, 'tsc', 'header'), { recursive: true });

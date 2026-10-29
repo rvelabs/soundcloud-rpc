@@ -18,6 +18,37 @@ beforeEach(() => {
     direct.mockReset();
 });
 describe('source loading with independent fallback', () => {
+    it('bypasses Worker-first for Yandex on a Russian IP and keeps the Worker as a failure fallback', async () => {
+        const yandex = JSON.stringify({
+            result: { title: 'RU list', trackCount: 1, tracks: [{ title: 'Song', artists: [{ name: 'Artist' }] }] },
+        });
+        const relay = vi.fn(async () => yandex);
+        direct.mockResolvedValue(new Response(yandex));
+        const link = 'https://music.yandex.ru/playlists/test-list';
+        expect((await loadSourcePlaylist(link, undefined, { relay, preferRelay: true, country: 'RU' })).title).toBe(
+            'RU list',
+        );
+        expect(relay).not.toHaveBeenCalled();
+        direct.mockRejectedValue(Error('offline'));
+        expect((await loadSourcePlaylist(link, undefined, { relay, preferRelay: true, country: 'RU' })).title).toBe(
+            'RU list',
+        );
+        expect(relay).toHaveBeenCalledTimes(1);
+    });
+    it('preserves Worker-first outside Russia and for Spotify regardless of the Russian interface', async () => {
+        const relay = vi.fn(async () => body);
+        await loadSourcePlaylist(link, undefined, { relay, preferRelay: true, country: 'RU' });
+        expect(direct).not.toHaveBeenCalled();
+        const yandex = JSON.stringify({
+            result: { title: 'List', tracks: [{ title: 'Song', artists: [{ name: 'Artist' }] }] },
+        });
+        await loadSourcePlaylist('https://music.yandex.ru/playlists/test-list', undefined, {
+            relay: async () => yandex,
+            preferRelay: true,
+            country: 'DE',
+        });
+        expect(direct).not.toHaveBeenCalled();
+    });
     it('routes album metadata through Worker when local access is blocked', async () => {
         direct.mockRejectedValue(Error('net::ERR_CONNECTION_CLOSED'));
         const relay = vi.fn<(url: string) => Promise<string>>().mockResolvedValue(body);

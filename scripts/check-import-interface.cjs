@@ -43,6 +43,12 @@ app.whenReady().then(async () => {
         await wait(150);
         assert.equal(await run(`document.querySelectorAll('.cw-import-results input:checked').length`), 1);
         assert.equal(await run(`document.querySelector('.cw-import-commit').disabled`), false);
+        assert.equal(await run(`document.querySelector('.cw-import-original').textContent`), 'Artist — Found');
+        await run(`window.matches.push({source:{title:'Original title',artist:'1.klas$'},soundcloud:{url:'https://soundcloud.com/archive/title',title:'Original title',artist:'Archive uploader',score:.99,requiresReview:true}});document.querySelector('[data-command="import-scan"]').click()`);
+        await wait(100);
+        assert.equal(await run(`document.querySelectorAll('.cw-import-results input:checked').length`), 1, 'uncertain artist is not auto-selected even with a high incoming score');
+        assert.equal(await run(`[...document.querySelectorAll('.cw-import-original')].at(-1).textContent`), '1.klas$ — Original title');
+        assert.ok((await run(`[...document.querySelectorAll('.cw-import-row small')].at(-1).textContent`)).includes('Check the original artist'));
         await run(`document.querySelector('[data-command="import-file"]').click()`);
         await wait(100);
         assert.equal(await run(`document.querySelector('.cw-import-title input').value`), 'Subset');

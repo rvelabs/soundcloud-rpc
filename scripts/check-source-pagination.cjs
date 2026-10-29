@@ -73,7 +73,7 @@ app.whenReady().then(async () => {
             },
         });
         assert.equal(asked, 1);
-        assert.deepEqual(routes, [false, true], 'try the fallback route before asking for sign-in');
+        assert.deepEqual(routes, [false], 'do not reread a reachable authorization-limited playlist through another route');
         assert.equal(declined.partial, true);
         assert.equal(declined.tracks.length, 100);
         assert.equal(BrowserWindow.getAllWindows().length, 1, 'source window released after refusal');
@@ -93,6 +93,15 @@ app.whenReady().then(async () => {
         assert.equal(signedIn.partial, false);
         assert.equal(signedIn.tracks.length, 124);
         assert.equal(BrowserWindow.getAllWindows().length, 1, 'source window released after completion');
+        const blockedAccount = 'blocked-' + Date.now();
+        await session.fromPartition('persist:spotify-import-' + blockedAccount).protocol.handle('https', () => Response.error());
+        const began = Date.now();
+        const blocked = await completeSpotifyPlaylist(initial, address, { parent, account: blockedAccount, russian: false, configure: async () => false,
+            ask: async () => { throw Error('Do not ask for login when the network failed'); } });
+        assert.equal(blocked.tracks.length, 100);
+        assert.equal(blocked.partialReason, 'network');
+        assert(Date.now() - began < 4000, 'an explicit navigation failure must not consume the full 12-second scan');
+        assert.equal(BrowserWindow.getAllWindows().length, 1);
         const result = {
             actualElectron: true,
             publicVirtualizedTracks: 308,
@@ -100,6 +109,7 @@ app.whenReady().then(async () => {
             refusalPreservesTracks: declined.tracks.length,
             sourceWindowsReleased: true,
             externalAccountsUsed: false,
+            blockedNavigationReturnsPromptly: true,
         };
         fs.writeFileSync(path.join(out, 'source-pagination.json'), JSON.stringify(result, null, 2));
         console.log(JSON.stringify(result));

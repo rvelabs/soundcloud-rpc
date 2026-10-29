@@ -238,15 +238,20 @@
         if (!entry || !nodes) return;
         nodes.check.disabled = !entry.soundcloud || entry.imported || (importBusy && !importScanning);
         nodes.check.checked = Boolean(
-            !entry.imported && entry.soundcloud && (entry.selected ?? entry.soundcloud.score >= 0.85),
+            !entry.imported &&
+                entry.soundcloud &&
+                (entry.selected ?? (!entry.soundcloud.requiresReview && entry.soundcloud.score >= 0.85)),
         );
-        nodes.source.textContent = `${entry.source.artist} — ${entry.source.title}`;
+        nodes.source.textContent = entry.soundcloud?.title || `${entry.source.artist} — ${entry.source.title}`;
+        nodes.original.textContent = `${entry.source.artist} — ${entry.source.title}`;
+        nodes.original.hidden = !entry.soundcloud;
+        nodes.check.setAttribute('aria-label', `${entry.source.artist} — ${entry.source.title}`);
         nodes.found.textContent = entry.imported
             ? t('Добавлено в плейлист')
             : entry.pending
               ? t('Проверяем…')
               : entry.soundcloud
-                ? `SoundCloud: ${entry.soundcloud.artist} — ${entry.soundcloud.title} (${Math.round(entry.soundcloud.score * 100)}%) · ${t(entry.soundcloud.availability?.evidence === 'playback' ? 'Воспроизведение подтверждено' : 'Доступен по метаданным')}`
+                ? `SoundCloud: ${entry.soundcloud.artist} · ${Math.round(entry.soundcloud.score * 100)}% · ${t(entry.soundcloud.requiresReview ? (entry.soundcloud.reviewReason === 'duration' ? 'Проверьте версию трека' : 'Проверьте исполнителя') : entry.soundcloud.availability?.evidence === 'playback' ? 'Воспроизведение подтверждено' : 'Доступен по метаданным')}`
                 : t(entry.error || '') || t('В SoundCloud не найдено');
     };
     const renderImport = () => {
@@ -262,10 +267,12 @@
             check.dataset.index = String(index);
             const text = document.createElement('span');
             const source = document.createElement('strong');
+            const original = document.createElement('span');
+            original.className = 'cw-import-original';
             const found = document.createElement('small');
-            importRows.set(index, { check, source, found });
+            importRows.set(index, { check, source, original, found });
             updateImportRow(index);
-            text.append(source, found);
+            text.append(source, original, found);
             row.append(check, text);
             fragment.append(row);
         });

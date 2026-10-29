@@ -16,6 +16,7 @@ import {
     safeStorage,
     clipboard,
     dialog,
+    session,
     type IpcMainEvent,
     type IpcMainInvokeEvent,
 } from 'electron';
@@ -74,12 +75,15 @@ import { PlaylistSourceReader } from './import/sourceReader';
 import { loadLocalPlaylist } from './import/localSource';
 import { findSoundCloudMatch, type ImportMatch } from './import/match';
 import { cancelImportOperation, automaticImportConcurrency, mapImportTracks } from './import/parallel';
-import { createAvailabilityChecker, confirmTrackPlayback } from './import/availability';
+import { createAvailabilityChecker, confirmTrackPlayback, cacheTrackAvailability } from './import/availability';
 import { ImportJournal, type ImportJob } from './import/importJournal';
 import { TaskPool } from './import/taskPool';
 import { availableParallelism, freemem } from 'node:os';
 import { createSoundCloudPlaylist, addSoundCloudPlaylistTrack, PlaylistWriteError } from './import/nativePlaylist';
 import type { SourcePlaylist } from './import/source';
+import { PlaylistSourceNetwork } from './import/sourceNetwork';
+import { PublicSoundCloudSearch } from './import/publicSearch';
+import { matchIdentity } from './import/matchIdentity';
 import type { SoundFeatures } from './wave/recommendation/types';
 import { audioMonitorScript } from './services/audioMonitorService';
 import { showHomepageConfirmDialog, updateDialogBounds } from './settings/confirmPopup';
@@ -186,6 +190,7 @@ function traceWave(event: string, current?: string, observed?: string, detail?: 
             'queue-candidate-missing',
             'queue-search-fallback',
             'media-ended-captured',
+            'stale-media-event',
             'media-error-captured',
             'native-handoff-stalled',
             'native-cleanup-failed',
@@ -745,6 +750,12 @@ async function init() {
     let waveLikeView: WebContentsView | null = null;
     let importView: WebContentsView | null = null;
     const importJournal = new ImportJournal(libraryStore, currentAccountId);
+    const sourceSession = session.fromPartition('wave-playlist-direct');
+    const sourceNetwork = new PlaylistSourceNetwork(
+        sourceSession.fetch.bind(sourceSession) as typeof fetch,
+        Date.now,
+        clientContents.session.fetch.bind(clientContents.session) as typeof fetch,
+    );
     let importDraft: ImportJob | null = importJournal.current() || null;
     const availabilityRoute = () =>
         JSON.stringify([
@@ -850,7 +861,7 @@ async function init() {
         void clientContents
             .executeJavaScript(
                 `window.__waveMediaEndState = Object.assign(
-            window.__waveMediaEndState || {}, { active: ${waveVisible}, queueReady: ${endCaptureQueueReady},
+            window.__waveMediaEndState || {}, { active: ${waveVisible}, queueReady: ${endCaptureQueueReady}, currentPath: ${JSON.stringify(trackPath(waveCurrent))},
                 ...(${!waveVisible || endCaptureQueueReady} ? { handoffPending: false, protectedUntil: 0 } : {}) });`,
                 true,
             )
@@ -858,7 +869,7 @@ async function init() {
     };
     const sendInline = (channel: string, ...args: unknown[]) => {
         if (!clientContents.isDestroyed()) clientContents.send(`wave-inline:${channel}`, ...args);
-        if (channel === 'active') syncMediaEndCapture();
+        if (channel === 'active' || channel === 'candidate') syncMediaEndCapture();
         if (channel === 'queue-ready') {
             endCaptureQueueReady = args[0] === true;
             syncMediaEndCapture();
@@ -999,10 +1010,11 @@ async function init() {
     const refreshWaveDiscovery = (): void => {
         if (waveDiscoveryTask || !waveVisible) return;
         const generation = waveGeneration;
-        const task = waveRecommender.refreshIfNeeded()
+        const task = waveRecommender
+            .refreshIfNeeded()
             .then(async (changed) => {
                 if (!changed || !waveVisible || generation !== waveGeneration) return;
-                wavePrepared.clear();
+                wavePrepared.clear(true);
                 traceWave('discovery-direction-refreshed', waveCurrent);
                 await prepareUpcoming();
             })
@@ -1017,7 +1029,7 @@ async function init() {
         const revision = waveRecommender.preparationRevision();
         if (preparedFeedbackRevision !== revision) {
             preparedFeedbackRevision = revision;
-            wavePrepared.clear();
+            wavePrepared.clear(true);
         }
         refreshWaveDiscovery();
         if (wavePrepared.length >= 3) return;
@@ -1740,6 +1752,14 @@ async function init() {
     };
     const waveDiagnostics = () => ({
         version: app.getVersion(),
+        active: waveVisible,
+        current: trackPath(waveCurrent),
+        observed: {
+            path: trackPath(lastTrackInfo.url || ''),
+            elapsed: lastTrackInfo.elapsed,
+            duration: lastTrackInfo.duration,
+            playing: lastTrackInfo.isPlaying,
+        },
         source: 'related-tracks',
         events: waveTrace.slice(-80),
         import: importDraft
@@ -1762,9 +1782,31 @@ async function init() {
         rendererQueueReady: endCaptureQueueReady,
         filling: Boolean(nativeQueueTask),
     });
-    windowIpc.handle('wave-inline:copy-diagnostics', (event) => {
+    windowIpc.handle('wave-inline:copy-diagnostics', async (event) => {
         if (!isTrustedSoundCloudSender(event)) throw new Error('Недоверенная страница.');
-        clipboard.writeText(JSON.stringify(waveDiagnostics(), null, 2));
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let renderer: unknown;
+        try {
+            renderer = await Promise.race([
+                clientContents
+                    .executeJavaScript(
+                        `({
+                    monitorActive: Boolean(window.__soundCloudMonitorActive),
+                    monitorDisposed: Boolean(window.__soundCloudMonitorDisposed),
+                    capture: window.__waveMediaEndSnapshot?.(),
+                    mediaState: window.__waveMediaEndState
+                })`,
+                        true,
+                    )
+                    .catch(() => ({ unavailable: true })),
+                new Promise((resolve) => {
+                    timer = setTimeout(() => resolve({ unavailable: true }), 1000);
+                }),
+            ]);
+        } finally {
+            clearTimeout(timer);
+        }
+        clipboard.writeText(JSON.stringify({ ...waveDiagnostics(), renderer }, null, 2));
         return true;
     });
     windowIpc.handle('wave-inline:ready', (event) => {
@@ -1892,14 +1934,13 @@ async function init() {
         const slots = new Map<number, WebContentsView>();
         const task = (async () => {
             importProgress('source', 0, 0, 'Читаем плейлист…');
+            await sourceSession.setProxy({ mode: 'system' });
+            controller.signal.throwIfAborted();
             const source = await load(controller.signal);
             controller.signal.throwIfAborted();
             const concurrency = automaticImportConcurrency(availableParallelism(), freemem(), source.tracks.length);
-            const availability = createAvailabilityChecker(
-                clientContents.session,
-                controller.signal,
-                availabilityRoute(),
-            );
+            const importRoute = availabilityRoute();
+            const availability = createAvailabilityChecker(clientContents.session, controller.signal, importRoute);
             importProgress('matching', 0, source.tracks.length, 'Ищем совпадения…', {
                 title: source.title,
                 tracks: source.tracks,
@@ -1911,17 +1952,10 @@ async function init() {
             const job = importJournal.begin(source);
             const partialMatches = job.matches;
             importDraft = job;
-            const matches = await mapImportTracks(source.tracks, {
-                concurrency,
-                signal: controller.signal,
-                run: async (track, index): Promise<ImportMatch> => {
-                    const cached = partialMatches[index].soundcloud || importJournal.cached(track);
-                    if (cached) {
-                        const checked = await availability(cached.url);
-                        if (checked.status === 'available')
-                            return { source: track, soundcloud: { ...cached, availability: checked } };
-                    }
-                    return importDomPool.run(async (slot) => {
+            const search = new PublicSoundCloudSearch(
+                clientContents.session.fetch.bind(clientContents.session) as typeof fetch,
+                (track) =>
+                    importDomPool.run(async (slot) => {
                         let view = slots.get(slot);
                         if (!view || view.webContents.isDestroyed()) {
                             view = createImportView(true);
@@ -1957,9 +1991,41 @@ async function init() {
                             clearTimeout(timer);
                             signal.removeEventListener('abort', closeOnAbort);
                         }
-                    }, controller.signal);
+                    }, controller.signal),
+                controller.signal,
+                () => concurrency,
+            );
+            const matches = await mapImportTracks(source.tracks, {
+                concurrency,
+                signal: controller.signal,
+                run: async (track, index): Promise<ImportMatch> => {
+                    const cached = partialMatches[index].soundcloud || importJournal.cached(track);
+                    if (cached && matchIdentity(track, cached).score >= 0.78) {
+                        const checked = await availability(cached.url);
+                        if (checked.status === 'available') {
+                            const identity = matchIdentity(track, cached);
+                            return {
+                                source: track,
+                                soundcloud: {
+                                    ...cached,
+                                    score: identity.score,
+                                    requiresReview: identity.requiresReview,
+                                    reviewReason: identity.reviewReason,
+                                    availability: checked,
+                                },
+                            };
+                        }
+                    }
+                    return search.match(track);
                 },
                 onComplete: (match, index, completed) => {
+                    if (match.soundcloud?.availability)
+                        cacheTrackAvailability(
+                            clientContents.session,
+                            match.soundcloud.url,
+                            importRoute,
+                            match.soundcloud.availability,
+                        );
                     partialMatches[index] = match;
                     importJournal.remember(match);
                     importJournal.save(job);
@@ -1994,6 +2060,7 @@ async function init() {
             if (controller.signal.aborted) throw new Error('Поиск отменён.');
             throw error;
         } finally {
+            controller.abort();
             for (const view of slots.values()) closeImportView(view);
             if (importScanController === controller) importScanController = null;
             if (importTask === task) importTask = null;
@@ -2034,7 +2101,8 @@ async function init() {
                 parent: clientWindow,
                 account: String(currentAccountId),
                 connection: connectionRecovery,
-                relayFirst: () => store.get('cloudflareMode') === 'always',
+                network: sourceNetwork,
+                relayFirst: () => connectionRecovery.prefersPlaylistRelay(),
                 russian: () => translationService.getLanguage() === 'ru',
                 progress: (read, total, message) => importProgress('source', read, total, message),
             }).read(link, signal),
@@ -2194,7 +2262,10 @@ async function init() {
             return;
         }
         if (command === 'finish' || command === 'error') {
-            if (typeof value === 'string' && value && value !== trackPath(waveCurrent)) return;
+            if (typeof value === 'string' && value && value !== trackPath(waveCurrent)) {
+                traceWave('stale-media-event', waveCurrent, `https://soundcloud.com${value}`, command);
+                return;
+            }
             traceWave(command === 'finish' ? 'media-ended-captured' : 'media-error-captured', waveCurrent);
             void playback.request(command).catch((error) => console.debug('Wave finish unavailable:', error));
             return;

@@ -2,13 +2,15 @@ import type { BrowserWindow } from 'electron';
 import type { ConnectionRecovery } from '../network/connectionRecovery';
 import { loadSourcePlaylist } from './loadSource';
 import { completeSpotifyPlaylist } from './spotifyBrowser';
-import type { SourcePlaylist } from './source';
+import { classifyPlaylistUrl, type SourcePlaylist } from './source';
+import type { PlaylistSourceNetwork } from './sourceNetwork';
 export class PlaylistSourceReader {
     constructor(
         private options: {
             parent: BrowserWindow;
             account: string;
             connection: ConnectionRecovery;
+            network?: PlaylistSourceNetwork;
             relayFirst: () => boolean;
             russian: () => boolean;
             progress: (read: number, total: number, message: string) => void;
@@ -16,6 +18,10 @@ export class PlaylistSourceReader {
     ) {}
     async read(link: string, signal: AbortSignal): Promise<SourcePlaylist> {
         const { connection } = this.options;
+        const country =
+            classifyPlaylistUrl(link).platform === 'yandex' && this.options.relayFirst()
+                ? await this.options.network?.country(signal)
+                : undefined;
         const progress = (page: SourcePlaylist) =>
             this.options.progress(
                 page.readTracks || page.tracks.length,
@@ -27,6 +33,10 @@ export class PlaylistSourceReader {
                 ? (url, cancel, init) => connection.loadPlaylistSource(url, cancel, init)
                 : undefined,
             preferRelay: this.options.relayFirst(),
+            country,
+            direct: this.options.network
+                ? (url, cancel, init) => this.options.network!.load(url, cancel, init)
+                : undefined,
             onPage: progress,
             onRoute: (route) =>
                 this.options.progress(

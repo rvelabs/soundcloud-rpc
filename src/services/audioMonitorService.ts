@@ -2,6 +2,7 @@ export const audioMonitorScript = String.raw`
 (() => {
   if (window.__soundCloudMonitorActive) return;
   window.__soundCloudMonitorActive = true;
+  window.__soundCloudMonitorDisposed = false;
   let disposed = false, reconcileTimer, notifyTimer, last, lastProgressAt = 0;
   const bindings = new Map();
   const seconds = value => (value || '').split(':').reduce((sum, part) => sum * 60 + (Number(part) || 0), 0);
@@ -81,14 +82,16 @@ export const audioMonitorScript = String.raw`
     document.addEventListener('click', onSeek, true);
     document.addEventListener('pointerup', onSeek, true);
   };
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener('pagehide', event => {
+    if (event.persisted) return;
+    window.__soundCloudMonitorDisposed = true;
     disposed = true; clearTimeout(reconcileTimer); clearTimeout(notifyTimer);
     documentObserver.disconnect();
     for (const {observer} of bindings.values()) observer.disconnect();
     bindings.clear();
     document.removeEventListener('click', onSeek, true);
     document.removeEventListener('pointerup', onSeek, true);
-  }, { once: true });
+  });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
   else initialize();
 })();

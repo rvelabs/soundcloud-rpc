@@ -5,6 +5,7 @@ import {
     createAvailabilityChecker,
     parseTrackAvailability,
     confirmTrackPlayback,
+    cacheTrackAvailability,
 } from './availability';
 import { findSoundCloudMatch } from './match';
 import type { WebContents } from 'electron';
@@ -19,6 +20,24 @@ const full = {
 };
 const html = (data: unknown) => `<script>window.__sc_hydration = ${JSON.stringify(data)};</script>`;
 describe('availability gate', () => {
+    it('reuses a checked public-search response when saving, without crossing routes or weakening playback evidence', async () => {
+        const fetch = vi.fn(async () => new Response(html([{ data: full }])));
+        const session = { fetch } as unknown as Session;
+        cacheTrackAvailability(session, url, 'direct', classifyTrackAvailability(full));
+        expect((await createAvailabilityChecker(session, undefined, 'direct')(url)).status).toBe('available');
+        expect(fetch).not.toHaveBeenCalled();
+        confirmTrackPlayback(session, url, 'direct');
+        cacheTrackAvailability(session, url, 'direct', classifyTrackAvailability(full));
+        expect((await createAvailabilityChecker(session, undefined, 'direct')(url)).evidence).toBe('playback');
+        await createAvailabilityChecker(session, undefined, 'relay')(url);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        cacheTrackAvailability(session, 'https://soundcloud.com/artist/stale', 'direct', {
+            ...classifyTrackAvailability(full),
+            checkedAt: Date.now() - 3 * 60000,
+        });
+        await createAvailabilityChecker(session, undefined, 'direct')('https://soundcloud.com/artist/stale');
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
     it('separates metadata from confirmed playback and scopes cached results to the network route', async () => {
         const fetch = vi.fn(async () => new Response(html([{ data: full }])));
         const session = { fetch } as unknown as Session;
