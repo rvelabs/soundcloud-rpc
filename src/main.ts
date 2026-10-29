@@ -1316,7 +1316,8 @@ async function init() {
                 const retained = pending.filter(
                     (item) => item.url !== waveCurrent && !waveFuture.some((future) => future.url === item.url),
                 );
-                for (const item of retained) waveRecommender.reserve(item, true);
+                for (const item of waveFuture) waveRecommender.release(item);
+                for (const item of [...retained, ...waveFuture.slice().reverse()]) waveRecommender.reserve(item, true);
                 waveFuture.push(...retained.reverse());
             }
             return false;
@@ -1355,7 +1356,7 @@ async function init() {
                         if (occupied) {
                             if (nativeQueued.length) {
                                 waveFuture.push(next);
-                                waveRecommender.reserve(next);
+                                waveRecommender.reserve(next, true);
                                 break;
                             }
                             nativeQueueAvailable = false;
@@ -1379,7 +1380,7 @@ async function init() {
                                 await removeNativeNextUp(clientContents, [next.url]).catch(() => false);
                             if (waveVisible && generation === waveGeneration) {
                                 waveFuture.push(next);
-                                waveRecommender.reserve(next);
+                                waveRecommender.reserve(next, true);
                             }
                             break;
                         }
@@ -1394,7 +1395,7 @@ async function init() {
                         }
                         if (nativeQueued.length) {
                             waveFuture.push(next);
-                            waveRecommender.reserve(next);
+                            waveRecommender.reserve(next, true);
                             break;
                         }
                         nativeQueueAvailable = false;
