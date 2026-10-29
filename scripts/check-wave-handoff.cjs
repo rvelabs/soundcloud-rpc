@@ -83,6 +83,7 @@ const fixture = `<!doctype html><meta charset="utf-8"><style>body{margin:0;backg
 <main id="content"><div class="l-main"><div class="l-content">${ids.map((id) => `<div class="sound"><a class="soundTitle__title" href="https://soundcloud.com/artist/${id}">${id}</a><div class="soundTitle__playButton"><button class="playButton" onclick="playTrack('${id}')">Play</button></div><button class="sc-button-more" onclick="showMore('${id}')">More</button></div>`).join('')}</div></div></main>
 <ul class="queue__itemsContainer"></ul><div class="playControls"><button class="playControls__play"></button><button class="skipControl__next" onclick="window.nextClicks=(window.nextClicks||0)+1; if(${healthy})nextQueued()">Next</button><a class="playbackSoundBadge__titleLink"></a><a class="playbackSoundBadge__lightLink">Artist</a><div class="playbackTimeline__timePassed"><span>0:00</span></div><div class="playbackTimeline__duration"><span>1:30</span></div></div>
 <script>
+window.maxQueued=0;new MutationObserver(()=>{window.maxQueued=Math.max(window.maxQueued,document.querySelectorAll('.queue__itemsContainer .queueItemView').length)}).observe(document.querySelector('.queue__itemsContainer'),{childList:true});
 window.showMore=(id)=>{document.querySelector('.dropdownMenu')?.remove();const menu=document.createElement('div');menu.className='dropdownMenu';menu.innerHTML='<button class="addToNextUp" title="Add to Next up">Add</button>';const button=menu.firstChild;button.onclick=()=>{button.classList.add('sc-button-selected');const row=document.createElement('li');row.className='queueItemView';row.innerHTML='<a href="https://soundcloud.com/artist/'+id+'">'+id+'</a><button class="queueItemView__remove" onclick="this.parentElement.remove()">Remove</button>';document.querySelector('.queue__itemsContainer').append(row)};document.body.append(menu)};window.audio=new Audio();audio.volume=0.01;window.played=[];window.endedAt=[];window.nativeAutoplay=0;
 window.playTrack=(id)=>{played.push({id,at:Date.now()});document.querySelector('.playbackSoundBadge__titleLink').href='https://soundcloud.com/artist/'+id;document.querySelector('.playbackSoundBadge__titleLink').textContent=id;document.querySelector('.playControls__play').classList.add('playing');audio.src=${JSON.stringify(source)};void audio.play();};
 audio.addEventListener('ended',()=>{endedAt.push({id:document.querySelector('.playbackSoundBadge__titleLink').pathname.split('/').pop(),at:Date.now()})},true);
@@ -138,9 +139,10 @@ app.whenReady().then(async () => {
             await wait(100);
         }
         const state = await contents.executeJavaScript(
-            '({played,endedAt,nativeAutoplay,time:audio.currentTime,paused:audio.paused})',
+            '({played,endedAt,nativeAutoplay,maxQueued,time:audio.currentTime,paused:audio.paused})',
         );
         assert(state.played.length >= 7, JSON.stringify(state));
+        assert(state.maxQueued <= 1, 'only the next track is committed while alternatives remain adaptable: ' + state.maxQueued);
         assert(
             state.played.every((item) => ids.includes(item.id)),
             'no unrelated native-autoplay track starts',
@@ -199,6 +201,7 @@ app.whenReady().then(async () => {
             pauseDuringHandoffPreserved: healthy,
             manualNextRecovery: manual,
             automaticTransitions: state.played.length - 1,
+            maximumCommittedQueue: state.maxQueued,
             minimized: window.isMinimized(),
             nativeQueueInitiallyObserved: true,
             gapsMs: gaps,

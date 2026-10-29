@@ -48,7 +48,7 @@
         discordBody: 'Let your friends see what’s playing.',
         lastfmBody: 'Keep your listening history going.',
         backgroundTitle: 'Music in the background',
-        backgroundBody: 'Minimize the window. The animation rests; the music stays.',
+        backgroundBody: 'Minimize the window. Your music keeps playing, with a lightweight static My Wave background.',
         openTitle: 'Open source',
         openBody: 'Look inside, suggest an idea, or report a bug.',
         faqTitle: 'Good to<br> know.',

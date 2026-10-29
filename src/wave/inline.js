@@ -54,7 +54,6 @@
     root.setAttribute('aria-label', t('Моя волна'));
     root.innerHTML = `
       <div class="cw-hero">
-        <div class="cw-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
         <div class="cw-content">
           <div class="cw-kicker"><span class="cw-dot"></span> SOUNDCloud · персональная волна</div>
           <div class="cw-top"><div><h2>Моя волна</h2><p>Музыка под ваш вкус. Выбирайте настроение — остальное подберёт волна.</p></div>
@@ -173,8 +172,6 @@
     let waveError = false;
     let playing = false;
     let candidate = null;
-    let lastVisualAt = 0;
-    let lastVisual = '';
     const importer = window.playlistImporter;
     let importBusy = false;
     let importScanning = false;
@@ -352,37 +349,10 @@
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
     place();
-    let windowActive = false;
-    let inViewport = true;
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotion = () => {
-        const moving =
-            windowActive &&
-            !document.hidden &&
-            inViewport &&
-            !root.classList.contains('cw-detached') &&
-            !reducedMotion.matches;
-        root.classList.toggle('cw-motion', moving);
-        root.classList.toggle('cw-window-hidden', !windowActive || document.hidden);
-    };
-    const updateVisibility = (visible) => {
-        windowActive = Boolean(visible);
-        updateMotion();
-    };
-    const intersection = new IntersectionObserver(
-        (entries) => {
-            inViewport = entries[0]?.isIntersecting ?? false;
-            updateMotion();
-        },
-        { threshold: 0 },
-    );
-    intersection.observe(root);
-    reducedMotion.addEventListener('change', updateMotion);
     window.addEventListener(
         'pagehide',
         () => {
-            intersection.disconnect();
-            reducedMotion.removeEventListener('change', updateMotion);
             observer.disconnect();
         },
         { once: true },
@@ -432,8 +402,6 @@
             if (dialog === importDialog && importBusy) return;
             closeDialog(dialog);
         });
-    api.on('visibility', updateVisibility);
-    document.addEventListener('visibilitychange', updateMotion);
     const renderControls = () => {
         const selectedLabels = [...root.querySelectorAll('[data-setting]')]
             .filter(
@@ -814,25 +782,8 @@
     api.on('active', updateActive);
     api.on('track', updateTrack);
     api.on('candidate', (item) => {
-        let palette = 0;
-        for (const char of item?.url || '') palette = (palette * 31 + char.charCodeAt(0)) | 0;
-        root.style.setProperty('--cw-hue', ((palette >>> 0) % 100) - 50 + 'deg');
         candidate = item;
         renderExplanation(item);
-    });
-    api.on('audio', (features) => {
-        if (!features || root.classList.contains('cw-window-hidden')) return;
-        const now = Date.now();
-        if (now - lastVisualAt < 500) return;
-        const brightness = Math.round((0.7 + Math.min(1, features.energy || 0) * 0.8) * 20) / 20;
-        const hue = Math.round(((features.treble || 0) - (features.bass || 0)) * 18) * 5;
-        const visual = `${brightness}:${hue}`;
-        if (visual !== lastVisual) {
-            root.style.setProperty('--cw-brightness', String(brightness));
-            root.style.setProperty('--cw-hue', `${hue}deg`);
-            lastVisual = visual;
-        }
-        lastVisualAt = now;
     });
     api.on('excluded-artists', renderExclusions);
     api.on('controls', (value) => {
@@ -900,7 +851,6 @@
         controls = { ...controls, ...state.controls };
         renderControls();
         updateActive(state.active);
-        updateVisibility(state.visible);
         if (state.candidate) candidate = state.candidate;
         renderExplanation(candidate);
         if (state.track) updateTrack(state.track);

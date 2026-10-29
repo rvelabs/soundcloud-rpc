@@ -4,34 +4,51 @@ export const artistIdentity = (value: string): string =>
     normalize(value)
         .replace(/[^\p{L}\p{N}]+/gu, ' ')
         .trim() || normalize(value);
-export function recentPreference(events: Feedback[], now: number): Map<string, number> {
+export function sessionWeight(event: Feedback): number {
+    const fraction = Number.isFinite(event.listenedFraction) ? Math.max(0, Math.min(1, event.listenedFraction!)) : 0;
+    switch (event.kind) {
+        case 'unlike':
+            return 0;
+        case 'dislike':
+            return -1.5;
+        case 'like':
+            return 1;
+        case 'complete':
+            return 0.5;
+        case 'play':
+            return fraction >= 0.7 ? 0.5 : fraction >= 0.35 ? 0.15 : 0;
+        case 'skip':
+            return fraction < 0.2 ? -0.6 : fraction < 0.5 ? -0.2 : 0;
+    }
+}
+export function recentReactions(events: Feedback[], now: number): Feedback[] {
     const latest = new Map<string, Feedback>();
-    for (const event of events.slice(-80))
-        if (
-            event.at <= now &&
-            now - event.at < 45 * 60000 &&
-            ['skip', 'complete', 'like', 'unlike', 'dislike'].includes(event.kind)
-        ) {
-            if (latest.get(event.track.id)?.kind === 'dislike' && ['skip', 'complete'].includes(event.kind)) continue;
-            latest.set(event.track.id, event);
+    for (const event of events.slice(-80).sort((a, b) => a.at - b.at))
+        if (event.origin !== 'library' && event.at <= now && now - event.at < 45 * 60000) {
+            const previous = latest.get(event.track.id);
+            if (!['like', 'unlike', 'dislike'].includes(event.kind)) {
+                if (previous?.kind === 'dislike') continue;
+                if (previous?.kind === 'like' && sessionWeight(event) >= 0) {
+                    latest.set(event.track.id, {
+                        ...previous,
+                        at: event.at,
+                        track: { ...previous.track, ...event.track },
+                    });
+                    continue;
+                }
+                if (sessionWeight(event) === 0) continue;
+            }
+            latest.set(event.track.id, {
+                ...event,
+                track: { ...previous?.track, ...event.track },
+            });
         }
+    return [...latest.values()].sort((a, b) => a.at - b.at).slice(-12);
+}
+export function recentPreference(events: Feedback[], now: number): Map<string, number> {
     const signals = new Map<string, number>();
-    for (const event of [...latest.values()].sort((a, b) => a.at - b.at).slice(-12)) {
-        const fraction = event.listenedFraction ?? 0;
-        const weight =
-            event.kind === 'unlike'
-                ? 0
-                : event.kind === 'dislike'
-                  ? -1.5
-                  : event.kind === 'like'
-                    ? 1
-                    : event.kind === 'complete'
-                      ? 0.5
-                      : fraction < 0.2
-                        ? -0.6
-                        : fraction < 0.5
-                          ? -0.2
-                          : 0;
+    for (const event of recentReactions(events, now)) {
+        const weight = sessionWeight(event);
         const decay = 2 ** (-(now - event.at) / (20 * 60000));
         for (const token of tokensOf(event.track))
             signals.set(token, Math.max(-2, Math.min(2, (signals.get(token) || 0) + weight * decay)));

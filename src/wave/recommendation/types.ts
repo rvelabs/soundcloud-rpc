@@ -28,6 +28,7 @@ export interface Feedback {
     kind: FeedbackKind;
     at: number;
     listenedFraction?: number;
+    origin?: 'library';
 }
 export interface Controls {
     mood: 'any' | 'calm' | 'energetic' | 'happy' | 'sad';
@@ -64,4 +65,6 @@ export interface Context {
     anchor?: Track;
     preferenceSignals?: Map<string, number>;
     similarityCorpus?: Track[];
+    sessionReactions?: Feedback[];
+    recentTracks?: Track[];
 }

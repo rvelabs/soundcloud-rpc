@@ -173,6 +173,21 @@ describe('SoundCloud recommendation adapter', () => {
         });
         expect(restarted.rank(1)[0]?.url).toBe(fresh.url);
     });
+    it('preserves library hearts across restart without converting the import into live feedback', () => {
+        const { store, values } = memoryStore();
+        const liked = item('liked-library', 'Library artist', 'ambient');
+        const model = new SoundCloudRecommender(store, 'library', async () => []);
+        model.seedLikes([liked]);
+        const imported = values.get('waveFeedbackV1_library') as Array<{ origin?: string }>;
+        expect(imported[0].origin).toBe('library');
+        const reopened = new SoundCloudRecommender(store, 'library', async () => []);
+        expect(reopened.liked(liked.url)).toBe(true);
+        reopened.record(liked, 'unlike');
+        reopened.record(liked, 'like');
+        const reactions = values.get('waveFeedbackV1_library') as Array<{ origin?: string }>;
+        expect(reactions[reactions.length - 1]?.origin).toBeUndefined();
+        expect(reopened.preparationRevision()).toBe(2);
+    });
 });
 describe('artist exclusions', () => {
     it('filters all uploads before selection and after buffering, persists per account and can restore', () => {

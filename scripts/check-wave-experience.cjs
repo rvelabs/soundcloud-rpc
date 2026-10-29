@@ -31,8 +31,10 @@ app.whenReady().then(async () => {
         });
         const wc = win.webContents;
         let frame;
+        let paints = 0;
         wc.on('paint', (_event, _dirty, image) => {
             frame = image.toPNG();
+            paints++;
         });
         await wc.loadURL('wave-experience://app/discover');
         wc.debugger.attach('1.3');
@@ -71,27 +73,32 @@ app.whenReady().then(async () => {
         );
         const sample = () =>
             wc.executeJavaScript(
-                `({motion:document.querySelector('#codex-wave-inline').classList.contains('cw-motion'),time:document.querySelector('.cw-aurora i').getAnimations()[0]?.currentTime || 0,audio:testAudio.currentTime,paused:testAudio.paused})`,
+                `({animations:document.querySelector('#codex-wave-inline').getAnimations({subtree:true}).filter(a=>a.playState==='running').length,layers:document.querySelectorAll('.cw-aurora').length,background:getComputedStyle(document.querySelector('.cw-hero')).backgroundImage,filter:getComputedStyle(document.querySelector('.cw-hero')).filter,style:document.querySelector('#codex-wave-inline').getAttribute('style'),audio:testAudio.currentTime,paused:testAudio.paused})`,
             );
-        const moving = await sample();
-        await wait(160);
+        const initial = await sample();
+        const idlePaintStart = paints;
+        await wait(500);
         const later = await sample();
-        assert(later.time > moving.time, 'aurora moves when focused');
-        await wc.executeJavaScript(`channels.get('visibility')(false)`);
+        const idlePaints = paints - idlePaintStart;
+        assert.equal(initial.layers, 0, 'no animated or blurred background layers');
+        assert.equal(later.animations, 0, 'no continuous card animation during playback');
+        assert.equal(later.filter, 'none');
+        assert.equal(initial.background, later.background);
+        assert.equal(await wc.executeJavaScript(`channels.has('audio')||channels.has('visibility')`), false, 'no visual audio or focus subscriptions');
+        await wc.executeJavaScript(`channels.get('candidate')({url:'https://soundcloud.com/test/another',title:'Another',artist:'Artist'});channels.get('track')({title:'Another',isPlaying:true})`);
+        win.hide();
         await wait(50);
-        const paused = await sample();
+        const hidden = await sample();
         await wait(180);
         const frozen = await sample();
-        assert.equal(frozen.motion, false);
-        assert(Math.abs(paused.time - frozen.time) < 25, 'background animation frozen');
+        assert.equal(frozen.animations, 0);
+        assert.equal(initial.background, frozen.background, 'track changes do not recolor the background');
+        assert.equal(initial.style, frozen.style, 'no recurring inline background style updates');
         assert.equal(frozen.paused, false);
-        assert(frozen.audio !== paused.audio, 'media continues while animation pauses');
-        await wc.executeJavaScript(`channels.get('visibility')(true)`);
-        await wait(100);
-        assert.equal((await sample()).motion, true);
+        assert(frozen.audio !== hidden.audio, 'media continues with a static background while hidden');
         await wc.executeJavaScript(`window.scrollTo(0,2000)`);
         await wait(180);
-        assert.equal((await sample()).motion, false, 'offscreen card pauses');
+        assert.equal((await sample()).animations, 0, 'offscreen card stays static');
         await wc.executeJavaScript(`window.scrollTo(0,0);document.querySelector('.cw-settings-open').click()`);
         await wait(380);
         fs.writeFileSync(path.join(out, 'wave-settings-en.png'), frame);
@@ -119,13 +126,14 @@ app.whenReady().then(async () => {
             features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
         });
         await wait(100);
-        assert.equal((await sample()).motion, false, 'reduced motion respected');
+        assert.equal((await sample()).animations, 0, 'reduced motion respected');
         await wc.executeJavaScript(`testAudio.pause()`);
         const results = {
             englishAndRussian: true,
             separateImport: true,
-            focusPause: true,
-            offscreenPause: true,
+            staticBackground: true,
+            visualSubscriptionsRemoved: true,
+            idlePaintsIn500Ms: idlePaints,
             mediaContinues: true,
             animatedClose: true,
             reducedMotion: true,

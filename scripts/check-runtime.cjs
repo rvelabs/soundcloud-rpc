@@ -15,6 +15,7 @@ const checks = scripts.length
           'check-wave-native-healthy.cjs',
           'check-wave-user-next.cjs',
           'check-wave-mix.cjs',
+          'check-wave-experience.cjs',
           'check-audio-analysis.cjs',
           'check-client-close-race.cjs',
           'check-minimized-start.cjs',

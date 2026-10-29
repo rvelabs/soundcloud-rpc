@@ -54,6 +54,10 @@ export class SoundCloudRecommender {
     private excludedKey: string;
     private excludedArtists: string[] = [];
     private candidateEpoch = 0;
+    private feedbackRevision = 0;
+    preparationRevision(): number {
+        return this.feedbackRevision;
+    }
     getExcludedArtists(): string[] {
         return [...this.excludedArtists];
     }
@@ -170,10 +174,11 @@ export class SoundCloudRecommender {
             };
             const at = typeof item.updatedAt === 'number' ? item.updatedAt : this.now();
             if (Number(item.plays) > 0 && !known.has(`${track.id}|play`) && !known.has(`${track.id}|complete`))
-                this.feedbackEvents.push({ track, kind: 'play', at, listenedFraction: 0.6 });
+                this.feedbackEvents.push({ track, kind: 'play', at, listenedFraction: 0.6, origin: 'library' });
             if (Number(item.skips) > 0 && !known.has(`${track.id}|skip`))
-                this.feedbackEvents.push({ track, kind: 'skip', at, listenedFraction: 0.1 });
-            if (item.liked === true && !reactions.has(track.id)) this.feedbackEvents.push({ track, kind: 'like', at });
+                this.feedbackEvents.push({ track, kind: 'skip', at, listenedFraction: 0.1, origin: 'library' });
+            if (item.liked === true && !reactions.has(track.id))
+                this.feedbackEvents.push({ track, kind: 'like', at, origin: 'library' });
         }
         this.feedbackEvents = this.feedbackEvents.sort((left, right) => left.at - right.at).slice(-5000);
         this.save();
@@ -258,7 +263,7 @@ export class SoundCloudRecommender {
         const additions: Feedback[] = [];
         for (const candidate of tracks)
             if (!liked.has(candidate.url) && !explicit.has(candidate.url)) {
-                additions.push({ track: toTrack(candidate), kind: 'like', at: this.now() });
+                additions.push({ track: toTrack(candidate), kind: 'like', at: this.now(), origin: 'library' });
                 liked.add(candidate.url);
             }
         this.recordBatch(additions);
@@ -277,6 +282,7 @@ export class SoundCloudRecommender {
     }
     private recordBatch(events: Feedback[]): void {
         if (!events.length) return;
+        this.feedbackRevision++;
         this.feedbackEvents.push(...events);
         this.feedbackEvents = this.feedbackEvents.slice(-5000);
         for (const event of events) this.session.feedback(event);
@@ -290,6 +296,7 @@ export class SoundCloudRecommender {
         this.feedbackEvents.push(event);
         if (this.feedbackEvents.length > 5000) this.feedbackEvents.splice(0, this.feedbackEvents.length - 5000);
         this.session.feedback(event);
+        this.feedbackRevision++;
         this.save();
     }
     rank(limit = 10): WaveCandidate[] {
@@ -335,6 +342,9 @@ export class SoundCloudRecommender {
     async refresh(): Promise<WaveCandidate[]> {
         await this.session.refresh();
         return this.rank();
+    }
+    async refreshIfNeeded(): Promise<boolean> {
+        return this.session.refreshIfNeeded();
     }
     feedbackCount(): number {
         return this.feedbackEvents.length;

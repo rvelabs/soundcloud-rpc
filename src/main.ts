@@ -605,22 +605,6 @@ async function init() {
             mainWindow.hide();
         }
     });
-    const updateWaveVisibility = () => {
-        const contents = contentView?.webContents;
-        if (mainWindow.isDestroyed()) return;
-        if (contents && !contents.isDestroyed()) {
-            contents.send(
-                'wave-inline:visibility',
-                mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
-            );
-        }
-    };
-    mainWindow.on('focus', updateWaveVisibility);
-    mainWindow.on('blur', updateWaveVisibility);
-    mainWindow.on('minimize', updateWaveVisibility);
-    mainWindow.on('restore', updateWaveVisibility);
-    mainWindow.on('hide', updateWaveVisibility);
-    mainWindow.on('show', updateWaveVisibility);
     headerView = new WebContentsView({
         webPreferences: {
             nodeIntegration: false,
@@ -1010,8 +994,32 @@ async function init() {
     let waveNextTask: Promise<void> | null = null;
     let waveNextTaskGeneration = -1;
     let waveSearchTail: Promise<void> = Promise.resolve();
+    let waveDiscoveryTask: Promise<void> | undefined;
+    let preparedFeedbackRevision = waveRecommender.preparationRevision();
+    const refreshWaveDiscovery = (): void => {
+        if (waveDiscoveryTask || !waveVisible) return;
+        const generation = waveGeneration;
+        const task = waveRecommender.refreshIfNeeded()
+            .then(async (changed) => {
+                if (!changed || !waveVisible || generation !== waveGeneration) return;
+                wavePrepared.clear();
+                traceWave('discovery-direction-refreshed', waveCurrent);
+                await prepareUpcoming();
+            })
+            .catch((error) => console.debug('Wave live discovery unavailable:', error))
+            .finally(() => {
+                if (waveDiscoveryTask === task) waveDiscoveryTask = undefined;
+            });
+        waveDiscoveryTask = task;
+    };
     const prepareUpcoming = async () => {
         if (!waveVisible) return;
+        const revision = waveRecommender.preparationRevision();
+        if (preparedFeedbackRevision !== revision) {
+            preparedFeedbackRevision = revision;
+            wavePrepared.clear();
+        }
+        refreshWaveDiscovery();
         if (wavePrepared.length >= 3) return;
         const generation = waveGeneration;
         const settingsEpoch = waveQueueEpoch;
@@ -1338,7 +1346,7 @@ async function init() {
                 waveVisible &&
                 generation === waveGeneration &&
                 attempt === nativeQueueAttempt &&
-                (nativeQueueAvailable ? nativeQueued.length < 3 : waveFuture.length < 3)
+                (nativeQueueAvailable ? nativeQueued.length < 1 : waveFuture.length < 1)
             ) {
                 void prepareUpcoming().catch((error) =>
                     console.debug('Wave background preparation unavailable:', error),
@@ -1579,6 +1587,7 @@ async function init() {
             waveKnownLikes.set(track.url, track.isLiked);
             waveRecommender.record(waveCurrentCandidate, track.isLiked ? 'like' : 'unlike');
             sendLikeState(track.url);
+            void prepareUpcoming().catch((error) => console.debug('Wave reaction preparation unavailable:', error));
         }
         if (track.url === waveCurrent) {
             if (lastTrackInfo.url !== track.url)
@@ -1637,7 +1646,6 @@ async function init() {
         waveVisible = true;
         waveGeneration++;
         sendInline('active', true);
-        updateWaveVisibility();
     };
     const hideWave = () => {
         if (!waveVisible) return;
@@ -1655,7 +1663,6 @@ async function init() {
         wavePrepared.clear();
         if (!likeTask) releaseLikePage();
         sendInline('active', false);
-        updateWaveVisibility();
         void resetNativeQueue().catch((error) => console.debug('Wave queue reset unavailable:', error));
         void restoreStationAutoplay().catch((error) =>
             console.debug('Wave station autoplay restore unavailable:', error),
@@ -1773,7 +1780,6 @@ async function init() {
             diagnostics: waveDiagnostics(),
             queueReady: nativeQueueAvailable && nativeQueued.length > 0,
             like: waveCurrentCandidate ? likeState(waveCurrentCandidate.url) : null,
-            visible: mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused(),
         };
     });
     windowIpc.handle('wave-inline:set-language', (event, language: unknown) => {
@@ -1817,6 +1823,7 @@ async function init() {
                 sendLikeState(candidate.url);
                 if (lastTrackInfo.url === candidate.url) sendInline('track', lastTrackInfo);
                 sendInline('stats', waveRecommender.stats());
+                void prepareUpcoming().catch((error) => console.debug('Wave reaction preparation unavailable:', error));
             }
             return { url: candidate.url, liked };
         } finally {
@@ -2233,7 +2240,6 @@ async function init() {
             audioTotals.brightness += features.treble;
             audioSamples++;
         }
-        sendInline('audio', features);
     });
     themeService.onCustomThemeUpdated(() => {
         applyThemeToContent(isDarkTheme);

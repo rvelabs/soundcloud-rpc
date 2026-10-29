@@ -25,56 +25,11 @@
 :is(#codex-wave-inline, #codex-playlist-import) .cw-hero {
     position: relative;
     min-height: 276px;
-    isolation: isolate;
-    background: radial-gradient(ellipse at 55% 48%, #28171c, #191919 70%);
+    background:
+        radial-gradient(ellipse at 78% 18%, #803b2b, transparent 65%),
+        radial-gradient(ellipse at 18% 92%, #582758, transparent 65%),
+        #211b25;
     overflow: hidden;
-}
-:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora {
-    position: absolute;
-    inset: -32%;
-    z-index: -1;
-    filter: blur(34px) hue-rotate(var(--cw-hue, 0deg));
-    opacity: var(--cw-brightness, 0.72);
-    pointer-events: none;
-    transition:
-        filter 2s,
-        opacity 1s;
-}
-:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i {
-    position: absolute;
-    width: 58%;
-    height: 65%;
-    border-radius: 50%;
-    mix-blend-mode: screen;
-    animation: cw-drift 13s ease-in-out infinite alternate paused;
-    transform: rotate(-24deg);
-}
-:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i:first-child {
-    left: 22%;
-    top: 2%;
-    background: radial-gradient(ellipse, #ec4c41 1%, #db3c8e 36%, transparent 72%);
-}
-:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i:nth-child(2) {
-    left: 43%;
-    top: 16%;
-    background: radial-gradient(ellipse, #ffaf38 1%, #ff542a 40%, transparent 72%);
-    animation-duration: 17s;
-    animation-delay: -4s;
-}
-:is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i:last-child {
-    left: 4%;
-    top: 28%;
-    background: radial-gradient(ellipse, #8a3cda 1%, #d32fa0 38%, transparent 70%);
-    animation-duration: 19s;
-    animation-delay: -8s;
-}
-@keyframes cw-drift {
-    from {
-        transform: translate3d(-7%, 2%, 0) rotate(-24deg) scale(0.9);
-    }
-    to {
-        transform: translate3d(11%, -6%, 0) rotate(-8deg) scale(1.15);
-    }
 }
 :is(#codex-wave-inline, #codex-playlist-import) .cw-content {
     padding: 18px 30px 18px;
@@ -248,15 +203,6 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     :is(#codex-wave-inline, #codex-playlist-import) .cw-top {
         align-items: start;
     }
-}
-@media (prefers-reduced-motion: reduce) {
-    :is(#codex-wave-inline, #codex-playlist-import) .cw-aurora i {
-        animation: none !important;
-    }
-}
-:is(#codex-wave-inline, #codex-playlist-import).cw-motion .cw-aurora i {
-    animation-play-state: running;
-    will-change: transform;
 }
 :is(#codex-wave-inline, #codex-playlist-import) {
     overflow: visible;
@@ -882,41 +828,6 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     min-height: 302px;
     padding: 30px 32px;
 }
-#codex-wave-inline .cw-aurora {
-    inset: -18%;
-    filter: blur(25px) hue-rotate(var(--cw-hue, 0deg));
-    opacity: 0.86;
-}
-#codex-wave-inline .cw-aurora i {
-    width: 66%;
-    height: 85%;
-    animation: cw-flow 19s cubic-bezier(0.45, 0, 0.55, 1) infinite paused;
-    will-change: auto;
-}
-#codex-wave-inline .cw-aurora i:first-child {
-    left: 11%;
-    top: -5%;
-    background: radial-gradient(ellipse, #ffbd42, #fa572a 30%, transparent 68%);
-}
-#codex-wave-inline .cw-aurora i:nth-child(2) {
-    left: 39%;
-    top: 4%;
-    background: radial-gradient(ellipse, #fa3ab0, #b529b5 38%, transparent 70%);
-    animation-name: cw-flow-reverse;
-    animation-duration: 23s;
-    animation-delay: -9s;
-}
-#codex-wave-inline .cw-aurora i:last-child {
-    left: -5%;
-    top: 25%;
-    background: radial-gradient(ellipse, #793ed6, #b520a1 35%, transparent 70%);
-    animation-duration: 27s;
-    animation-delay: -14s;
-}
-#codex-wave-inline.cw-motion .cw-aurora i {
-    animation-play-state: running;
-    will-change: transform;
-}
 #codex-wave-inline .cw-actions button {
     transition:
         transform 0.2s ease,
@@ -1047,33 +958,6 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
 }
 #codex-playlist-import .cw-import-dialog[open] {
     animation: cw-import-reveal 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-@keyframes cw-flow {
-    0%,
-    100% {
-        transform: translate3d(-8%, -3%, 0) rotate(-25deg) scale(0.93);
-    }
-    25% {
-        transform: translate3d(12%, 7%, 0) rotate(4deg) scale(1.08, 0.92);
-    }
-    50% {
-        transform: translate3d(3%, -13%, 0) rotate(24deg) scale(0.9, 1.12);
-    }
-    75% {
-        transform: translate3d(-12%, 9%, 0) rotate(-4deg) scale(1.14, 0.94);
-    }
-}
-@keyframes cw-flow-reverse {
-    0%,
-    100% {
-        transform: translate3d(5%, 8%, 0) rotate(16deg) scale(1.05);
-    }
-    35% {
-        transform: translate3d(-14%, -12%, 0) rotate(-18deg) scale(0.9, 1.15);
-    }
-    70% {
-        transform: translate3d(10%, -2%, 0) rotate(30deg) scale(1.14, 0.9);
-    }
 }
 @keyframes cw-card-enter {
     from {

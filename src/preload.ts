@@ -113,11 +113,9 @@ contextBridge.exposeInMainWorld('waveInline', {
                 'track',
                 'stats',
                 'candidate',
-                'audio',
                 'metadata',
                 'controls',
                 'scroll',
-                'visibility',
                 'route',
                 'liked',
             ].includes(channel)

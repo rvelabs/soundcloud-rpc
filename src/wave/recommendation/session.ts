@@ -5,7 +5,7 @@ import { discoverySeeds } from './discovery';
 import { recommend } from './ranker';
 import { defaultControls } from './types';
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
-import { artistIdentity, recentPreference } from './sessionSignals';
+import { artistIdentity, recentPreference, recentReactions, sessionWeight } from './sessionSignals';
 export interface CandidateProvider {
     related(seeds: Track[]): Promise<Track[]>;
 }
@@ -53,6 +53,8 @@ export class RecommendationSession {
         value: TasteProfile;
     };
     private refreshTask?: Promise<Recommendation[]>;
+    private refreshedAt?: number;
+    private refreshedDirection = '';
     private candidateEpoch = 0;
     private anchor?: Track;
     setAnchor(track?: Track): void {
@@ -148,8 +150,26 @@ export class RecommendationSession {
         }
     }
     private context(includeReserved = true): Context {
+        const now = this.now();
+        const reactions = recentReactions(this.events, now);
+        const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
+        const planned = this.selectionTrail
+            .filter((item) => !this.recentIds.includes(item.id))
+            .flatMap((item) => (this.candidates.get(item.id) ? [this.candidates.get(item.id)!] : []));
+        const played = new Map<string, Track>();
+        for (const event of this.events.slice(-80).sort((a, b) => b.at - a.at)) {
+            if (
+                event.origin === 'library' ||
+                event.at > now ||
+                now - event.at >= 45 * 60000 ||
+                !['play', 'skip', 'complete'].includes(event.kind)
+            )
+                continue;
+            if (!played.has(event.track.id)) played.set(event.track.id, event.track);
+            if (played.size >= 6) break;
+        }
         return {
-            now: this.now(),
+            now,
             activity: this.activity,
             recentTrackIds: this.recentIds,
             reservedTrackIds: includeReserved ? [...this.reservedIds] : [],
@@ -160,8 +180,10 @@ export class RecommendationSession {
             ],
             seed: this.rotation + 1,
             sequenceOffset: this.selectionPosition,
-            anchor: this.anchor,
-            preferenceSignals: recentPreference(this.events, this.now()),
+            anchor: planned[0] || (this.anchor && !rejected.has(this.anchor.id) ? this.anchor : undefined),
+            preferenceSignals: recentPreference(reactions, now),
+            sessionReactions: reactions,
+            recentTracks: [...planned, ...played.values()].slice(0, 6),
         };
     }
     rank(limit = 10): Recommendation[] {
@@ -203,8 +225,33 @@ export class RecommendationSession {
             if (this.refreshTask === task) this.refreshTask = undefined;
         }
     }
+    private direction(): string {
+        return JSON.stringify([
+            this.anchor?.id,
+            this.controls,
+            this.activity,
+            recentReactions(this.events, this.now()).map((event) => [event.track.id, event.kind, sessionWeight(event)]),
+        ]);
+    }
+    async refreshIfNeeded(): Promise<boolean> {
+        if (this.refreshTask || ['favorites', 'familiar'].includes(this.controls.discovery)) return false;
+        if (!this.anchor && !this.profile().positiveSeeds.length) return false;
+        const now = this.now();
+        const rejections = recentReactions(this.events, now).filter(
+            (event) => sessionWeight(event) < 0 && now - event.at < 10 * 60000,
+        ).length;
+        const cooldown = rejections >= 2 ? 15000 : 60000;
+        if (this.refreshedAt !== undefined && now >= this.refreshedAt && now - this.refreshedAt < cooldown)
+            return false;
+        if (this.refreshedAt !== undefined && this.refreshedDirection === this.direction()) return false;
+        const epoch = this.candidateEpoch;
+        await this.refresh();
+        return epoch === this.candidateEpoch;
+    }
     private async refreshOnce(): Promise<Recommendation[]> {
         const epoch = this.candidateEpoch;
+        this.refreshedAt = this.now();
+        this.refreshedDirection = this.direction();
         const mood = effectiveMood(this.controls, this.context());
         const controls = { ...this.controls, mood, activity: this.activity };
         const rotation = this.rotation++;
@@ -218,6 +265,12 @@ export class RecommendationSession {
                 controls,
                 rotation,
                 this.anchor && this.allowed(this.anchor) ? this.anchor : undefined,
+                {
+                    ...this.context(),
+                    sessionReactions: recentReactions(this.events, this.now()).filter((event) =>
+                        this.allowed(event.track),
+                    ),
+                },
             ),
         );
         if (epoch !== this.candidateEpoch) return [];

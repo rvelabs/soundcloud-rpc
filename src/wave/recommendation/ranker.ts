@@ -10,7 +10,7 @@ import {
     words,
 } from './preferences';
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
-import { artistIdentity, recentPreference, transitionAffinity } from './sessionSignals';
+import { artistIdentity, recentPreference, recentReactions, sessionWeight, transitionAffinity } from './sessionSignals';
 import { preferenceEvidence } from './evidence';
 import { catalogSimilarity } from './similarity';
 const toneHints = {
@@ -90,6 +90,7 @@ function scoreTrack(
     context: Context,
     compare: (a: Track, b: Track) => number,
     recentArtist: number,
+    intent: { rejected: Set<string>; positive: Array<{ track: Track; weight: number }> },
 ): Recommendation {
     const tags = tokensOf(track);
     const reasons: string[] = [];
@@ -111,12 +112,18 @@ function scoreTrack(
         controls.discovery === 'new' ? 0.35 : ['familiar', 'favorites'].includes(controls.discovery) ? 1.15 : 1;
     let score = affinity * affinityFactor + seedSimilarity * familiarFactor - negativeSimilarity * 2.2;
     if (track.source === 'related' && track.relatedTo?.length) {
-        const references = track.relatedTo.filter((id) => profile.positiveSeeds.some((seed) => seed.id === id));
-        score += 2.2 + Math.min(2, references.length) * 0.9;
-        reasons.push(
-            references.length ? 'похожие треки к понравившимся записям' : 'похожие треки к музыке текущей сессии',
-        );
-        if (references.length > 1) reasons.push('рекомендуется к нескольким вашим трекам');
+        const usable = track.relatedTo.filter((id) => !profile.dislikedIds.has(id) && !intent.rejected.has(id));
+        const references = usable.filter((id) => profile.positiveSeeds.some((seed) => seed.id === id));
+        if (usable.length) {
+            score += 2.2 + Math.min(2, references.length) * 0.9;
+            reasons.push(
+                references.length ? 'похожие треки к понравившимся записям' : 'похожие треки к музыке текущей сессии',
+            );
+            if (references.length > 1) reasons.push('рекомендуется к нескольким вашим трекам');
+        } else {
+            score -= 1.2;
+            reasons.push('ослаблена связь с недавно отвергнутой музыкой');
+        }
     }
     if (affinity > 0.5) reasons.push('совпадение жанра и тегов с историей');
     if (negativeSimilarity > 0.5) reasons.push('похож на пропущенное');
@@ -132,7 +139,9 @@ function scoreTrack(
             ? -Math.min(5, (-sessionAffinity - 0.8) * 4 + 0.4)
             : Math.max(-0.4, Math.min(1.5, sessionAffinity * (sessionAffinity < 0 ? 0.5 : 1)));
     if (sessionAffinity > 0.35) reasons.push('учтены реакции в этой сессии');
-    score += transitionAffinity(track, context.anchor);
+    const currentInterest = Math.max(0, ...intent.positive.map((event) => compare(track, event.track) * event.weight));
+    score += Math.min(controls.discovery === 'new' ? 0.4 : 0.7, currentInterest);
+    if (currentInterest > 0.3) reasons.push('продолжение удачного направления текущей сессии');
     const requested = normalize(controls.genre || '');
     if (requested) {
         score += 4;
@@ -217,7 +226,23 @@ export function recommend(
     suppliedProfile?: TasteProfile,
 ): Recommendation[] {
     const profile = suppliedProfile || buildProfile(events, context.now);
-    context = { ...context, preferenceSignals: context.preferenceSignals || recentPreference(events, context.now) };
+    const reactions = context.sessionReactions || recentReactions(events, context.now);
+    const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
+    const intent = {
+        rejected,
+        positive: reactions
+            .filter((event) => sessionWeight(event) > 0)
+            .map((event) => ({
+                track: event.track,
+                weight: sessionWeight(event) * 2 ** (-(context.now - event.at) / (15 * 60000)),
+            })),
+    };
+    context = {
+        ...context,
+        sessionReactions: reactions,
+        preferenceSignals: context.preferenceSignals || recentPreference(reactions, context.now),
+        anchor: context.anchor && !rejected.has(context.anchor.id) ? context.anchor : undefined,
+    };
     const favorites = new Set([...profile.likedIds, ...profile.positiveSeeds.map((track) => track.id)]);
     const favoriteMode = controls.discovery === 'favorites';
     const cooldown = favoriteMode ? Math.min(3, Math.max(0, favorites.size - 1)) : 100;
@@ -272,6 +297,8 @@ export function recommend(
         ...(context.similarityCorpus || pool),
         ...profile.positiveSeeds,
         ...profile.negativeSeeds,
+        ...reactions.map((event) => event.track),
+        ...(context.recentTracks || []),
     ]);
     const artistCache = new Map<string, string>();
     const artistOf = (track: Track): string => {
@@ -289,7 +316,15 @@ export function recommend(
     });
     const recordings = new Map<string, Recommendation>();
     for (const track of pool) {
-        const item = scoreTrack(track, profile, controls, context, compare, recentIndexes.get(artistOf(track)) ?? -1);
+        const item = scoreTrack(
+            track,
+            profile,
+            controls,
+            context,
+            compare,
+            recentIndexes.get(artistOf(track)) ?? -1,
+            intent,
+        );
         const key = recordingKey(track);
         const previous = recordings.get(key);
         if (!previous || item.score > previous.score) recordings.set(key, item);
@@ -334,10 +369,24 @@ export function recommend(
                 : group;
         let next = options[0],
             best = -Infinity;
+        const previous = chosen.length ? chosen[chosen.length - 1].track : context.anchor;
+        const recentTracks = [
+            ...chosen
+                .slice(-3)
+                .reverse()
+                .map((item) => item.track),
+            ...(context.recentTracks || []),
+        ].slice(0, 3);
+        const selectedTracks = chosen.slice(-4).map((item) => item.track);
         for (const entry of options) {
+            const repetition = recentTracks.length
+                ? recentTracks.reduce((sum, track) => sum + compare(entry.track, track), 0) / recentTracks.length
+                : 0;
             const adjusted =
                 entry.score -
-                Math.max(0, ...chosen.slice(-4).map((selected) => compare(entry.track, selected.track))) * 0.75;
+                Math.max(0, ...selectedTracks.map((track) => compare(entry.track, track))) * 0.75 -
+                repetition * 0.4 +
+                transitionAffinity(entry.track, previous);
             if (adjusted > best || (adjusted === best && entry.track.id.localeCompare(next.track.id) < 0)) {
                 next = entry;
                 best = adjusted;
