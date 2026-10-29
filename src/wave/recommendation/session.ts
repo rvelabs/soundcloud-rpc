@@ -94,6 +94,7 @@ export class RecommendationSession {
             .map((item) => item.track.artist);
     }
     clearCandidates(): void {
+        for (const item of [...this.selectionTrail]) if (!this.recentIds.includes(item.id)) this.release(item.id);
         this.invalidateRanking();
         this.candidateEpoch++;
         this.candidates.clear();
@@ -103,7 +104,7 @@ export class RecommendationSession {
     removeCandidates(ids: string[]): void {
         this.invalidateRanking();
         for (const id of ids) {
-            this.selectionTrail = this.selectionTrail.filter((item) => item.id !== id || this.recentIds.includes(id));
+            this.release(id);
             this.candidates.delete(id);
             this.reservedIds.delete(id);
         }
@@ -115,9 +116,12 @@ export class RecommendationSession {
         if (this.reservedIds.size > 1000) this.reservedIds.delete(this.reservedIds.values().next().value!);
     }
     release(id: string): void {
+        const withdrawn = !this.recentIds.includes(id) && this.acceptedIds.delete(id);
+        if (withdrawn) this.selectionPosition = Math.max(0, this.selectionPosition - 1);
         const previous = this.selectionTrail.length;
         this.selectionTrail = this.selectionTrail.filter((item) => item.id !== id || this.recentIds.includes(id));
-        if (this.reservedIds.delete(id) || previous !== this.selectionTrail.length) this.invalidateRanking();
+        if (this.reservedIds.delete(id) || previous !== this.selectionTrail.length || withdrawn)
+            this.invalidateRanking();
     }
     addCandidates(tracks: Track[]): void {
         if (tracks.length) this.invalidateRanking();

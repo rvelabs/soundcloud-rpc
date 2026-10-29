@@ -10,6 +10,31 @@ const now = 10 ** 12;
 const controls: Controls = { mood: 'any', tone: 'any', tempo: 'any', discovery: 'new' };
 const track = (id: string, artist = id, genre = 'ambient'): Track => ({ id, title: 'Track ' + id, artist, genre });
 describe('session adaptation and queue diversity', () => {
+    it('withdraws cancelled future slots from the balanced pattern without counting a retry twice', () => {
+        const session = new RecommendationSession({ related: async () => [] }, () => now);
+        session.setControls({ ...controls, discovery: 'balanced' });
+        const familiar = Array.from({ length: 8 }, (_, index) => track('known-' + index));
+        session.loadFeedback(
+            familiar.map((item) => ({ track: item, kind: 'complete', at: now - 8 * 86400000, listenedFraction: 1 })),
+        );
+        session.addCandidates([...familiar, ...Array.from({ length: 20 }, (_, index) => track('new-' + index))]);
+        for (let index = 0; index < 2; index++) {
+            const next = session.rank(1)[0].track;
+            expect(next.id).toMatch(/^new-/);
+            session.reserve(next.id);
+            session.accept(next.id);
+        }
+        const cancelled = session.rank(1)[0].track;
+        expect(cancelled.id).toMatch(/^known-/);
+        session.reserve(cancelled.id);
+        session.accept(cancelled.id);
+        session.release(cancelled.id);
+        const replacement = session.rank(1)[0].track;
+        expect(replacement.id).toMatch(/^known-/);
+        session.reserve(replacement.id);
+        session.accept(replacement.id);
+        expect(session.rank(1)[0].track.id).toMatch(/^new-/);
+    });
     it('preserves explicit dislike strength across the ensuing skip and makes unlike neutral', () => {
         const seed = track('seed');
         expect(

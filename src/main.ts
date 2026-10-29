@@ -1206,6 +1206,7 @@ async function init() {
                             error instanceof Error ? error.message.slice(0, 120) : 'unknown',
                         );
                         waveCurrent = previous;
+                        waveRecommender.release(candidate);
                         waveRecommender.reserve(candidate);
                     }
                 }
