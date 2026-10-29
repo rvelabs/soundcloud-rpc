@@ -56,12 +56,32 @@ app.whenReady().then(async () => {
         const priorityMs = Date.now() - began;
         assert.equal((await pending).constructor.name, 'NativeActionCanceledError');
         assert(priorityMs < 1000, 'canceled prefetch does not block an explicit playback request');
+        await window.webContents.executeJavaScript(
+            `document.querySelector('.playButton').onclick=()=>{document.querySelector('.playControls__play').classList.remove('playing');window.doublePlay=true};true;`,
+        );
+        await playInNativePlayer(window.webContents, 'https://soundcloud.com/a/priority');
+        assert.equal(
+            await window.webContents.executeJavaScript('window.doublePlay===true'),
+            false,
+            'already playing track is not toggled to pause',
+        );
+        await window.webContents.executeJavaScript(
+            `document.body.insertAdjacentHTML('beforeend','<div class="sound"><a class="soundTitle__title" href="https://soundcloud.com/a/virtual">Virtualized</a><button class="sc-button-more" id="virtualMore">More</button></div>');window.virtualQueued=false;document.querySelector('#virtualMore').onclick=()=>{document.querySelector('.dropdownMenu')?.remove();const menu=document.createElement('div');menu.className='dropdownMenu';menu.innerHTML='<button class="addToNextUp '+(virtualQueued?'sc-button-selected':'')+'">Add</button>';menu.firstChild.onclick=()=>{virtualQueued=!virtualQueued;menu.remove()};document.body.append(menu)};true;`,
+        );
+        await addToNativeNextUp(window.webContents, 'https://soundcloud.com/a/virtual');
+        assert.equal(
+            await window.webContents.executeJavaScript('virtualQueued'),
+            true,
+            'selected queue action confirms a virtualized entry without toggling it back',
+        );
         const report = {
             ownedQueueOnly: true,
             currentPreserved: true,
             userQueuePreserved: true,
             missingControlReported: true,
             priorityPlaybackMs: priorityMs,
+            alreadyPlayingPreserved: true,
+            virtualizedQueueConfirmed: true,
         };
         fs.writeFileSync(path.join(out, 'native-queue.json'), JSON.stringify(report, null, 2));
         console.log(JSON.stringify(report));

@@ -10,24 +10,28 @@ export function recentPreference(events: Feedback[], now: number): Map<string, n
         if (
             event.at <= now &&
             now - event.at < 45 * 60000 &&
-            ['skip', 'complete', 'like', 'dislike'].includes(event.kind)
-        )
+            ['skip', 'complete', 'like', 'unlike', 'dislike'].includes(event.kind)
+        ) {
+            if (latest.get(event.track.id)?.kind === 'dislike' && ['skip', 'complete'].includes(event.kind)) continue;
             latest.set(event.track.id, event);
+        }
     const signals = new Map<string, number>();
     for (const event of [...latest.values()].sort((a, b) => a.at - b.at).slice(-12)) {
         const fraction = event.listenedFraction ?? 0;
         const weight =
-            event.kind === 'dislike'
-                ? -1.5
-                : event.kind === 'like'
-                  ? 1
-                  : event.kind === 'complete'
-                    ? 0.5
-                    : fraction < 0.2
-                      ? -0.6
-                      : fraction < 0.5
-                        ? -0.2
-                        : 0;
+            event.kind === 'unlike'
+                ? 0
+                : event.kind === 'dislike'
+                  ? -1.5
+                  : event.kind === 'like'
+                    ? 1
+                    : event.kind === 'complete'
+                      ? 0.5
+                      : fraction < 0.2
+                        ? -0.6
+                        : fraction < 0.5
+                          ? -0.2
+                          : 0;
         const decay = 2 ** (-(now - event.at) / (20 * 60000));
         for (const token of tokensOf(event.track))
             signals.set(token, Math.max(-2, Math.min(2, (signals.get(token) || 0) + weight * decay)));

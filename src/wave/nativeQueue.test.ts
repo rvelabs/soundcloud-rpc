@@ -21,7 +21,9 @@ describe('native SoundCloud queue bridge', () => {
             )
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce('already');
-        view.executeJavaScript = execute;
+        view.executeJavaScript = vi.fn((code, ...args) =>
+            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+        );
         const queued = addToNativeNextUp(view, 'https://soundcloud.com/artist/one');
         const play = playInNativePlayer(view, 'https://soundcloud.com/artist/two', undefined, undefined, () => active);
         const rejected = expect(play).rejects.toBeInstanceOf(NativeActionCanceledError);
@@ -51,19 +53,17 @@ describe('native SoundCloud queue bridge', () => {
             .mockResolvedValueOnce('')
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce('menu')
-            .mockResolvedValueOnce({ x: 120, y: 80 })
+            .mockResolvedValueOnce({ selected: false })
+            .mockResolvedValueOnce(undefined)
             .mockResolvedValueOnce(['https://soundcloud.com/artist/my-track']);
-        view.executeJavaScript = execute;
+        view.executeJavaScript = vi.fn((code, ...args) =>
+            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+        );
         await addToNativeNextUp(view, 'https://soundcloud.com/artist/my-track');
         expect(execute.mock.calls[3][0]).toContain('button.addToNextUp');
         expect(view.insertText).not.toHaveBeenCalled();
-        expect(view.sendInputEvent).toHaveBeenCalledWith({
-            type: 'mouseDown',
-            x: 120,
-            y: 80,
-            button: 'left',
-            clickCount: 1,
-        });
+        expect(execute.mock.calls.some(([code]) => code.includes("button.addToNextUp')?.click()"))).toBe(true);
+        expect(view.sendInputEvent).not.toHaveBeenCalled();
     });
     it('plays through a visible SoundCloud card and verifies the native player', async () => {
         const view = new EventEmitter() as WebContents;
@@ -77,7 +77,9 @@ describe('native SoundCloud queue bridge', () => {
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce({ path: '/artist/my-track', playing: true });
-        view.executeJavaScript = execute;
+        view.executeJavaScript = vi.fn((code, ...args) =>
+            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+        );
         await playInNativePlayer(view, 'https://soundcloud.com/artist/my-track');
         expect(execute.mock.calls[2][0]).toContain('.soundTitle__playButton .playButton');
         expect(execute.mock.calls[3][0]).toContain('.playControls__play');
@@ -102,7 +104,9 @@ describe('native SoundCloud queue bridge', () => {
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce({ path: '/artist/next-track', playing: true });
-        view.executeJavaScript = execute;
+        view.executeJavaScript = vi.fn((code, ...args) =>
+            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+        );
         const queued = addToNativeNextUp(view, 'https://soundcloud.com/artist/queued-track');
         const played = playInNativePlayer(view, 'https://soundcloud.com/artist/next-track');
         await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));

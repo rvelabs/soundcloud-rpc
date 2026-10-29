@@ -186,6 +186,9 @@ function traceWave(event: string, current?: string, observed?: string, detail?: 
             'queue-candidate-missing',
             'queue-search-fallback',
             'media-ended-captured',
+            'media-error-captured',
+            'native-handoff-stalled',
+            'native-cleanup-failed',
         ].includes(event)
     )
         return;
@@ -754,7 +757,6 @@ async function init() {
     let nativeQueueAttempt = 0;
     let nativeAdding: WaveCandidate | null = null;
     let nativeQueueResetTask: Promise<void> | null = null;
-    let lastQueueInspection = 0;
     let waveShuffle = false;
     let waveLikeView: WebContentsView | null = null;
     let importView: WebContentsView | null = null;
@@ -1030,7 +1032,18 @@ async function init() {
                         );
                 const cached = available().slice(0, 4);
                 if (cached.length) {
-                    const checked = await Promise.all(cached.map(enrichPublicTrack));
+                    const checked: WaveCandidate[] = [];
+                    await Promise.all(
+                        cached.map(async (item) => {
+                            const candidate = await enrichPublicTrack(item);
+                            if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible)
+                                return;
+                            checked.push(candidate);
+                            waveRecommender.addCandidates([candidate]);
+                            if (waveControls.tempo === 'any')
+                                publish(waveRecommender.rankBuffered(checked).slice(0, target));
+                        }),
+                    );
                     if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible) return [];
                     waveRecommender.addCandidates(checked);
                     const ready = waveRecommender.rankBuffered(checked).slice(0, target);
@@ -1097,14 +1110,17 @@ async function init() {
             ],
         );
     };
-    const takeDiverseUpcoming = async (): Promise<WaveCandidate | undefined> => {
+    const takeDiverseUpcoming = async (includeFuture = true): Promise<WaveCandidate | undefined> => {
+        if (includeFuture && waveFuture.length)
+            return waveFuture.splice(
+                waveShuffle ? Math.floor(Math.random() * waveFuture.length) : waveFuture.length - 1,
+                1,
+            )[0];
         const epoch = waveQueueEpoch;
         const options: WaveCandidate[] = [];
         const collect = async () => {
             while (options.length < 3) {
-                const next =
-                    waveFuture.pop() ||
-                    (options.length && !wavePrepared.length ? undefined : await wavePrepared.take(waveShuffle));
+                const next = options.length && !wavePrepared.length ? undefined : await wavePrepared.take(waveShuffle);
                 if (!next) break;
                 if (next.url !== waveCurrent && !options.some((item) => item.url === next.url)) options.push(next);
             }
@@ -1119,9 +1135,12 @@ async function init() {
         let ranked = waveRecommender.rankBuffered(
             options,
             options.length,
-            [waveCurrentCandidate, ...waveHistory.slice(-2)].map((item) => item?.artist || '').filter(Boolean),
+            [...(!includeFuture ? waveFuture : []), waveCurrentCandidate, ...waveHistory.slice(-2)]
+                .map((item) => item?.artist || '')
+                .filter(Boolean),
         );
         if (!ranked.length) {
+            for (const item of options) waveRecommender.reserve(item);
             options.length = 0;
             void prepareUpcoming().catch((error) => console.debug('Wave preparation unavailable:', error));
             await collect();
@@ -1133,10 +1152,10 @@ async function init() {
             );
         }
         const chosen = ranked.shift();
-        for (let i = ranked.length - 1; i >= 0; i--) waveFuture.push(ranked[i]);
+        wavePrepared.putBack(ranked);
         return chosen;
     };
-    const chooseNext = async (reason: 'start' | 'user' | 'finish' | 'error' = 'start') => {
+    const chooseNext = async (reason: 'start' | 'user' | 'native-user' | 'finish' | 'error' = 'start') => {
         if (waveNextTask) {
             traceWave('next-coalesced', waveCurrent, undefined, reason);
             if (waveNextTaskGeneration === waveGeneration) return waveNextTask;
@@ -1244,23 +1263,59 @@ async function init() {
         active: () => waveVisible && !clientContents.isDestroyed(),
         nativeReady: () => nativeQueueAvailable && nativeQueued.length > 0,
         select: chooseNext,
-        advanceNative: async () => {
+        advanceNative: async (reason) => {
             const previous = waveCurrent;
             const generation = waveGeneration;
-            const clicked = await clientContents.executeJavaScript(
-                `(() => {
+            const expected = trackPath(nativeQueued[0]?.url || '');
+            const clicked =
+                !['user', 'error'].includes(reason) ||
+                (await clientContents.executeJavaScript(
+                    `(() => {
                 const button = document.querySelector('.skipControl__next');
                 if (!button || button.disabled) return false;
                 button.click(); return true;
             })()`,
-                true,
-            );
-            if (!clicked) throw new Error('SoundCloud не показал кнопку следующего трека.');
-            const deadline = Date.now() + 4000;
-            while (waveVisible && generation === waveGeneration && waveCurrent === previous && Date.now() < deadline)
+                    true,
+                ));
+            const deadline = Date.now() + (reason === 'finish' ? 1200 : 2000);
+            while (
+                clicked &&
+                waveVisible &&
+                generation === waveGeneration &&
+                !clientContents.isDestroyed() &&
+                Date.now() < deadline
+            ) {
+                const state = await clientContents.executeJavaScript(
+                    `({path:document.querySelector('.playbackSoundBadge__titleLink')?.pathname,playing:document.querySelector('.playControls__play')?.classList.contains('playing')===true})`,
+                );
+                if (
+                    state.path &&
+                    state.path !== trackPath(previous) &&
+                    (state.path === expected || waveCurrentCandidate?.url === 'https://soundcloud.com' + state.path)
+                )
+                    return true;
                 await new Promise((resolve) => setTimeout(resolve, 80));
-            if (waveVisible && generation === waveGeneration && waveCurrent === previous)
-                throw new Error('SoundCloud не подтвердил переход к следующему треку.');
+            }
+            if (!waveVisible || generation !== waveGeneration || clientContents.isDestroyed()) return true;
+            traceWave('native-handoff-stalled', previous, undefined, reason);
+            nativeQueueAttempt++;
+            const pending = [...nativeQueued];
+            nativeQueueAvailable = false;
+            sendInline('queue-ready', false);
+            await resetNativeQueue().catch((error) =>
+                traceWave(
+                    'native-cleanup-failed',
+                    previous,
+                    undefined,
+                    error instanceof Error ? error.message : 'unknown',
+                ),
+            );
+            nativeQueueAvailable = false;
+            if (waveVisible && generation === waveGeneration)
+                for (const item of pending.reverse())
+                    if (item.url !== waveCurrent && !waveFuture.some((future) => future.url === item.url))
+                        waveFuture.push(item);
+            return false;
         },
     });
     onWaveNextRequest = () => {
@@ -1280,8 +1335,10 @@ async function init() {
                 attempt === nativeQueueAttempt &&
                 (nativeQueueAvailable ? nativeQueued.length < 3 : waveFuture.length < 3)
             ) {
-                await prepareUpcoming();
-                const next = await takeDiverseUpcoming();
+                void prepareUpcoming().catch((error) =>
+                    console.debug('Wave background preparation unavailable:', error),
+                );
+                const next = await takeDiverseUpcoming(nativeQueueAvailable);
                 if (!next || generation !== waveGeneration || attempt !== nativeQueueAttempt || !waveVisible) break;
                 if (next.url === waveCurrent || nativeQueued.some((item) => item.url === next.url)) continue;
                 if (nativeQueueAvailable) {
@@ -1351,7 +1408,10 @@ async function init() {
                 if (nativeQueueAvailable) {
                     nativeQueued.push(next);
                     waveRecommender.reserve(next, true);
-                } else waveFuture.push(next);
+                } else {
+                    waveFuture.unshift(next);
+                    waveRecommender.reserve(next, true);
+                }
                 sendInline('queue-ready', nativeQueueAvailable && nativeQueued.length > 0);
                 waveRecommender.reserve(next);
                 sendInline('state', 'playing', 'Следующий трек готов');
@@ -1526,25 +1586,6 @@ async function init() {
                 waveReachedEnd = duration > 0 && elapsed >= duration - 1;
                 return;
             }
-            if (Date.now() - lastQueueInspection > 7000 && !nativeQueueTask) {
-                lastQueueInspection = Date.now();
-                void listNativeNextUp(clientContents)
-                    .then((urls) => {
-                        if (!waveVisible) return;
-                        const paths = new Set(urls.map(trackPath));
-                        for (let i = nativeQueued.length - 1; i >= 0; i--)
-                            if (!paths.has(trackPath(nativeQueued[i].url))) nativeQueued.splice(i, 1);
-                        if (!nativeQueued.length)
-                            void fillNativeQueue().catch((error) =>
-                                sendInline(
-                                    'state',
-                                    'error',
-                                    error instanceof Error ? error.message : 'Не удалось пополнить очередь SoundCloud.',
-                                ),
-                            );
-                    })
-                    .catch((error) => console.debug('Wave queue inspection unavailable:', error));
-            }
             return;
         }
         if ((!nativeQueueAvailable || !nativeQueued.length) && waveCurrentCandidate) {
@@ -1704,6 +1745,9 @@ async function init() {
         upcoming: waveFuture.map((item) => item.url),
         nativeQueued: nativeQueued.map((item) => item.url),
         choosing: Boolean(waveNextTask),
+        transitionPending: playback.pending,
+        nativeQueueAvailable,
+        rendererQueueReady: endCaptureQueueReady,
         filling: Boolean(nativeQueueTask),
     });
     windowIpc.handle('wave-inline:copy-diagnostics', (event) => {
@@ -1820,6 +1864,13 @@ async function init() {
             throw new Error('Трек уже сменился.');
         waveRecommender.record(waveCurrentCandidate, 'dislike');
         traceWave('feedback-dislike', waveCurrent);
+        waveQueueEpoch++;
+        waveGeneration++;
+        playback.invalidate();
+        for (const candidate of waveFuture) waveRecommender.release(candidate);
+        waveFuture.length = 0;
+        wavePrepared.clear();
+        await resetNativeQueue();
         await playback.request('user');
     });
     const scanPlaylist = async (load: (signal: AbortSignal) => Promise<SourcePlaylist>) => {
@@ -2123,13 +2174,17 @@ async function init() {
             void fillNativeQueue().catch((error) => console.debug('Wave preparation unavailable:', error));
             return;
         }
-        if (command === 'next') {
-            void playback.request('user').catch((error) => console.debug('Wave next unavailable:', error));
+        if (command === 'next' || command === 'native-next') {
+            if (command === 'native-next' && typeof value === 'string' && value !== trackPath(waveCurrent)) return;
+            void playback
+                .request(command === 'next' ? 'user' : 'native-user')
+                .catch((error) => console.debug('Wave next unavailable:', error));
             return;
         }
-        if (command === 'finish') {
-            traceWave('media-ended-captured', waveCurrent);
-            void playback.request('finish').catch((error) => console.debug('Wave finish unavailable:', error));
+        if (command === 'finish' || command === 'error') {
+            if (typeof value === 'string' && value && value !== trackPath(waveCurrent)) return;
+            traceWave(command === 'finish' ? 'media-ended-captured' : 'media-error-captured', waveCurrent);
+            void playback.request(command).catch((error) => console.debug('Wave finish unavailable:', error));
             return;
         }
         if (command === 'shuffle' && typeof value === 'boolean') {

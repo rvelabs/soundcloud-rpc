@@ -187,53 +187,34 @@ async function queueOnCurrentPage(contents: WebContents, target: string, isActiv
     )) as string;
     if (state === 'already') return true;
     if (state === 'missing') return false;
-    let buttonPosition: {
-        x: number;
-        y: number;
+    let buttonState: {
         selected: boolean;
     } | null = null;
     for (let i = 0; i < 20; i++) {
         if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
-        buttonPosition = (await contents.executeJavaScript(
+        buttonState = (await contents.executeJavaScript(
             `(() => {
-            const b = document.querySelector('.dropdownMenu button.addToNextUp[title="Add to Next up"],.dropdownMenu button.addToNextUp[aria-label="Add to Next up"]');
+            const b = document.querySelector('.dropdownMenu button.addToNextUp');
             if (!b) return null;
-            const r = b.getBoundingClientRect();
-            return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
-                selected: b.classList.contains('sc-button-selected') };
+            return { selected: b.classList.contains('sc-button-selected') };
         })()`,
             true,
         )) as {
-            x: number;
-            y: number;
             selected: boolean;
         } | null;
-        if (buttonPosition) break;
+        if (buttonState) break;
         await wait(100);
     }
-    if (!buttonPosition) throw new Error('SoundCloud не показал кнопку Add to Next Up.');
+    if (!buttonState) throw new Error('SoundCloud не показал кнопку Add to Next Up.');
     if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
-    if (buttonPosition.selected) throw new Error('Трек уже находится в очереди SoundCloud.');
-    contents.sendInputEvent({
-        type: 'mouseDown',
-        x: buttonPosition.x,
-        y: buttonPosition.y,
-        button: 'left',
-        clickCount: 1,
-    });
-    contents.sendInputEvent({
-        type: 'mouseUp',
-        x: buttonPosition.x,
-        y: buttonPosition.y,
-        button: 'left',
-        clickCount: 1,
-    });
+    if (buttonState.selected) return true;
+    await contents.executeJavaScript("document.querySelector('.dropdownMenu button.addToNextUp')?.click()", true);
     for (let i = 0; i < 15; i++) {
         if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
         if ((await listNativeNextUp(contents)).some((url) => trackPath(url) === target)) return true;
         await wait(100);
     }
-    await contents
+    const selected = await contents
         .executeJavaScript(
             `(() => {
         const target = ${JSON.stringify(target)};
@@ -242,11 +223,14 @@ async function queueOnCurrentPage(contents: WebContents, target: string, isActiv
         const more = anchor?.closest('.sound')?.querySelector('button.sc-button-more');
         let button = document.querySelector('.dropdownMenu button.addToNextUp');
         if (!button && more) { more.click(); button = document.querySelector('.dropdownMenu button.addToNextUp'); }
-        if (button?.classList.contains('sc-button-selected')) button.click();
+        const selected = Boolean(button?.classList.contains('sc-button-selected'));
+        if (selected) document.body.click();
+        return selected;
     })()`,
             true,
         )
-        .catch(() => {});
+        .catch(() => false);
+    if (selected) return true;
     const shape = await contents.executeJavaScript(
         `(() => ({
         queueContainers: document.querySelectorAll('.queue__itemsContainer').length,
@@ -374,6 +358,12 @@ export async function playInNativePlayer(
     sourceQuery?: string,
     isActive = () => true,
 ): Promise<void> {
+    if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
+    const current = await contents.executeJavaScript(
+        `({ path: document.querySelector('.playbackSoundBadge__titleLink')?.pathname, playing: document.querySelector('.playControls__play')?.classList.contains('playing') === true })`,
+        true,
+    );
+    if (current?.path === trackPath(url) && current.playing) return;
     await withNativeCard(
         contents,
         url,
@@ -383,6 +373,10 @@ export async function playInNativePlayer(
         async (target) => {
             const clicked = (await contents.executeJavaScript(
                 `(() => {
+            const current = document.querySelector('.playbackSoundBadge__titleLink')?.pathname;
+            const play = document.querySelector('.playControls__play');
+            if (current === ${JSON.stringify(target)} && play?.classList.contains('playing')) return true;
+            if (current === ${JSON.stringify(target)} && play) { play.click(); return true; }
             const a = [...document.querySelectorAll('.sound a.soundTitle__title[href]')]
                 .find(a => new URL(a.href).pathname.replace(/\\/$/, '') === ${JSON.stringify(target)});
             const button = a?.closest('.sound')?.querySelector('.soundTitle__playButton .playButton');

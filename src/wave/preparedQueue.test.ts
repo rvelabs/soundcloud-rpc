@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { PreparedQueue } from './preparedQueue';
 describe('prepared wave queue', () => {
+    it('returns unchosen alternatives for the next selection without duplicating or cycling the committed buffer', async () => {
+        const queue = new PreparedQueue<{ url: string }>();
+        await queue.prepare(async () => [{ url: 'first' }, { url: 'second' }, { url: 'third' }]);
+        const first = await queue.take(),
+            second = await queue.take();
+        queue.putBack([second!, second!]);
+        expect((await queue.take())?.url).toBe('second');
+        expect((await queue.take())?.url).toBe('third');
+        expect(await queue.take()).toBeUndefined();
+        expect(first?.url).toBe('first');
+    });
     it('publishes a ready track before a slower refill completes and caps repeated batches', async () => {
         const queue = new PreparedQueue<{ url: string }>();
         let publish!: (items: { url: string }[]) => void;

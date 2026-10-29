@@ -68,7 +68,8 @@ jobs:
               timeout-minutes: 6
               run:
                   node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs
-                  check-source-pagination.cjs
+                  check-source-pagination.cjs check-wave-handoff.cjs check-wave-native-healthy.cjs
+                  check-wave-user-next.cjs
             - if: runner.os == 'Linux'
               timeout-minutes: 6
               run: |
@@ -78,7 +79,7 @@ jobs:
                     pulseaudio --start --exit-idle-time=-1
                     pactl load-module module-null-sink sink_name=soundcloud_ci
                     pactl set-default-sink soundcloud_ci
-                    node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs check-source-pagination.cjs
+                    node scripts/check-runtime.cjs check-client-close-race.cjs check-minimized-start.cjs check-source-pagination.cjs check-wave-handoff.cjs check-wave-native-healthy.cjs check-wave-user-next.cjs
                   '
             - uses: actions/upload-artifact@v4
               if: always()

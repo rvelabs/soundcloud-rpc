@@ -11,6 +11,10 @@ const checks = scripts.length
     : [
           'check-native-queue.cjs',
           'check-wave-playback.cjs',
+          'check-wave-handoff.cjs',
+          'check-wave-native-healthy.cjs',
+          'check-wave-user-next.cjs',
+          'check-wave-mix.cjs',
           'check-audio-analysis.cjs',
           'check-client-close-race.cjs',
           'check-minimized-start.cjs',

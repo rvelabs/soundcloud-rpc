@@ -12,6 +12,7 @@ import {
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
 import { artistIdentity, recentPreference, transitionAffinity } from './sessionSignals';
 import { preferenceEvidence } from './evidence';
+import { catalogSimilarity } from './similarity';
 const toneHints = {
     bass: new Set(['bass', '808', 'sub', 'phonk', 'trap', 'dubstep', 'drill']),
     bright: new Set(['bright', 'synth', 'pop', 'trance', 'hyperpop', 'vocal', 'sparkle']),
@@ -267,22 +268,11 @@ export function recommend(
         controls.tempo === 'any' || matches.length
             ? matches
             : genrePool.filter((track) => measuredBpm(track.features) === undefined);
-    const tokenCache = new Map<Track, Set<string>>();
-    const tokenSet = (track: Track) => {
-        let value = tokenCache.get(track);
-        if (!value) {
-            value = new Set(tokensOf(track));
-            tokenCache.set(track, value);
-        }
-        return value;
-    };
-    const compare = (a: Track, b: Track) => {
-        const left = tokenSet(a),
-            right = tokenSet(b);
-        return left.size && right.size
-            ? [...left].filter((token) => right.has(token)).length / Math.sqrt(left.size * right.size)
-            : 0;
-    };
+    const compare = catalogSimilarity([
+        ...(context.similarityCorpus || pool),
+        ...profile.positiveSeeds,
+        ...profile.negativeSeeds,
+    ]);
     const artistCache = new Map<string, string>();
     const artistOf = (track: Track): string => {
         let value = artistCache.get(track.artist);

@@ -178,6 +178,7 @@ export class RecommendationSession {
     }
     rankBuffered(tracks: Track[], limit = 10, recentArtists: string[] = []): Recommendation[] {
         const context = this.context(false);
+        context.similarityCorpus = [...this.candidates.values()];
         context.recentArtists = [...recentArtists, ...(context.recentArtists || [])];
         return recommend(
             tracks.filter((track) => this.allowed(track)),

@@ -4,12 +4,15 @@ let waveTransportActive = false;
 let waveNativeQueueReady = false;
 let lastWavePointerDown = 0;
 let lastWaveEndedAt = 0;
-const sendWaveFinish = () => {
-    if (!waveTransportActive || waveNativeQueueReady) return;
+let lastWaveEndedKey = '';
+const sendWaveFinish = (path?: string, reason = 'finish') => {
+    if (!waveTransportActive) return;
     const now = Date.now();
-    if (now - lastWaveEndedAt < 1000) return;
+    const key = reason + ':' + (path || '');
+    if (key === lastWaveEndedKey && now - lastWaveEndedAt < 1000) return;
     lastWaveEndedAt = now;
-    ipcRenderer.send('wave-inline:control', 'finish');
+    lastWaveEndedKey = key;
+    ipcRenderer.send('wave-inline:control', reason, path);
 };
 ipcRenderer.on('wave-inline:active', (_event, active: boolean) => {
     waveTransportActive = active;
@@ -29,8 +32,17 @@ for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']
     window.addEventListener(
         type,
         (event) => {
-            if (!waveTransportActive || waveNativeQueueReady) return;
+            if (!waveTransportActive) return;
             if (!(event.target instanceof Element) || !event.target.closest('.skipControl__next')) return;
+            if (waveNativeQueueReady && !(event.target.closest('.skipControl__next') as HTMLButtonElement).disabled) {
+                if (type === 'click')
+                    ipcRenderer.send(
+                        'wave-inline:control',
+                        'native-next',
+                        document.querySelector<HTMLAnchorElement>('.playbackSoundBadge__titleLink')?.pathname,
+                    );
+                return;
+            }
             event.preventDefault();
             event.stopImmediatePropagation();
             if (type === 'pointerdown') {
@@ -44,15 +56,22 @@ for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']
     );
 }
 window.addEventListener(
-    'ended',
-    (event) => {
-        if (!waveTransportActive || waveNativeQueueReady || !(event.target instanceof HTMLMediaElement)) return;
-        event.stopImmediatePropagation();
-        sendWaveFinish();
-    },
+    '__soundcloudWaveMediaEnded',
+    (event) =>
+        sendWaveFinish(
+            typeof (event as CustomEvent).detail === 'string' ? (event as CustomEvent<string>).detail : undefined,
+        ),
     true,
 );
-window.addEventListener('__soundcloudWaveMediaEnded', sendWaveFinish, true);
+window.addEventListener(
+    '__soundcloudWaveMediaError',
+    (event) =>
+        sendWaveFinish(
+            typeof (event as CustomEvent).detail === 'string' ? (event as CustomEvent<string>).detail : undefined,
+            'error',
+        ),
+    true,
+);
 window.addEventListener(
     '__soundcloudWavePrepareNext',
     () => {

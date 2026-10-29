@@ -63,4 +63,5 @@ export interface Context {
     sequenceOffset?: number;
     anchor?: Track;
     preferenceSignals?: Map<string, number>;
+    similarityCorpus?: Track[];
 }

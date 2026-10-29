@@ -10,6 +10,27 @@ const now = 10 ** 12;
 const controls: Controls = { mood: 'any', tone: 'any', tempo: 'any', discovery: 'new' };
 const track = (id: string, artist = id, genre = 'ambient'): Track => ({ id, title: 'Track ' + id, artist, genre });
 describe('session adaptation and queue diversity', () => {
+    it('preserves explicit dislike strength across the ensuing skip and makes unlike neutral', () => {
+        const seed = track('seed');
+        expect(
+            recentPreference(
+                [
+                    { track: seed, kind: 'dislike', at: now - 1000 },
+                    { track: seed, kind: 'skip', listenedFraction: 0.01, at: now },
+                ],
+                now,
+            ).get('ambient'),
+        ).toBeLessThan(-1.4);
+        expect(
+            recentPreference(
+                [
+                    { track: seed, kind: 'like', at: now - 1000 },
+                    { track: seed, kind: 'unlike', at: now },
+                ],
+                now,
+            ).get('ambient'),
+        ).toBe(0);
+    });
     it('keeps a new reaction to an older track among the latest session signals', () => {
         const old = track('old', 'Old artist', 'oldstyle');
         const events: Feedback[] = [{ track: old, kind: 'like', at: now - 30 * 60000 }];

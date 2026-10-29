@@ -19,6 +19,17 @@ export class PreparedQueue<
     get length(): number {
         return this.items.length;
     }
+    putBack(items: T[]): void {
+        const seen = new Set<string>();
+        this.items = [...items, ...this.items]
+            .filter((item) => {
+                if (!item.url || seen.has(item.url)) return false;
+                seen.add(item.url);
+                return true;
+            })
+            .slice(0, 3);
+        this.wake();
+    }
     prepare(load: (publish: (items: T[]) => void) => Promise<T[]>, excluded: string[] = []): Promise<void> {
         if (this.pending || this.items.length >= 3) return this.pending || Promise.resolve();
         const generation = this.generation;
