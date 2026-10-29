@@ -142,7 +142,7 @@ app.whenReady().then(async () => {
             '({played,endedAt,nativeAutoplay,maxQueued,time:audio.currentTime,paused:audio.paused})',
         );
         assert(state.played.length >= 7, JSON.stringify(state));
-        assert(state.maxQueued <= 1, 'only the next track is committed while alternatives remain adaptable: ' + state.maxQueued);
+        assert(state.maxQueued <= 2, 'native lookahead is bounded while further alternatives remain adaptable: ' + state.maxQueued);
         assert(
             state.played.every((item) => ids.includes(item.id)),
             'no unrelated native-autoplay track starts',

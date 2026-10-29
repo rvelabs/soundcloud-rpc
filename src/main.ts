@@ -1346,7 +1346,7 @@ async function init() {
                 waveVisible &&
                 generation === waveGeneration &&
                 attempt === nativeQueueAttempt &&
-                (nativeQueueAvailable ? nativeQueued.length < 1 : waveFuture.length < 1)
+                (nativeQueueAvailable ? nativeQueued.length < 2 : waveFuture.length < 1)
             ) {
                 void prepareUpcoming().catch((error) =>
                     console.debug('Wave background preparation unavailable:', error),
