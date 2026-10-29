@@ -1312,10 +1312,13 @@ async function init() {
                 ),
             );
             nativeQueueAvailable = false;
-            if (waveVisible && generation === waveGeneration)
-                for (const item of pending.reverse())
-                    if (item.url !== waveCurrent && !waveFuture.some((future) => future.url === item.url))
-                        waveFuture.push(item);
+            if (waveVisible && generation === waveGeneration) {
+                const retained = pending.filter(
+                    (item) => item.url !== waveCurrent && !waveFuture.some((future) => future.url === item.url),
+                );
+                for (const item of retained) waveRecommender.reserve(item, true);
+                waveFuture.push(...retained.reverse());
+            }
             return false;
         },
     });
