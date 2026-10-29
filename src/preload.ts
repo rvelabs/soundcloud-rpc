@@ -65,11 +65,10 @@ window.addEventListener(
 );
 window.addEventListener(
     '__soundcloudWaveMediaError',
-    (event) =>
-        sendWaveFinish(
-            typeof (event as CustomEvent).detail === 'string' ? (event as CustomEvent<string>).detail : undefined,
-            'error',
-        ),
+    (event) => {
+        const path = (event as CustomEvent).detail;
+        if (typeof path === 'string' && path) sendWaveFinish(path, 'error');
+    },
     true,
 );
 window.addEventListener(
