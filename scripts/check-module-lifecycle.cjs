@@ -9,6 +9,16 @@ fs.mkdirSync(profile, { recursive: true });
 app.setPath('userData', profile);
 app.on('window-all-closed', () => {});
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const waitFor = async (read, matches, label) => {
+    const deadline = Date.now() + 2000;
+    let value;
+    do {
+        value = await read();
+        if (matches(value)) return value;
+        await wait(20);
+    } while (Date.now() < deadline);
+    assert.fail(label + ': ' + JSON.stringify(value));
+};
 const passed = [],
     errors = [];
 const memory = () => {
@@ -47,15 +57,22 @@ app.whenReady().then(async () => {
         const monitor = load('services/audioMonitorService.js').audioMonitorScript;
         await wc.executeJavaScript(monitor);
         await wc.executeJavaScript(monitor);
-        await wait(160);
+        await waitFor(
+            () => wc.executeJavaScript('updates.at(-1)?.data.url'),
+            (value) => value === 'https://soundcloud.com/artist/track-0',
+            'initial player update',
+        );
         assert.equal(await wc.executeJavaScript('liveObservers'), 6);
         assert.equal(await wc.executeJavaScript('updates.at(-1).data.duration'), '3:00');
         for (let i = 1; i <= 30; i++) {
             const playing = i % 3 !== 0,
                 liked = i % 4 === 0;
             await wc.executeJavaScript(`paint(${i},${playing},${liked})`);
-            await wait(165);
-            const result = await wc.executeJavaScript('({last:updates.at(-1).data,count:liveObservers})');
+            const result = await waitFor(
+                () => wc.executeJavaScript('({last:updates.at(-1)?.data,count:liveObservers})'),
+                (value) => value.last?.url === 'https://soundcloud.com/artist/track-' + i,
+                'player update ' + i,
+            );
             assert.equal(result.last.title, 'Track ' + i);
             assert.equal(result.last.url, 'https://soundcloud.com/artist/track-' + i);
             assert.equal(result.last.isPlaying, playing);
@@ -93,7 +110,11 @@ app.whenReady().then(async () => {
         await wc.executeJavaScript(
             `const event=new Event('beforeunload',{cancelable:true});event.preventDefault();window.dispatchEvent(event);paint(31)`,
         );
-        await wait(165);
+        await waitFor(
+            () => wc.executeJavaScript('updates.at(-1)?.data.title'),
+            (value) => value === 'Track 31',
+            'player update after canceled navigation',
+        );
         assert.equal(await wc.executeJavaScript('updates.at(-1).data.title'), 'Track 31');
         assert.equal(await wc.executeJavaScript('liveObservers'), 6);
         passed.push('canceled navigation preserves the native-player monitor');

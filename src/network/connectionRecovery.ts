@@ -41,7 +41,7 @@ export class ConnectionRecovery {
                 this.pageFailures = [];
                 this.mainStatus = undefined;
                 this.mainError = undefined;
-                this.arm();
+                if (!this.routed) this.arm();
             }
         });
         contents.on('did-fail-load', (_event, code, _description, url, main) => {
@@ -193,14 +193,12 @@ export class ConnectionRecovery {
         this.pageFailures.push({ host, type, workerAllowed, count: 1, ...failure });
         if (this.pageFailures.length > 20) this.pageFailures.shift();
     }
-    private async pageState(): Promise<{ readyState: string; appShell: boolean; errorPage: boolean } | null> {
+    private async readPage<T>(script: string): Promise<T | null> {
         if (this.contents.isDestroyed()) return null;
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
             return await Promise.race([
-                this.contents.executeJavaScript(
-                    `(()=>({readyState:document.readyState,appShell:Boolean(document.querySelector('.header,.playControls,.l-front,.listenEngagement')),errorPage:/Sorry!?\\s*Something went wrong/i.test(document.body?.innerText||'')}))()`,
-                ),
+                this.contents.executeJavaScript(script) as Promise<T>,
                 new Promise<null>((resolve) => {
                     timer = setTimeout(() => resolve(null), 750);
                 }),
@@ -210,6 +208,11 @@ export class ConnectionRecovery {
         } finally {
             clearTimeout(timer);
         }
+    }
+    private pageState(): Promise<{ readyState: string; appShell: boolean; errorPage: boolean } | null> {
+        return this.readPage(
+            `(()=>({readyState:document.readyState,appShell:Boolean(document.querySelector('.header,.playControls,.l-front,.listenEngagement')),errorPage:/Sorry!?\\s*Something went wrong/i.test(document.body?.innerText||'')}))()`,
+        );
     }
     async getPageDiagnostics() {
         const state = await this.pageState();
@@ -329,6 +332,8 @@ export class ConnectionRecovery {
         const generation = this.generation;
         this.policy = new RecoveryPolicy({
             direct: async () =>
+                mode !== 'always' &&
+                !this.routed &&
                 !this.bootstrapFailed &&
                 !(await this.pageState())?.errorPage &&
                 this.probe(session.fromPartition('wave-connection-direct')),
@@ -340,12 +345,10 @@ export class ConnectionRecovery {
                 }
             },
             playing: async () =>
-                this.routed ||
                 this.contents.isDestroyed() ||
                 generation !== this.generation ||
-                (await this.contents
-                    .executeJavaScript('Boolean(document.querySelector(".playControls__play.playing"))')
-                    .catch(() => false)),
+                ((await this.readPage<boolean>('Boolean(document.querySelector(".playControls__play.playing"))')) ??
+                    true),
             activate: async () => {
                 if (generation !== this.generation || this.contents.isDestroyed()) return;
                 await this.contents.session.setProxy({ mode: 'pac_script', pacScript: relayPac(this.port) });
@@ -368,6 +371,7 @@ export class ConnectionRecovery {
             } else {
                 this.status = this.getTestMessage();
                 this.notify(this.status);
+                this.arm(120000);
             }
         } else {
             this.status = 'Автоматически: сначала обычное подключение';
@@ -385,29 +389,33 @@ export class ConnectionRecovery {
             })
             .catch(() => {});
     }
-    private arm(): void {
+    private arm(delay = 18000): void {
         clearTimeout(this.timer);
-        if (!this.policy || this.routed || this.store.get('cloudflareMode') !== 'auto') return;
+        if (!this.policy || this.store.get('proxyEnabled') || this.store.get('cloudflareMode', 'off') === 'off') return;
         this.timer = setTimeout(() => {
             void this.recover();
-        }, 18000);
+        }, delay);
+        this.timer.unref();
     }
     private async recover(): Promise<void> {
-        if (!this.policy || this.routed || this.store.get('cloudflareMode') !== 'auto') return;
+        if (!this.policy || this.store.get('proxyEnabled') || this.store.get('cloudflareMode', 'off') === 'off') return;
+        clearTimeout(this.timer);
         const generation = this.generation;
         try {
             const result = await this.policy.recover();
             if (this.contents.isDestroyed() || generation !== this.generation) return;
             if (result === 'unavailable') {
-                this.status = this.getTestMessage() + ' Автоперезагрузки остановлены.';
+                this.status = this.getTestMessage();
                 this.notify(this.status);
             }
             if (result === 'direct') this.status = 'Обычное подключение работает';
-            if (result === 'deferred') this.arm();
+            if (['deferred', 'unavailable', 'cooldown'].includes(result))
+                this.arm(Math.max(18000, this.policy.retryDelay()));
         } catch {
             if (this.contents.isDestroyed() || generation !== this.generation) return;
             this.status = 'Не удалось восстановить подключение';
             this.notify(this.status);
+            this.arm(120000);
         }
     }
     testRelay(): Promise<boolean> {

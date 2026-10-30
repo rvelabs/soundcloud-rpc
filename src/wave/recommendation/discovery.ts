@@ -31,7 +31,6 @@ export function discoverySeeds(
     )) {
         if (
             rejected.has(track.id) ||
-            sessionAffinity(track) < -0.8 ||
             profile.dislikedIds.has(track.id) ||
             profile.negativeSeeds.some((seed) => seed.id === track.id) ||
             moodEvidence(track, controls.mood).conflict
@@ -39,7 +38,9 @@ export function discoverySeeds(
             continue;
         unique.set(track.id, { ...unique.get(track.id), ...track });
     }
-    const sorted = [...unique.values()]
+    const preferred = [...unique.values()].filter((track) => sessionAffinity(track) >= -0.8);
+    const sources = preferred.length ? preferred : [...unique.values()];
+    const sorted = sources
         .map((track, order) => ({
             track,
             score:
@@ -60,14 +61,15 @@ export function discoverySeeds(
     if (!distinct.length) return [];
     const start = (Math.max(0, rotation) * 2) % distinct.length;
     const rotated = [...distinct.slice(start), ...distinct.slice(0, start)];
-    const current = anchor && unique.get(anchor.id);
+    const eligible = new Map(sources.map((track) => [track.id, track]));
+    const current = anchor && eligible.get(anchor.id);
     const selected: Track[] = current ? [current] : [];
     const add = (track: Track) => {
         if (!selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)))
             selected.push(track);
     };
     const recent = recentPositive
-        .map((event) => unique.get(event.track.id))
+        .map((event) => eligible.get(event.track.id))
         .find(
             (track) => track && !selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)),
         );

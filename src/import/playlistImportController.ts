@@ -10,6 +10,8 @@ import type { SourcePlaylist } from './source';
 import { PlaylistSourceNetwork } from './sourceNetwork';
 import { PublicSoundCloudSearch } from './publicSearch';
 import { matchIdentity } from './matchIdentity';
+import { WorkScheduler } from '../utils/workScheduler';
+import { IdleResource } from '../utils/idleResource';
 import {
     WebContentsView,
     session,
@@ -26,6 +28,7 @@ import type { DataStore } from '../storage/asyncDataStore';
 import type { ConnectionRecovery } from '../network/connectionRecovery';
 import { createAvailabilityChecker, cacheTrackAvailability } from './availability';
 export function createPlaylistImportController(options: {
+    scheduler?: WorkScheduler;
     window: BrowserWindow;
     contents: WebContents;
     libraryStore: DataStore;
@@ -69,6 +72,8 @@ export function createPlaylistImportController(options: {
     let importCommitController: AbortController | null = null;
     let importFileDialogOpen = false;
     const importSearchViews = new Set<WebContentsView>();
+    const scheduler = options.scheduler || new WorkScheduler();
+    const searchPages = new Map<number, IdleResource<WebContentsView>>();
     const closeImportView = (view: WebContentsView) => {
         const contents = view.webContents;
         if (contents && !contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
@@ -103,6 +108,45 @@ export function createPlaylistImportController(options: {
         if (!importView?.webContents || importView.webContents.isDestroyed()) importView = createImportView();
         return importView.webContents;
     };
+    const searchPage = (slot: number) => {
+        let resource = searchPages.get(slot);
+        if (!resource) {
+            resource = new IdleResource(
+                () => {
+                    const view = createImportView(true);
+                    importSearchViews.add(view);
+                    return view;
+                },
+                closeImportView,
+                () => (freemem() < 2 * 1024 ** 3 ? 0 : 120000),
+                async (view) => {
+                    const contents = view.webContents;
+                    if (contents.isDestroyed()) return;
+                    let timer: ReturnType<typeof setTimeout> | undefined;
+                    try {
+                        await Promise.race([
+                            contents.loadURL('about:blank').catch(() => {}),
+                            new Promise<void>((resolve) => {
+                                timer = setTimeout(() => {
+                                    if (!contents.isDestroyed()) contents.stop();
+                                    resolve();
+                                }, 1000);
+                            }),
+                        ]);
+                    } finally {
+                        clearTimeout(timer);
+                    }
+                },
+                1500,
+            );
+            searchPages.set(slot, resource);
+        }
+        return resource;
+    };
+    const releaseSearchPages = () => {
+        for (const resource of searchPages.values()) resource.dispose();
+        searchPages.clear();
+    };
     const importProgress = (
         phase: string,
         completed: number,
@@ -120,7 +164,6 @@ export function createPlaylistImportController(options: {
         if (importTask) throw new Error('Предыдущий импорт ещё выполняется.');
         const controller = new AbortController();
         importScanController = controller;
-        const slots = new Map<number, WebContentsView>();
         const task = (async () => {
             importProgress('source', 0, 0, 'Читаем плейлист…');
             await sourceSession.setProxy({ mode: 'system' });
@@ -129,7 +172,12 @@ export function createPlaylistImportController(options: {
             controller.signal.throwIfAborted();
             const concurrency = automaticImportConcurrency(availableParallelism(), freemem(), source.tracks.length);
             const importRoute = availabilityRoute();
-            const availability = createAvailabilityChecker(clientContents.session, controller.signal, importRoute);
+            const availability = createAvailabilityChecker(
+                clientContents.session,
+                controller.signal,
+                importRoute,
+                (task) => scheduler.run('network', 'import', task, controller.signal),
+            );
             importProgress('matching', 0, source.tracks.length, 'Ищем совпадения…', {
                 title: source.title,
                 tracks: source.tracks,
@@ -144,45 +192,57 @@ export function createPlaylistImportController(options: {
             const search = new PublicSoundCloudSearch(
                 clientContents.session.fetch.bind(clientContents.session) as typeof fetch,
                 (track) =>
-                    importDomPool.run(async (slot) => {
-                        let view = slots.get(slot);
-                        if (!view || view.webContents.isDestroyed()) {
-                            view = createImportView(true);
-                            slots.set(slot, view);
-                            importSearchViews.add(view);
-                        }
-                        const currentView = view;
-                        const deadline = new AbortController();
-                        const signal = AbortSignal.any([controller.signal, deadline.signal]);
-                        let timedOut = false;
-                        const timer = setTimeout(() => {
-                            timedOut = true;
-                            deadline.abort();
-                        }, 40000);
-                        const closeOnAbort = () => closeImportView(currentView);
-                        signal.addEventListener('abort', closeOnAbort, { once: true });
-                        try {
-                            return await cancelImportOperation(
-                                findSoundCloudMatch(currentView.webContents, track, signal, availability),
-                                signal,
-                            );
-                        } catch {
-                            controller.signal.throwIfAborted();
-                            closeImportView(currentView);
-                            slots.delete(slot);
-                            return {
-                                source: track,
-                                error: timedOut
-                                    ? 'Поиск занял слишком долго. Повторите проверку.'
-                                    : 'SoundCloud не ответил. Повторите проверку.',
-                            };
-                        } finally {
-                            clearTimeout(timer);
-                            signal.removeEventListener('abort', closeOnAbort);
-                        }
-                    }, controller.signal),
+                    importDomPool.run(
+                        (slot) =>
+                            searchPage(slot).use((currentView) =>
+                                scheduler.run(
+                                    'page',
+                                    'import',
+                                    async () => {
+                                        const deadline = new AbortController();
+                                        const signal = AbortSignal.any([controller.signal, deadline.signal]);
+                                        let timedOut = false;
+                                        const timer = setTimeout(() => {
+                                            timedOut = true;
+                                            deadline.abort();
+                                        }, 40000);
+                                        const closeOnAbort = () => closeImportView(currentView);
+                                        signal.addEventListener('abort', closeOnAbort, { once: true });
+                                        try {
+                                            return await cancelImportOperation(
+                                                findSoundCloudMatch(
+                                                    currentView.webContents,
+                                                    track,
+                                                    signal,
+                                                    availability,
+                                                ),
+                                                signal,
+                                            );
+                                        } catch {
+                                            controller.signal.throwIfAborted();
+                                            closeImportView(currentView);
+                                            searchPages.get(slot)?.dispose();
+                                            searchPages.delete(slot);
+                                            return {
+                                                source: track,
+                                                error: timedOut
+                                                    ? 'Поиск занял слишком долго. Повторите проверку.'
+                                                    : 'SoundCloud не ответил. Повторите проверку.',
+                                            };
+                                        } finally {
+                                            clearTimeout(timer);
+                                            signal.removeEventListener('abort', closeOnAbort);
+                                        }
+                                    },
+                                    controller.signal,
+                                ),
+                            ),
+                        controller.signal,
+                    ),
                 controller.signal,
                 () => concurrency,
+                Date.now,
+                scheduler,
             );
             const matches = await mapImportTracks(source.tracks, {
                 concurrency,
@@ -251,7 +311,7 @@ export function createPlaylistImportController(options: {
         } finally {
             importJournal.flush();
             controller.abort();
-            for (const view of slots.values()) closeImportView(view);
+            if (disposed || freemem() < 2 * 1024 ** 3) releaseSearchPages();
             if (importScanController === controller) importScanController = null;
             if (importTask === task) importTask = null;
         }
@@ -366,6 +426,7 @@ export function createPlaylistImportController(options: {
                 clientContents.session,
                 controller.signal,
                 availabilityRoute(),
+                (task) => scheduler.run('network', 'import', task, controller.signal),
             );
             const result = await saveImportSelection(chosen, {
                 saved: (item) => {
@@ -430,6 +491,7 @@ export function createPlaylistImportController(options: {
     windowIpc.on('playlist-import:cancel', (event) => {
         if (isTrustedSoundCloudSender(event) && importScanController) {
             importScanController.abort();
+            releaseSearchPages();
             for (const view of importSearchViews) closeImportView(view);
         }
     });
@@ -437,6 +499,8 @@ export function createPlaylistImportController(options: {
     const dispose = () => {
         if (disposed) return;
         disposed = true;
+        if (!options.scheduler) scheduler.dispose();
+        releaseSearchPages();
         clientContents.removeListener('destroyed', dispose);
         windowIpc.dispose();
         importScanController?.abort();

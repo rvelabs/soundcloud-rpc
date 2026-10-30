@@ -48,7 +48,7 @@ export async function probeSoundCloud(
 ): Promise<ProbeStage[]> {
     const stages: ProbeStage[] = [];
     let assets: string[] = [];
-    for (const stage of ['website', 'assets', 'api', 'auth'] as const) {
+    const probe = async (stage: ProbeStage['stage']): Promise<ProbeStage> => {
         const began = Date.now(),
             controller = new AbortController();
         const result: ProbeStage = { stage, outcome: 'network', elapsedMs: 0, bytesRead: 0 };
@@ -157,9 +157,14 @@ export async function probeSoundCloud(
             options.signal?.removeEventListener('abort', cancel);
         }
         result.elapsedMs = Date.now() - began;
-        stages.push({ ...result });
-        if (result.outcome !== 'ok') break;
+        return { ...result };
+    };
+    for (const stage of ['website', 'assets'] as const) {
+        const result = await probe(stage);
+        stages.push(result);
+        if (result.outcome !== 'ok') return stages;
     }
+    stages.push(...(await Promise.all([probe('api'), probe('auth')])));
     return stages;
 }
 function bootstrapAssets(html: string): string[] {

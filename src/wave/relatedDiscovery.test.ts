@@ -9,6 +9,61 @@ import type { WaveCandidate } from './waveEngine';
 const seed = (id: string, artist = id): Track => ({ id: `https://soundcloud.com/${id}/song`, title: id, artist });
 const candidate = (id: string): WaveCandidate => ({ url: seed(id).id, title: id, artist: id, sourceRank: 0 });
 describe('track-based discovery', () => {
+    it('keeps an unskipped favorite as a discovery source when repeated skips suppress its whole style', () => {
+        const favorite = { ...seed('favorite'), genre: 'ambient' };
+        const skipped = [0, 1, 2, 3].map((i) => ({ ...seed('skip' + i), genre: 'ambient' }));
+        const events = [
+            { track: favorite, kind: 'like' as const, at: 0, origin: 'library' as const },
+            ...skipped.map((track, i) => ({ track, kind: 'skip' as const, at: 100 + i, listenedFraction: 0.01 })),
+        ];
+        const profile = buildProfile(events, 1000);
+        const selected = discoverySeeds(profile, defaultControls, 0, skipped[3], {
+            now: 1000,
+            sessionReactions: events.filter((event) => event.kind === 'skip'),
+            preferenceSignals: new Map([['ambient', -2]]),
+        });
+        expect(selected.map((track) => track.id)).toEqual([favorite.id]);
+    });
+    it('prefers an independent direction and never revives a disliked or mood-conflicting source', () => {
+        const suppressed = { ...seed('suppressed'), genre: 'ambient' };
+        const independent = { ...seed('independent'), genre: 'jungle' };
+        const events = [suppressed, independent].map((track) => ({ track, kind: 'like' as const, at: 0 }));
+        const context = { now: 1000, preferenceSignals: new Map([['ambient', -2]]) };
+        const profile = buildProfile(events, 1000);
+        expect(discoverySeeds(profile, defaultControls, 0, suppressed, context).map((track) => track.id)).toEqual([
+            independent.id,
+        ]);
+        profile.dislikedIds.add(independent.id);
+        profile.dislikedIds.add(suppressed.id);
+        expect(discoverySeeds(profile, defaultControls, 0, suppressed, context)).toEqual([]);
+        const sad = { ...seed('sad'), tags: ['sad'] };
+        expect(
+            discoverySeeds(
+                buildProfile([{ track: sad, kind: 'like', at: 0 }], 1000),
+                { ...defaultControls, mood: 'happy' },
+                0,
+                sad,
+                context,
+            ),
+        ).toEqual([]);
+    });
+    it('uses the fallback source to discover unheard music instead of replaying the favorite', async () => {
+        const favorite = { ...seed('favorite'), genre: 'ambient' };
+        const fresh = { ...seed('fresh'), genre: 'ambient', source: 'related' as const, relatedTo: [favorite.id] };
+        const related = vi.fn(async (sources: Track[]) => (sources.length ? [fresh] : []));
+        const session = new RecommendationSession({ related }, () => 1000);
+        session.setControls({ discovery: 'new' });
+        session.feedback({ track: favorite, kind: 'like', at: 0, origin: 'library' });
+        for (let i = 0; i < 4; i++)
+            session.feedback({
+                track: { ...seed('skip' + i), genre: 'ambient' },
+                kind: 'skip',
+                at: 100 + i,
+                listenedFraction: 0.01,
+            });
+        expect((await session.refresh()).map((item) => item.track.id)).toEqual([fresh.id]);
+        expect(related).toHaveBeenCalledWith([expect.objectContaining(favorite)]);
+    });
     it('rotates recordings within one artist instead of exhausting the same related page forever', () => {
         const profile = buildProfile(
             [0, 1, 2].map((i) => ({ track: seed('song' + i, 'same artist'), kind: 'like' as const, at: i })),

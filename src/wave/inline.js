@@ -180,6 +180,16 @@
         importCompleted = 0;
     let importMatches = [];
     const importRows = new Map();
+    const importSizes = [];
+    let importFrame;
+    let importRange = '';
+    let importAnchor = 0;
+    const selectedImport = (item) =>
+        Boolean(
+            item.soundcloud &&
+                !item.imported &&
+                (item.selected ?? (!item.soundcloud.requiresReview && item.soundcloud.score >= 0.85)),
+        );
     let lastImportProgress;
     const importMessage = (value) => {
         $('.cw-import-message').textContent = value;
@@ -228,7 +238,7 @@
         $('.cw-import-commit').textContent = importScanning
             ? t('Создать из найденных')
             : t('Добавить выбранные в SoundCloud');
-        $('.cw-import-commit').disabled = (importBusy && !importScanning) || !$('.cw-import-results input:checked');
+        $('.cw-import-commit').disabled = (importBusy && !importScanning) || !importMatches.some(selectedImport);
         $('.cw-import-file').disabled = importBusy;
         $('.cw-import-resume').disabled = importBusy;
     };
@@ -237,11 +247,7 @@
             nodes = importRows.get(index);
         if (!entry || !nodes) return;
         nodes.check.disabled = !entry.soundcloud || entry.imported || (importBusy && !importScanning);
-        nodes.check.checked = Boolean(
-            !entry.imported &&
-                entry.soundcloud &&
-                (entry.selected ?? (!entry.soundcloud.requiresReview && entry.soundcloud.score >= 0.85)),
-        );
+        nodes.check.checked = selectedImport(entry);
         nodes.source.textContent = entry.soundcloud?.title || `${entry.source.artist} — ${entry.source.title}`;
         nodes.original.textContent = `${entry.source.artist} — ${entry.source.title}`;
         nodes.original.hidden = !entry.soundcloud;
@@ -254,14 +260,41 @@
                 ? `SoundCloud: ${entry.soundcloud.artist} · ${Math.round(entry.soundcloud.score * 100)}% · ${t(entry.soundcloud.requiresReview ? (entry.soundcloud.reviewReason === 'duration' ? 'Проверьте версию трека' : 'Проверьте исполнителя') : entry.soundcloud.availability?.evidence === 'playback' ? 'Воспроизведение подтверждено' : 'Доступен по метаданным')}`
                 : t(entry.error || '') || t('В SoundCloud не найдено');
     };
-    const renderImport = () => {
+    const drawImport = (force = false) => {
         const container = $('.cw-import-results');
+        const offsets = [0];
+        for (let i = 0; i < importMatches.length; i++) offsets.push(offsets[i] + (importSizes[i] || 76));
+        let first = 0;
+        while (first + 1 < offsets.length && offsets[first + 1] <= container.scrollTop) first++;
+        const start = Math.max(0, first - 4);
+        importAnchor = first;
+        let end = first;
+        const edge = container.scrollTop + Math.max(240, container.clientHeight);
+        while (end < importMatches.length && offsets[end] < edge) end++;
+        end = Math.min(importMatches.length, end + 4);
+        const range = `${start}:${end}`;
+        if (!force && range === importRange) return;
+        importRange = range;
+        const focused = document.activeElement?.closest('.cw-import-row')?.querySelector('input')?.dataset.index;
+        importMeasure.disconnect();
         container.replaceChildren();
         importRows.clear();
         const fragment = document.createDocumentFragment();
-        importMatches.forEach((_entry, index) => {
+        const spacer = (height) => {
+            const node = document.createElement('div');
+            node.className = 'cw-import-spacer';
+            node.setAttribute('aria-hidden', 'true');
+            node.style.height = `${height}px`;
+            return node;
+        };
+        fragment.append(spacer(offsets[start]));
+        for (let index = start; index < end; index++) {
             const row = document.createElement('label');
             row.className = 'cw-import-row';
+            row.dataset.index = String(index);
+            row.setAttribute('role', 'listitem');
+            row.setAttribute('aria-posinset', String(index + 1));
+            row.setAttribute('aria-setsize', String(importMatches.length));
             const check = document.createElement('input');
             check.type = 'checkbox';
             check.dataset.index = String(index);
@@ -275,8 +308,43 @@
             text.append(source, original, found);
             row.append(check, text);
             fragment.append(row);
-        });
+        }
+        fragment.append(spacer(offsets.at(-1) - offsets[end]));
         container.append(fragment);
+        for (const row of container.querySelectorAll('.cw-import-row')) importMeasure.observe(row);
+        if (focused !== undefined) importRows.get(Number(focused))?.check.focus({ preventScroll: true });
+    };
+    const scheduleImport = () => {
+        if (importFrame !== undefined) return;
+        importFrame = setTimeout(() => {
+            importFrame = undefined;
+            drawImport();
+        }, 16);
+    };
+    const importMeasure = new ResizeObserver((entries) => {
+        let changed = false;
+        let adjustment = 0;
+        for (const entry of entries) {
+            const index = Number(entry.target.dataset.index);
+            const height = entry.target.getBoundingClientRect().height;
+            if (height > 0 && Math.abs((importSizes[index] || 76) - height) > 0.5) {
+                if (index < importAnchor) adjustment += height - (importSizes[index] || 76);
+                importSizes[index] = height;
+                changed = true;
+            }
+        }
+        if (changed) {
+            if (adjustment) $('.cw-import-results').scrollTop += adjustment;
+            importRange = '';
+            scheduleImport();
+        }
+    });
+    const renderImport = () => {
+        if (importSizes.length !== importMatches.length) {
+            importSizes.length = importMatches.length;
+            importSizes.fill(0);
+        }
+        drawImport(true);
         updateImportSummary();
     };
     localizeMarkup(root);
@@ -648,9 +716,7 @@
                 return;
             }
             if (importBusy) return;
-            const indexes = [...importCard.querySelectorAll('.cw-import-results input:checked')].map((input) =>
-                Number(input.dataset.index),
-            );
+            const indexes = importMatches.flatMap((item, index) => (selectedImport(item) ? [index] : []));
             if (!indexes.length) {
                 importMessage(t('Выберите хотя бы один найденный трек.'));
                 return;
@@ -762,19 +828,67 @@
               : [item?.genre, t('Темп без подтверждённого BPM оценивается по тегам')].filter(Boolean).join(' · ');
     };
     $('.cw-import-results').addEventListener('change', (event) => {
+        if (!(event.target instanceof HTMLInputElement)) return;
         const index = Number(event.target.dataset.index);
         if (importMatches[index]) importMatches[index].selected = event.target.checked;
         updateImportSummary();
         saveImportSelection();
+    });
+    const importList = $('.cw-import-results');
+    importList.setAttribute('role', 'list');
+    importList.tabIndex = 0;
+    importList.addEventListener('scroll', scheduleImport, { passive: true });
+    const importResize = new ResizeObserver(() => {
+        importRange = '';
+        scheduleImport();
+    });
+    importResize.observe(importList);
+    importList.addEventListener('keydown', (event) => {
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End', 'Tab'].includes(event.key)) return;
+        const current = event.target.closest('.cw-import-row')?.dataset.index;
+        if (event.key === 'Tab' && current === undefined) return;
+        const backwards = event.key === 'ArrowUp' || (event.key === 'Tab' && event.shiftKey);
+        let index =
+            event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? importMatches.length - 1
+                  : current === undefined
+                    ? backwards
+                        ? importMatches.length - 1
+                        : 0
+                    : Number(current) + (backwards ? -1 : 1);
+        const step = backwards || event.key === 'End' ? -1 : 1;
+        while (
+            index >= 0 &&
+            index < importMatches.length &&
+            (!importMatches[index].soundcloud || importMatches[index].imported || (importBusy && !importScanning))
+        )
+            index += step;
+        if (index < 0 || index >= importMatches.length) return;
+        event.preventDefault();
+        let top = 0;
+        for (let i = 0; i < index; i++) top += importSizes[i] || 76;
+        if (
+            top < importList.scrollTop ||
+            top + (importSizes[index] || 76) > importList.scrollTop + importList.clientHeight
+        )
+            importList.scrollTop = top;
+        drawImport(true);
+        importRows.get(index)?.check.focus({ preventScroll: true });
+    });
+    window.addEventListener('pagehide', (event) => {
+        if (event.persisted) return;
+        clearTimeout(importFrame);
+        importMeasure.disconnect();
+        importResize.disconnect();
     });
     $('.cw-import-title input').addEventListener('change', () => saveImportSelection());
     const saveImportSelection = () => {
         if (!importer?.selection) return;
         importer.selection({
             title: $('.cw-import-title input').value,
-            indexes: importMatches.flatMap((item, index) =>
-                (item.selected ?? item.soundcloud?.score >= 0.85) ? [index] : [],
-            ),
+            indexes: importMatches.flatMap((item, index) => (selectedImport(item) ? [index] : [])),
         });
     };
     if (importer)

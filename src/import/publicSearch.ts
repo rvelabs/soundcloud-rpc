@@ -1,4 +1,5 @@
 import { readTextLimited } from '../utils/readText';
+import type { WorkScheduler } from '../utils/workScheduler';
 import { readTrackHydration } from '../wave/trackHydration';
 import { trackPath } from '../wave/nativeQueue';
 import { classifyTrackAvailability, type TrackAvailability } from './availability';
@@ -76,11 +77,12 @@ export class PublicSoundCloudSearch {
         private signal: AbortSignal,
         concurrency: () => number = () => 10,
         private now = Date.now,
+        private scheduler?: WorkScheduler,
     ) {
         this.pool = new TaskPool(concurrency);
     }
     private async page(url: string): Promise<string> {
-        return this.pool.run(async () => {
+        const load = async () => {
             const signal = AbortSignal.any([this.signal, AbortSignal.timeout(6500)]);
             signal.throwIfAborted();
             const response = await this.request(url, { redirect: 'error', signal, headers: { Accept: 'text/html' } });
@@ -95,7 +97,11 @@ export class PublicSoundCloudSearch {
                 throw new SearchRequestError(response.status === 429);
             }
             return readTextLimited(response, 3000000);
-        }, this.signal);
+        };
+        return this.pool.run(
+            () => (this.scheduler ? this.scheduler.run('network', 'import', load, this.signal) : load()),
+            this.signal,
+        );
     }
     private search(query: string): Promise<ReturnType<typeof parsePublicSearch>> {
         const cached = this.searches.get(query);

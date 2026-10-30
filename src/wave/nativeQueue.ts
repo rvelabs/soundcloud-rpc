@@ -16,6 +16,7 @@ export function trackPath(value: string): string | null {
     }
 }
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+type NativePhase = (phase: string) => void;
 export class NativeTrackNotFoundError extends Error {
     constructor() {
         super('SoundCloud не нашёл выбранный трек в собственном поиске.');
@@ -73,28 +74,25 @@ async function searchInPage(
     query: string,
     target: string,
     isActive: () => boolean,
+    onPhase: NativePhase,
 ): Promise<boolean> {
     const clean = query.trim().slice(0, 100);
     if (!clean) return false;
+    onPhase('search-input');
     const search = (await contents.executeJavaScript(
         `(() => {
         const input = document.querySelector('.headerSearch__input');
         if (!input) return false;
-        input.focus();
-        input.select();
-        if (document.activeElement === input && input.selectionStart === 0 &&
-            input.selectionEnd === input.value.length) return 'focused';
         const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
         if (!set) return false;
         set.call(input, ${JSON.stringify(clean)});
         input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ${JSON.stringify(clean)} }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        return input.value === ${JSON.stringify(clean)} ? 'set' : false;
+        return input.value === ${JSON.stringify(clean)};
     })()`,
         true,
-    )) as 'focused' | 'set' | false;
+    )) as boolean;
     if (!search) throw new Error('Поле поиска SoundCloud недоступно.');
-    if (search === 'focused') await contents.insertText(clean);
     await wait(100);
     if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     const submitted = (await contents.executeJavaScript(
@@ -107,6 +105,7 @@ async function searchInPage(
         true,
     )) as boolean;
     if (!submitted) throw new Error('SoundCloud не показал кнопку поиска.');
+    onPhase('search-results');
     for (let i = 0; i < 20; i++) {
         if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
         if (await cardAvailable(contents, target)) return true;
@@ -159,6 +158,7 @@ async function locateTrack(
     maxQueries = 3,
     beforeNavigation: () => Promise<void> = async () => {},
     isActive = () => true,
+    onPhase: NativePhase = () => {},
 ): Promise<void> {
     if (await cardAvailable(contents, target)) return;
     if (!isActive()) throw new NativeActionCanceledError();
@@ -172,7 +172,7 @@ async function locateTrack(
     ];
     for (const query of queries.slice(0, maxQueries)) {
         if (!isActive()) throw new NativeActionCanceledError();
-        if (await searchInPage(contents, query, target, isActive)) return;
+        if (await searchInPage(contents, query, target, isActive, onPhase)) return;
     }
     throw new NativeTrackNotFoundError();
 }
@@ -258,6 +258,7 @@ async function performNativeCard(
     maxQueries: number,
     action: (target: string) => Promise<void>,
     isActive: () => boolean,
+    onPhase: NativePhase,
 ): Promise<void> {
     if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     const target = trackPath(url);
@@ -277,6 +278,7 @@ async function performNativeCard(
     };
     contents.on('will-navigate', preventReload);
     try {
+        onPhase('locate');
         await locateTrack(
             contents,
             target,
@@ -284,6 +286,7 @@ async function performNativeCard(
             sourceQuery,
             maxQueries,
             async () => {
+                onPhase('presentation');
                 uncover = await beginNativePageCover(contents);
                 navigationStarted = true;
                 await contents.executeJavaScript(
@@ -292,13 +295,16 @@ async function performNativeCard(
                 );
             },
             isActive,
+            onPhase,
         );
         if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
         if (fullNavigation) throw new Error('SoundCloud попытался перезагрузить плеер.');
+        onPhase('activate');
         await action(target);
     } finally {
         contents.removeListener('will-navigate', preventReload);
         try {
+            onPhase('restore-route');
             if (!contents.isDestroyed() && contents.getURL() !== previous)
                 await restoreInPage(contents, previous, previousIndex);
         } finally {
@@ -326,6 +332,7 @@ async function performNativeCard(
                         .catch(() => {});
             } finally {
                 await uncover();
+                onPhase('finished');
             }
         }
     }
@@ -339,9 +346,12 @@ async function withNativeCard(
     maxQueries: number,
     action: (target: string) => Promise<void>,
     isActive: () => boolean,
+    onPhase: NativePhase,
 ): Promise<void> {
     const prior = nativeActionTail.get(contents) || Promise.resolve();
-    const result = prior.then(() => performNativeCard(contents, url, title, sourceQuery, maxQueries, action, isActive));
+    const result = prior.then(() =>
+        performNativeCard(contents, url, title, sourceQuery, maxQueries, action, isActive, onPhase),
+    );
     const tail = result.then(
         () => {},
         () => {},
@@ -359,6 +369,7 @@ export async function addToNativeNextUp(
     title?: string,
     sourceQuery?: string,
     isActive = () => true,
+    onPhase: NativePhase = () => {},
 ): Promise<void> {
     await withNativeCard(
         contents,
@@ -371,6 +382,7 @@ export async function addToNativeNextUp(
                 throw new Error('Трек не появился на странице SoundCloud.');
         },
         isActive,
+        onPhase,
     );
 }
 export async function playInNativePlayer(
@@ -379,10 +391,11 @@ export async function playInNativePlayer(
     title?: string,
     sourceQuery?: string,
     isActive = () => true,
+    onPhase: NativePhase = () => {},
 ): Promise<void> {
     if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     const current = await contents.executeJavaScript(
-        `({ path: document.querySelector('.playbackSoundBadge__titleLink')?.pathname, playing: document.querySelector('.playControls__play')?.classList.contains('playing') === true })`,
+        `({ path: document.querySelector('.playbackSoundBadge__titleLink')?.pathname, playing: document.querySelector('.playControls__play')?.classList.contains('playing') === true && !window.__waveMediaEndSnapshot?.().media.some(media => media.active && (media.ended || media.terminal)) })`,
         true,
     );
     if (current?.path === trackPath(url) && current.playing) return;
@@ -397,7 +410,7 @@ export async function playInNativePlayer(
                 `(() => {
             const current = document.querySelector('.playbackSoundBadge__titleLink')?.pathname;
             const play = document.querySelector('.playControls__play');
-            if (current === ${JSON.stringify(target)} && play?.classList.contains('playing')) return true;
+            if (current === ${JSON.stringify(target)} && play?.classList.contains('playing') && !window.__waveMediaEndSnapshot?.().media.some(media => media.active && (media.ended || media.terminal))) return true;
             if (current === ${JSON.stringify(target)} && play) { play.click(); return true; }
             const a = [...document.querySelectorAll('.sound a.soundTitle__title[href]')]
                 .find(a => new URL(a.href).pathname.replace(/\\/$/, '') === ${JSON.stringify(target)});
@@ -413,7 +426,7 @@ export async function playInNativePlayer(
                 const state = (await contents.executeJavaScript(
                     `(() => ({
                 path: (() => { try { return new URL(document.querySelector('.playbackSoundBadge__titleLink')?.href).pathname.replace(/\\/$/, ''); } catch { return ''; } })(),
-                playing: document.querySelector('.playControls__play')?.classList.contains('playing') === true
+                playing: document.querySelector('.playControls__play')?.classList.contains('playing') === true && !window.__waveMediaEndSnapshot?.().media.some(media => media.active && (media.ended || media.terminal))
             }))()`,
                     true,
                 )) as {
@@ -426,5 +439,6 @@ export async function playInNativePlayer(
             throw new Error('SoundCloud не подтвердил воспроизведение выбранного трека.');
         },
         isActive,
+        onPhase,
     );
 }

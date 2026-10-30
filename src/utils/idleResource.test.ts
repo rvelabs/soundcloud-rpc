@@ -2,6 +2,28 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { IdleResource } from './idleResource';
 afterEach(() => vi.useRealTimers());
 describe('exclusive idle resource', () => {
+    it('reuses a page through short bursts and releases it when memory retention is disabled', async () => {
+        vi.useFakeTimers();
+        const create = vi.fn(() => ({})),
+            destroy = vi.fn(),
+            clear = vi.fn(async () => {});
+        let pressure = false;
+        const resource = new IdleResource(create, destroy, () => (pressure ? 0 : 120000), clear, 1500);
+        await resource.use(async () => {});
+        await vi.advanceTimersByTimeAsync(1000);
+        await resource.use(async () => {});
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(clear).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1500);
+        expect(clear).toHaveBeenCalledTimes(1);
+        pressure = true;
+        await resource.use(async () => {});
+        expect(destroy).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(destroy).toHaveBeenCalledTimes(2);
+        resource.dispose();
+        expect(vi.getTimerCount()).toBe(0);
+    });
     it('serializes navigation and quiesces only after all consumers finish', async () => {
         const calls: string[] = [];
         let release!: () => void;

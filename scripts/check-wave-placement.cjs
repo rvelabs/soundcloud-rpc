@@ -220,9 +220,14 @@ app.whenReady()
             })()`);
                 assert.equal(partial.argCount, 1);
                 assert.equal(partial.rows.length, 3);
-        assert.ok(partial.rows[0].includes('Match 0'));
-        assert.ok(partial.rows[2].includes('Match 2'));
-        assert.deepEqual(await win.webContents.executeJavaScript(`[...document.querySelectorAll('.cw-import-original')].filter(e=>!e.hidden).map(e=>e.textContent)`), ['Artist 0 — Track 0', 'Artist 2 — Track 2']);
+                assert.ok(partial.rows[0].includes('Match 0'));
+                assert.ok(partial.rows[2].includes('Match 2'));
+                assert.deepEqual(
+                    await win.webContents.executeJavaScript(
+                        `[...document.querySelectorAll('.cw-import-original')].filter(e=>!e.hidden).map(e=>e.textContent)`,
+                    ),
+                    ['Artist 0 — Track 0', 'Artist 2 — Track 2'],
+                );
                 assert.equal(partial.pending, 'Проверяем…');
                 assert.equal(partial.cancel, true);
                 assert.equal(partial.commitDisabled, false);
@@ -406,7 +411,7 @@ app.whenReady()
                 win.destroy();
             }
         });
-        await test('large import: 414 rows, accurate progress and visible footer at 720px', async () => {
+        await test('large import: 414 logical rows, bounded DOM and visible footer at 720px', async () => {
             const win = await createWindow(layout());
             win.setSize(1060, 720);
             try {
@@ -418,11 +423,12 @@ app.whenReady()
                 const before=r.querySelector('.cw-import-summary').textContent;
                 const tracks=Array.from({length:414},(_,i)=>({title:'Track '+i,artist:'Artist'}));
                 window.__qaImportProgress({phase:'matching',completed:283,total:414,title:'Large playlist',tracks});
-                return {before,rows:r.querySelectorAll('.cw-import-row').length,
+                return {before,rows:r.querySelectorAll('.cw-import-row').length,total:Number(r.querySelector('.cw-import-row').getAttribute('aria-setsize')),
                     manual:!!r.querySelector('.cw-import-speed'),count:r.querySelector('.cw-import-count').textContent,
                     aria:r.querySelector('.cw-import-meter').getAttribute('aria-valuenow')};
             })()`);
-                assert.equal(state.rows, 414);
+                assert.equal(state.total, 414);
+                assert(state.rows > 0 && state.rows < 50);
                 assert.equal(state.manual, false);
                 assert.equal(state.count, '283 / 414');
                 assert.ok(state.before.includes('283'));

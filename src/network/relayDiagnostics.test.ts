@@ -5,7 +5,9 @@ afterEach(() => vi.useRealTimers());
 describe('relay diagnosis at the failing stage', () => {
     it('allows each HTTPS stage its own budget, including a slow body', async () => {
         vi.useFakeTimers();
+        const started: Record<string, number> = {};
         const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+            started[String(url)] = Date.now();
             await new Promise((resolve) => setTimeout(resolve, 8000));
             return String(url).includes('api-')
                 ? new Response('', { status: 401 })
@@ -14,8 +16,9 @@ describe('relay diagnosis at the failing stage', () => {
                   : new Response(html);
         });
         const probe = probeSoundCloud(fetcher as typeof fetch, { timeoutMs: 10000 });
-        await vi.advanceTimersByTimeAsync(32000);
+        await vi.advanceTimersByTimeAsync(24000);
         expect((await probe).map((stage) => stage.outcome)).toEqual(['ok', 'ok', 'ok', 'ok']);
+        expect(started['https://api-v2.soundcloud.com/']).toBe(started['https://api-auth.soundcloud.com/']);
         expect(vi.getTimerCount()).toBe(0);
     });
     it('recognizes the page across streamed chunks and accepts API auth-required without credentials', async () => {

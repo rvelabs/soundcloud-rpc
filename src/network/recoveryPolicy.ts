@@ -11,6 +11,9 @@ export class RecoveryPolicy {
         },
         private now = Date.now,
     ) {}
+    retryDelay(): number {
+        return Math.max(0, this.nextAttempt - this.now());
+    }
     recover(): Promise<RecoveryResult> {
         if (this.task) return this.task;
         if (this.now() < this.nextAttempt) return Promise.resolve('cooldown');

@@ -19,8 +19,12 @@ export function installWaveMediaEndCapture(): void {
     const paths = new WeakMap<HTMLMediaElement, { path: string; source: string; position: number }>();
     const tracked: WeakRef<HTMLMediaElement>[] = [];
     const reported = new WeakMap<HTMLMediaElement, string>();
+    const progress = new WeakMap<HTMLMediaElement, { source: string }>();
+    const confirmed = new WeakMap<HTMLMediaElement, string>();
+    const manualPause = new WeakSet<HTMLMediaElement>();
     let endedEvents = 0;
     let recoveredEvents = 0;
+    let terminalPauseEvents = 0;
     let active: WeakRef<HTMLMediaElement> | undefined;
     let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
     let suspended = false;
@@ -28,6 +32,66 @@ export function installWaveMediaEndCapture(): void {
         clearTimeout(recoveryTimer);
         recoveryTimer = undefined;
     };
+    const terminal = (media: HTMLMediaElement) => {
+        if (manualPause.has(media)) return false;
+        if (media.ended) return true;
+        const last = progress.get(media);
+        return Boolean(
+            media.paused &&
+                !media.seeking &&
+                !media.error &&
+                !media.loop &&
+                Number.isFinite(media.duration) &&
+                media.duration > 0 &&
+                Math.abs(media.duration - media.currentTime) <= 0.05 &&
+                (confirmed.get(media) === (media.currentSrc || media.src) ||
+                    (last && last.source === (media.currentSrc || media.src))),
+        );
+    };
+    const notePause = (force = false) => {
+        if (!page.__waveMediaEndState?.active) return;
+        const media = active?.deref();
+        if (!media || (!force && (media.paused || media.ended))) return;
+        manualPause.add(media);
+        confirmed.delete(media);
+        cancelRecovery();
+        if (!force)
+            void Promise.resolve().then(() => {
+                if (!media.paused && !media.ended) {
+                    manualPause.delete(media);
+                    armRecovery(media);
+                }
+            });
+    };
+    const onInput = (event: Event) => {
+        const target = event.target as Element | null;
+        if (event.type === 'keydown') {
+            const keyboard = event as KeyboardEvent;
+            if (keyboard.ctrlKey || keyboard.altKey || keyboard.metaKey) return;
+            if (target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
+            const key = String(keyboard.key).toLowerCase();
+            if ([' ', 'spacebar', 'k', 'mediapause', 'mediaplaypause', 'mediastop'].includes(key))
+                notePause(key === 'mediapause' || key === 'mediastop');
+        } else if (target?.closest?.('.playControls__play')) notePause();
+    };
+    page.addEventListener('click', onInput, true);
+    page.addEventListener('keydown', onInput, true);
+    const mediaSession = typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
+    if (mediaSession) {
+        const setHandler = mediaSession.setActionHandler;
+        mediaSession.setActionHandler = function (action, handler) {
+            return setHandler.call(
+                this,
+                action,
+                (action === 'pause' || action === 'stop') && handler
+                    ? (details) => {
+                          notePause(true);
+                          handler(details);
+                      }
+                    : handler,
+            );
+        };
+    }
     const armRecovery = (media: HTMLMediaElement) => {
         if (active?.deref() !== media) return;
         cancelRecovery();
@@ -36,7 +100,8 @@ export function installWaveMediaEndCapture(): void {
             !page.__waveMediaEndState?.active ||
             !Number.isFinite(media.duration) ||
             media.duration <= 0 ||
-            (media.paused && !media.ended) ||
+            (media.paused && !terminal(media)) ||
+            manualPause.has(media) ||
             media.seeking ||
             media.error ||
             media.duration - media.currentTime > 2
@@ -54,7 +119,7 @@ export function installWaveMediaEndCapture(): void {
                     suspended ||
                     !state?.active ||
                     active?.deref() !== media ||
-                    !media.ended ||
+                    !terminal(media) ||
                     media.seeking ||
                     media.error ||
                     (media.currentSrc || media.src) !== source ||
@@ -65,7 +130,9 @@ export function installWaveMediaEndCapture(): void {
                 )
                     return;
                 reported.set(media, source);
+                confirmed.set(media, source);
                 recoveredEvents++;
+                if (!media.ended) terminalPauseEvents++;
                 page.dispatchEvent(new CustomEvent('__soundcloudWaveMediaEnded', { detail: path }));
             },
             delay * 1000 + 500,
@@ -97,6 +164,9 @@ export function installWaveMediaEndCapture(): void {
         media.addEventListener(
             'playing',
             () => {
+                manualPause.delete(media);
+                confirmed.delete(media);
+                if (!media.paused && !media.ended) progress.set(media, { source: media.currentSrc || media.src });
                 if (!media.ended) reported.delete(media);
                 remember(media);
                 armRecovery(media);
@@ -108,6 +178,7 @@ export function installWaveMediaEndCapture(): void {
         media.addEventListener(
             'seeking',
             () => {
+                confirmed.delete(media);
                 if (active?.deref() === media) cancelRecovery();
             },
             true,
@@ -119,6 +190,9 @@ export function installWaveMediaEndCapture(): void {
                 remember(media);
                 const binding = paths.get(media);
                 if (binding) {
+                    const delta = media.currentTime - binding.position;
+                    if (!media.paused && !media.seeking && delta > 0 && delta <= 3)
+                        progress.set(media, { source: media.currentSrc || media.src });
                     if (
                         active?.deref() === media &&
                         media.currentTime > 0 &&
@@ -150,6 +224,11 @@ export function installWaveMediaEndCapture(): void {
             'ended',
             (event) => {
                 if (!page.__waveMediaEndState?.active) return;
+                if (manualPause.has(media)) {
+                    if (active?.deref() === media) cancelRecovery();
+                    event.stopImmediatePropagation();
+                    return;
+                }
                 endedEvents++;
                 reported.set(media, media.currentSrc || media.src);
                 if (active?.deref() === media) cancelRecovery();
@@ -163,6 +242,9 @@ export function installWaveMediaEndCapture(): void {
     HTMLMediaElement.prototype.play = function () {
         attach(this);
         active = new WeakRef(this);
+        manualPause.delete(this);
+        confirmed.delete(this);
+        if (this.paused || this.ended) progress.delete(this);
         if (!this.ended) reported.delete(this);
         remember(this);
         return originalPlay.call(this);
@@ -181,7 +263,7 @@ export function installWaveMediaEndCapture(): void {
         if (
             binding &&
             current &&
-            !media.ended &&
+            !terminal(media) &&
             document.querySelector<HTMLAnchorElement>('.playbackSoundBadge__titleLink')?.pathname === current
         )
             binding.path = current;
@@ -199,6 +281,7 @@ export function installWaveMediaEndCapture(): void {
     page.__waveMediaEndSnapshot = () => ({
         endedEvents,
         recoveredEvents,
+        terminalPauseEvents,
         media: tracked.flatMap((reference) => {
             const media = reference.deref();
             return media
@@ -210,6 +293,10 @@ export function installWaveMediaEndCapture(): void {
                           duration: media.duration,
                           paused: media.paused,
                           ended: media.ended,
+                          terminal: terminal(media),
+                          manualPause: manualPause.has(media),
+                          seeking: media.seeking,
+                          loop: media.loop,
                           readyState: media.readyState,
                           errorCode: media.error?.code,
                       },

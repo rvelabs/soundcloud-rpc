@@ -98,6 +98,7 @@ export function createAvailabilityChecker(
     session: Session,
     signal?: AbortSignal,
     route = '',
+    schedule: <T>(task: () => Promise<T>) => Promise<T> = (task) => task(),
 ): (url: string) => Promise<TrackAvailability> {
     const inFlight = new Map<string, Promise<TrackAvailability>>();
     let pool = sessionPools.get(session);
@@ -115,32 +116,37 @@ export function createAvailabilityChecker(
         let task = inFlight.get(path);
         if (!task) {
             task = pool
-                .run(async () => {
-                    try {
-                        signal?.throwIfAborted();
-                        const timeout = AbortSignal.timeout(6500);
-                        const response = await session.fetch(`https://soundcloud.com${path}`, {
-                            redirect: 'error',
-                            signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-                            headers: { Accept: 'text/html' },
-                        });
-                        if (!response.ok) void response.body?.cancel().catch(() => {});
-                        if (response.status === 429) {
-                            const retry = Number(response.headers.get('retry-after'));
-                            pool!.backoff(Number.isFinite(retry) && retry > 0 ? retry * 1000 : 10000);
-                            return result('unknown', 'SoundCloud ограничил частоту проверок. Повторим позже.');
-                        }
-                        if ([403, 404, 410, 451].includes(response.status))
-                            return result('blocked', 'Трек недоступен в текущем аккаунте или регионе.');
-                        if (!response.ok) return result('unknown', 'SoundCloud временно не подтвердил доступность.');
-                        const html = await readTextLimited(response);
-                        signal?.throwIfAborted();
-                        return parseTrackAvailability(html, url);
-                    } catch {
-                        signal?.throwIfAborted();
-                        return result('unknown', 'Не удалось проверить доступность. Повторите поиск.');
-                    }
-                }, signal)
+                .run(
+                    () =>
+                        schedule(async () => {
+                            try {
+                                signal?.throwIfAborted();
+                                const timeout = AbortSignal.timeout(6500);
+                                const response = await session.fetch(`https://soundcloud.com${path}`, {
+                                    redirect: 'error',
+                                    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+                                    headers: { Accept: 'text/html' },
+                                });
+                                if (!response.ok) void response.body?.cancel().catch(() => {});
+                                if (response.status === 429) {
+                                    const retry = Number(response.headers.get('retry-after'));
+                                    pool!.backoff(Number.isFinite(retry) && retry > 0 ? retry * 1000 : 10000);
+                                    return result('unknown', 'SoundCloud ограничил частоту проверок. Повторим позже.');
+                                }
+                                if ([403, 404, 410, 451].includes(response.status))
+                                    return result('blocked', 'Трек недоступен в текущем аккаунте или регионе.');
+                                if (!response.ok)
+                                    return result('unknown', 'SoundCloud временно не подтвердил доступность.');
+                                const html = await readTextLimited(response);
+                                signal?.throwIfAborted();
+                                return parseTrackAvailability(html, url);
+                            } catch {
+                                signal?.throwIfAborted();
+                                return result('unknown', 'Не удалось проверить доступность. Повторите поиск.');
+                            }
+                        }),
+                    signal,
+                )
                 .then((value) => {
                     remember(session, key, value);
                     return value;

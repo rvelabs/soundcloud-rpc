@@ -437,7 +437,12 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;
+    overflow-anchor: none;
     border-top: 1px solid #383838;
+}
+:is(#codex-wave-inline, #codex-playlist-import) .cw-import-spacer {
+    pointer-events: none;
+    flex: none;
 }
 :is(#codex-wave-inline, #codex-playlist-import) .cw-import-row {
     display: grid;

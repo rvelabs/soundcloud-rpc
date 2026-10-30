@@ -3,6 +3,7 @@ import { createPlaylistImportController } from './import/playlistImportControlle
 import { attachWindowView } from './utils/windowViews';
 import { WorkerSetup } from './network/workerSetup';
 import { ConnectionRecovery } from './network/connectionRecovery';
+import { WorkScheduler } from './utils/workScheduler';
 
 import { installNativePageCover } from './wave/nativePageCover';
 import {
@@ -156,6 +157,8 @@ function traceWave(event: string, current?: string, observed?: string, detail?: 
             'native-cleanup-failed',
             'transition-failed',
             'transition-retry-failed',
+            'selection-empty',
+            'native-step',
         ].includes(event)
     )
         return;
@@ -646,7 +649,10 @@ async function init() {
             store.get('cloudflareEndpoint'),
         ]);
 
+    const workScheduler = new WorkScheduler();
+    clientContents.once('destroyed', () => workScheduler.dispose());
     const windowImport = createPlaylistImportController({
+        scheduler: workScheduler,
         window: mainWindow,
         contents: clientContents,
         libraryStore,
@@ -660,6 +666,7 @@ async function init() {
         trace: traceWave,
     });
     const windowWave = (waveController = createWaveController({
+        scheduler: workScheduler,
         window: mainWindow,
         contents: clientContents,
         store,
