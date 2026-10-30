@@ -1,8 +1,10 @@
 import { effectiveMood } from './preferences';
-import { buildProfile } from './profile';
+import { isDeepStrictEqual } from 'node:util';
+import { buildProfile, tokensOf } from './profile';
 import type { TasteProfile } from './profile';
 import { discoverySeeds } from './discovery';
 import { recommend } from './ranker';
+import { CatalogSimilarityCache } from './similarity';
 import { defaultControls } from './types';
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
 import { artistIdentity, recentPreference, recentReactions, sessionWeight } from './sessionSignals';
@@ -10,6 +12,11 @@ export interface CandidateProvider {
     related(seeds: Track[]): Promise<Track[]>;
 }
 export class RecommendationSession {
+    private similarity = new CatalogSimilarityCache();
+    private corpusRevision = 0;
+    similarityDiagnostics(): object {
+        return this.similarity.diagnostics();
+    }
     private events: Feedback[] = [];
     private candidates = new Map<string, Track>();
     private recentIds: string[] = [];
@@ -96,6 +103,8 @@ export class RecommendationSession {
             .map((item) => item.track.artist);
     }
     clearCandidates(): void {
+        this.corpusRevision++;
+        this.similarity.clear();
         for (const item of [...this.selectionTrail]) if (!this.recentIds.includes(item.id)) this.release(item.id);
         this.invalidateRanking();
         this.candidateEpoch++;
@@ -104,6 +113,7 @@ export class RecommendationSession {
         this.selectionTrail = this.selectionTrail.filter((item) => this.recentIds.includes(item.id));
     }
     removeCandidates(ids: string[]): void {
+        this.corpusRevision++;
         this.invalidateRanking();
         for (const id of ids) {
             this.release(id);
@@ -126,8 +136,22 @@ export class RecommendationSession {
             this.invalidateRanking();
     }
     addCandidates(tracks: Track[]): void {
-        if (tracks.length) this.invalidateRanking();
-        for (const track of tracks) if (track.id && track.artist) this.candidates.set(track.id, track);
+        let changed = false;
+        let corpusChanged = false;
+        for (const track of tracks) {
+            const previous = this.candidates.get(track.id);
+            if (!track.id || !track.artist || isDeepStrictEqual(previous, track)) continue;
+            if (!previous || JSON.stringify(tokensOf(previous)) !== JSON.stringify(tokensOf(track)))
+                corpusChanged = true;
+            const snapshot = { ...track };
+            if (track.tags) snapshot.tags = [...track.tags];
+            if (track.relatedTo) snapshot.relatedTo = [...track.relatedTo];
+            if (track.features) snapshot.features = { ...track.features };
+            this.candidates.set(track.id, snapshot);
+            changed = true;
+        }
+        if (corpusChanged) this.corpusRevision++;
+        if (changed) this.invalidateRanking();
     }
     feedback(
         item: Omit<Feedback, 'at'> & {
@@ -189,7 +213,8 @@ export class RecommendationSession {
     rank(limit = 10): Recommendation[] {
         const minute = Math.floor(this.now() / 60000);
         const cached = this.rankingCache.get(limit);
-        if (cached?.revision === this.rankingRevision && cached.minute === minute) return cached.value.slice();
+        if (cached?.revision === this.rankingRevision && cached.minute === minute)
+            return this.copyRecommendations(cached.value);
         const value = recommend(
             [...this.candidates.values()].filter((track) => this.allowed(track)),
             this.events,
@@ -197,22 +222,46 @@ export class RecommendationSession {
             this.context(),
             limit,
             this.profile(),
+            (corpus) => this.similarity.get(corpus),
         );
         if (this.rankingCache.size >= 8) this.rankingCache.clear();
         this.rankingCache.set(limit, { revision: this.rankingRevision, minute, value });
-        return value.slice();
+        return this.copyRecommendations(value);
+    }
+    private copyRecommendations(items: Recommendation[]): Recommendation[] {
+        return items.map((item) => ({
+            ...item,
+            reasons: [...item.reasons],
+            track: {
+                ...item.track,
+                ...(item.track.tags ? { tags: [...item.track.tags] } : {}),
+                ...(item.track.features ? { features: { ...item.track.features } } : {}),
+                ...(item.track.relatedTo ? { relatedTo: [...item.track.relatedTo] } : {}),
+            },
+        }));
     }
     rankBuffered(tracks: Track[], limit = 10, recentArtists: string[] = []): Recommendation[] {
         const context = this.context(false);
         context.similarityCorpus = [...this.candidates.values()];
         context.recentArtists = [...recentArtists, ...(context.recentArtists || [])];
+        const profile = this.profile();
+        const metadata = (track: Track) => [track.id, track.title, track.genre, track.tags];
+        const revision = JSON.stringify([
+            this.corpusRevision,
+            Math.floor(this.now() / 60000),
+            profile.positiveSeeds.map(metadata),
+            profile.negativeSeeds.map(metadata),
+            context.sessionReactions?.map((event) => metadata(event.track)),
+            context.recentTracks?.map(metadata),
+        ]);
         return recommend(
             tracks.filter((track) => this.allowed(track)),
             this.events,
             this.controls,
             context,
             limit,
-            this.profile(),
+            profile,
+            (corpus) => this.similarity.get(corpus, revision),
         );
     }
     async refresh(): Promise<Recommendation[]> {

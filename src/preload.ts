@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { TrackInfo, TrackUpdateReason } from './types';
 import { installWaveMediaEndCapture } from './wave/mediaEndCapture';
-if (location.origin === 'https://soundcloud.com')
+import { installAudioFeatureCapture } from './wave/audioFeatureCapture';
+if (location.origin === 'https://soundcloud.com') {
     contextBridge.executeInMainWorld({ func: installWaveMediaEndCapture });
+    contextBridge.executeInMainWorld({ func: installAudioFeatureCapture });
+}
 let waveTransportActive = false;
 let waveNativeQueueReady = false;
 let lastWavePointerDown = 0;

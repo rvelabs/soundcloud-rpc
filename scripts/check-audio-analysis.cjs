@@ -54,7 +54,29 @@ app.whenReady().then(async () => {
             '110Hz fixture is measured in the bass band',
         );
         assert(!measured.paused && measured.time > 2 && measured.sameHook);
-        const count = measured.samples.length;
+        await contents.executeJavaScript(
+            "Object.assign(window.__waveMediaEndState,{currentPath:'/test/one',analysisReadyPath:'/test/one'});window.dispatchEvent(new Event('__soundcloudWaveMediaState'))",
+        );
+        await wait(1300);
+        assert.equal(
+            await contents.executeJavaScript('samples.length'),
+            measured.samples.length,
+            'cached analysis suppresses further sampling',
+        );
+        assert.equal(
+            await contents.executeJavaScript('testAudio.paused'),
+            false,
+            'cache reuse preserves audio playback',
+        );
+        await contents.executeJavaScript(
+            "delete window.__waveMediaEndState.analysisReadyPath;window.dispatchEvent(new Event('__soundcloudWaveMediaState'))",
+        );
+        await wait(2300);
+        assert(
+            (await contents.executeJavaScript('samples.length')) > measured.samples.length,
+            'invalidating analysis wakes sampling',
+        );
+        const count = await contents.executeJavaScript('samples.length');
         await contents.executeJavaScript('window.__waveMediaEndState.active=false');
         await wait(1300);
         const stopped = await contents.executeJavaScript(
@@ -78,6 +100,7 @@ app.whenReady().then(async () => {
             spectralCheck: true,
             playbackContinuesWithoutAnalysis: true,
             unsafeCorsSkipped: true,
+            cachedAnalysisSkipsSampling: true,
             samples: measured.samples.length,
         };
         fs.writeFileSync(path.join(output, 'audio-analysis.json'), JSON.stringify(result, null, 2));

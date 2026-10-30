@@ -1,19 +1,37 @@
 export function installAudioFeatureCapture(): void {
     const page = window as typeof window & {
         __waveAudioInstalled?: boolean;
-        __waveMediaEndState?: { active: boolean };
+        __waveMediaEndState?: { active: boolean; currentPath?: string; analysisReadyPath?: string };
         soundcloudAPI?: { sendAudioFeatures: (features: unknown) => void };
     };
     if (page.__waveAudioInstalled) return;
     page.__waveAudioInstalled = true;
     const seen: WeakRef<HTMLMediaElement>[] = [];
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const cached = () =>
+        Boolean(
+            page.__waveMediaEndState?.currentPath &&
+                page.__waveMediaEndState.analysisReadyPath === page.__waveMediaEndState.currentPath,
+        );
+    const wake = () => {
+        if (!timer && page.__waveMediaEndState?.active && !cached())
+            timer = setInterval(() => {
+                void sample().catch(() => {});
+            }, 1000);
+    };
+    const stop = () => {
+        clearInterval(timer);
+        timer = undefined;
+    };
     const originalPlay = HTMLMediaElement.prototype.play;
     HTMLMediaElement.prototype.play = function () {
         const result = originalPlay.call(this);
         if (!seen.some((reference) => reference.deref() === this)) {
             seen.push(new WeakRef(this));
             if (seen.length > 8) seen.shift();
+            this.addEventListener('playing', wake);
         }
+        wake();
         return result;
     };
     const connected = new WeakMap<
@@ -42,10 +60,14 @@ export function installAudioFeatureCapture(): void {
     const sample = async () => {
         for (const reference of seen) {
             const media = reference.deref();
-            if (media && (!page.__waveMediaEndState?.active || media.paused || media.ended || media.mediaKeys))
+            if (
+                media &&
+                (!page.__waveMediaEndState?.active || cached() || media.paused || media.ended || media.mediaKeys)
+            )
                 release(media);
         }
-        if (!page.__waveMediaEndState?.active) {
+        if (!page.__waveMediaEndState?.active || cached()) {
+            stop();
             if (context?.state === 'running') void context.suspend().catch(() => {});
             return;
         }
@@ -58,10 +80,15 @@ export function installAudioFeatureCapture(): void {
                 item instanceof HTMLMediaElement && !item.paused && item.readyState >= 3 && !item.mediaKeys,
         );
         if (!media) {
+            stop();
             if (context?.state === 'running') void context.suspend().catch(() => {});
             return;
         }
-        if (!seen.some((reference) => reference.deref() === media)) seen.push(new WeakRef(media));
+        if (!seen.some((reference) => reference.deref() === media)) {
+            seen.push(new WeakRef(media));
+            if (seen.length > 8) seen.shift();
+            media.addEventListener('playing', wake);
+        }
         const badge = document.querySelector<HTMLAnchorElement>('.playbackSoundBadge__titleLink');
         if (!badge) return;
         let currentPath: string;
@@ -79,6 +106,7 @@ export function installAudioFeatureCapture(): void {
             previousPosition = media.currentTime;
         }
         if (sampledSeconds >= 90) {
+            stop();
             release(media);
             if (context?.state === 'running') void context.suspend().catch(() => {});
             return;
@@ -99,7 +127,14 @@ export function installAudioFeatureCapture(): void {
             try {
                 context ??= new AudioContext();
                 if (context.state !== 'running') await context.resume();
-                if (context.state !== 'running' || media.paused || media.mediaKeys) return;
+                if (
+                    context.state !== 'running' ||
+                    media.paused ||
+                    media.mediaKeys ||
+                    cached() ||
+                    !page.__waveMediaEndState?.active
+                )
+                    return;
                 const analyser = context.createAnalyser();
                 analyser.fftSize = 1024;
                 analyser.smoothingTimeConstant = 0.6;
@@ -162,19 +197,27 @@ export function installAudioFeatureCapture(): void {
             sampleSeconds: sampledSeconds,
         });
     };
-    const timer = setInterval(() => {
-        void sample().catch(() => {});
-    }, 1000);
-    window.addEventListener(
-        'pagehide',
-        () => {
-            clearInterval(timer);
-            for (const reference of seen) {
-                const media = reference.deref();
-                if (media) release(media);
-            }
+    const onState = () => {
+        if (page.__waveMediaEndState?.active && !cached()) wake();
+        else {
+            stop();
+            void sample().catch(() => {});
+        }
+    };
+    page.addEventListener('__soundcloudWaveMediaState', onState);
+    page.addEventListener('pageshow', wake);
+    wake();
+    window.addEventListener('pagehide', (event) => {
+        stop();
+        for (const reference of seen) {
+            const media = reference.deref();
+            if (media) release(media);
+        }
+        if (event.persisted) void context?.suspend().catch(() => {});
+        else {
+            page.removeEventListener('__soundcloudWaveMediaState', onState);
+            page.removeEventListener('pageshow', wake);
             void context?.close().catch(() => {});
-        },
-        { once: true },
-    );
+        }
+    });
 }

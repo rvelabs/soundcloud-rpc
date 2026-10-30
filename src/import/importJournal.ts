@@ -26,6 +26,11 @@ const trackKey = (track: SourceTrack) =>
         )
         .digest('hex');
 export class ImportJournal {
+    private timer?: ReturnType<typeof setTimeout>;
+    private pendingJob?: ImportJob;
+    private cacheDirty = false;
+    private updates = 0;
+    private closed = false;
     private key: string;
     private cache: Record<string, { at: number; match: NonNullable<ImportMatch['soundcloud']> }>;
     constructor(
@@ -68,21 +73,53 @@ export class ImportJournal {
         this.save(job);
         return job;
     }
-    save(job: ImportJob): void {
+    save(job: ImportJob, deferred = false): void {
+        if (this.closed) return;
         job.updatedAt = this.now();
-        this.store.set(this.key, job);
+        this.pendingJob = job;
+        if (deferred) this.schedule();
+        else this.flush();
     }
     cached(track: SourceTrack): ImportMatch['soundcloud'] {
         const cached = this.cache[trackKey(track)];
         return cached && this.now() - cached.at < 7 * 86400000 ? cached.match : undefined;
     }
     remember(match: ImportMatch): void {
-        if (!match.soundcloud) return;
+        if (this.closed || !match.soundcloud) return;
         this.cache[trackKey(match.source)] = { at: this.now(), match: match.soundcloud };
-        const entries = Object.entries(this.cache)
-            .sort((a, b) => b[1].at - a[1].at)
-            .slice(0, 2000);
-        this.cache = Object.fromEntries(entries);
-        this.store.set('importMatchCacheV1', this.cache);
+        this.cacheDirty = true;
+        this.schedule();
+    }
+    private schedule(): void {
+        if (++this.updates >= 25) {
+            this.flush();
+            return;
+        }
+        if (!this.timer) {
+            this.timer = setTimeout(() => this.flush(), 250);
+            this.timer.unref?.();
+        }
+    }
+    flush(): void {
+        clearTimeout(this.timer);
+        this.timer = undefined;
+        this.updates = 0;
+        if (this.cacheDirty) {
+            this.cache = Object.fromEntries(
+                Object.entries(this.cache)
+                    .sort((a, b) => b[1].at - a[1].at)
+                    .slice(0, 2000),
+            );
+            this.store.set('importMatchCacheV1', this.cache);
+            this.cacheDirty = false;
+        }
+        if (this.pendingJob) {
+            this.store.set(this.key, this.pendingJob);
+            this.pendingJob = undefined;
+        }
+    }
+    dispose(): void {
+        this.flush();
+        this.closed = true;
     }
 }

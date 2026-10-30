@@ -7,6 +7,7 @@ export interface CatalogTrack {
     state?: string;
     policy?: string;
     duration?: number;
+    last_modified?: string;
     language?: string;
     playback_count?: number;
     genre?: string;

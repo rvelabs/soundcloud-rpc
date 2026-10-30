@@ -82,13 +82,19 @@ async function searchInPage(
         if (!input) return false;
         input.focus();
         input.select();
-        return document.activeElement === input && input.selectionStart === 0 &&
-            input.selectionEnd === input.value.length;
+        if (document.activeElement === input && input.selectionStart === 0 &&
+            input.selectionEnd === input.value.length) return 'focused';
+        const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        if (!set) return false;
+        set.call(input, ${JSON.stringify(clean)});
+        input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ${JSON.stringify(clean)} }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return input.value === ${JSON.stringify(clean)} ? 'set' : false;
     })()`,
         true,
-    )) as boolean;
+    )) as 'focused' | 'set' | false;
     if (!search) throw new Error('Поле поиска SoundCloud недоступно.');
-    await contents.insertText(clean);
+    if (search === 'focused') await contents.insertText(clean);
     await wait(100);
     if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     const submitted = (await contents.executeJavaScript(
@@ -263,6 +269,7 @@ async function performNativeCard(
         true,
     )) as string;
     let uncover = async () => {};
+    let navigationStarted = false;
     let fullNavigation = false;
     const preventReload = (event: Electron.Event) => {
         fullNavigation = true;
@@ -278,6 +285,11 @@ async function performNativeCard(
             maxQueries,
             async () => {
                 uncover = await beginNativePageCover(contents);
+                navigationStarted = true;
+                await contents.executeJavaScript(
+                    `window.__waveNativeNavigation=true;window.dispatchEvent(new Event('__soundcloudWaveNativeNavigation'));`,
+                    true,
+                );
             },
             isActive,
         );
@@ -304,7 +316,17 @@ async function performNativeCard(
                         true,
                     )
                     .catch(() => {});
-            await uncover();
+            try {
+                if (navigationStarted && !contents.isDestroyed())
+                    await contents
+                        .executeJavaScript(
+                            `window.__waveNativeNavigation=false;window.dispatchEvent(new Event('__soundcloudWaveNativeNavigation'));`,
+                            true,
+                        )
+                        .catch(() => {});
+            } finally {
+                await uncover();
+            }
         }
     }
 }

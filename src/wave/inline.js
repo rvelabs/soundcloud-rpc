@@ -284,20 +284,36 @@
     translatedMarkup.forEach((render) => render());
     const $ = (selector) => root.querySelector(selector) || importCard.querySelector(selector);
     let homeMain = null;
+    const moveCard = (card, host, before = null) => {
+        if (card.isConnected && host.isConnected && typeof host.moveBefore === 'function')
+            host.moveBefore(card, before);
+        else {
+            const modals = [...card.querySelectorAll('dialog[open]')].filter((dialog) => dialog.matches(':modal'));
+            const focus = document.activeElement;
+            host.insertBefore(card, before);
+            for (const dialog of modals) {
+                if (dialog.matches(':modal')) continue;
+                dialog.close();
+                dialog.showModal();
+            }
+            if (focus?.isConnected && modals.some((dialog) => dialog.contains(focus)))
+                focus.focus({ preventScroll: true });
+        }
+    };
     const isHome = () => ['/', '/discover'].includes(location.pathname.replace(/\/+$/, '') || '/');
     const detach = () => {
         homeMain = null;
         if (importDialog.open || importBusy) {
             importCard.classList.add('ci-detached');
-            if (importCard.parentElement !== document.body) document.body.append(importCard);
+            if (importCard.parentElement !== document.body) moveCard(importCard, document.body);
         } else importCard.remove();
         if ((active || settingsDialog.open) && document.body) {
             root.classList.add('cw-detached');
-            if (root.parentElement !== document.body) document.body.appendChild(root);
+            if (root.parentElement !== document.body) moveCard(root, document.body);
         } else if (root.isConnected) root.remove();
     };
     const place = () => {
-        if (!isHome()) {
+        if (window.__waveNativeNavigation || !isHome()) {
             detach();
             return;
         }
@@ -324,8 +340,8 @@
         root.dataset.placement = target ? 'personalized' : 'home';
         importCard.classList.remove('ci-detached');
         if (importCard.parentElement !== host || importCard.nextElementSibling !== before)
-            host.insertBefore(importCard, before);
-        if (root.parentElement !== host || root.nextElementSibling !== importCard) host.insertBefore(root, importCard);
+            moveCard(importCard, host, before);
+        if (root.parentElement !== host || root.nextElementSibling !== importCard) moveCard(root, host, importCard);
     };
     let pending = false;
     const schedule = () => {
@@ -355,12 +371,14 @@
         schedule();
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.addEventListener('__soundcloudWaveNativeNavigation', place);
     place();
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
     window.addEventListener(
         'pagehide',
         () => {
             observer.disconnect();
+            window.removeEventListener('__soundcloudWaveNativeNavigation', place);
         },
         { once: true },
     );

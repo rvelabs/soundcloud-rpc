@@ -83,6 +83,14 @@ app.whenReady().then(async () => {
         assert.equal(await wc.executeJavaScript('updates.length'), count);
         passed.push('pause and ARIA-only heart updates work; 1,000 unrelated DOM mutations emit no extra playback IPC');
         await wc.executeJavaScript(
+            `window.queryCount=0;window.queryOriginal=Document.prototype.querySelector;Document.prototype.querySelector=function(...args){queryCount++;return queryOriginal.apply(this,args)};window.paintTarget=document.querySelector('.playbackTimeline__progressWrapper');queryCount=0;window.paintTimer=setInterval(()=>{paintTarget.style.transform='scaleX('+Math.random()+')'},10)`,
+        );
+        await wait(350);
+        const queries = await wc.executeJavaScript('clearInterval(paintTimer);queryCount');
+        assert.equal(queries, 0, 'visual progress updates do not re-read the player DOM');
+        await wc.executeJavaScript('Document.prototype.querySelector=queryOriginal;true;');
+        passed.push('animated progress produces zero player DOM queries');
+        await wc.executeJavaScript(
             `const event=new Event('beforeunload',{cancelable:true});event.preventDefault();window.dispatchEvent(event);paint(31)`,
         );
         await wait(165);
@@ -92,6 +100,32 @@ app.whenReady().then(async () => {
         await wc.executeJavaScript(`window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:false}))`);
         assert.equal(await wc.executeJavaScript('liveObservers'), 0);
         passed.push('all audio-monitor observers disconnect on unload');
+        const filter = load('services/artistUpsellFilter.js').installArtistUpsellFilter;
+        await wc.executeJavaScript(
+            `(${filter.toString()})(true);window.toolsContainer=document.createElement('div');toolsContainer.className='webiEmbeddedModuleContainer';window.toolsFrame=document.createElement('iframe');toolsFrame.title='Artist tools';toolsFrame.srcdoc=${JSON.stringify('<body><svg aria-label="Paywalled feature"></svg></body>')};toolsContainer.append(toolsFrame);document.body.append(toolsContainer);true;`,
+        );
+        await wait(200);
+        assert.equal(
+            await wc.executeJavaScript("document.querySelector('.webiEmbeddedModuleContainer').style.display"),
+            'none',
+        );
+        await wc.executeJavaScript("document.querySelector('iframe').contentDocument.querySelector('svg').remove()");
+        await wait(70);
+        assert.equal(
+            await wc.executeJavaScript("document.querySelector('.webiEmbeddedModuleContainer').style.display"),
+            '',
+        );
+        await wc.executeJavaScript(
+            "const svg=toolsFrame.contentDocument.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('aria-label','Paywalled feature');toolsFrame.contentDocument.body.append(svg);true;",
+        );
+        await wait(70);
+        assert.equal(await wc.executeJavaScript('toolsContainer.style.display'), 'none');
+        await wc.executeJavaScript("toolsFrame.title='Regular content'");
+        await wait(70);
+        assert.equal(await wc.executeJavaScript('toolsContainer.style.display'), '');
+        await wc.executeJavaScript(`(${filter.toString()})(false)`);
+        assert.equal(await wc.executeJavaScript('liveObservers'), 0);
+        passed.push('event-driven artist filtering preserves hide/restore behavior and releases its observers');
         const pluginDir = path.join(profile, 'plugins'),
             themeDir = path.join(profile, 'themes');
         fs.mkdirSync(pluginDir, { recursive: true });

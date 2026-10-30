@@ -68,28 +68,45 @@ const titleStyles = new Set([
     'organic',
     'underground',
 ]);
-export const normalize = (value: string): string => value.toLowerCase().normalize('NFKC').trim().replace(/\s+/g, ' ');
+const normalized = new Map<string, string>();
+const tokenized = new Map<string, string[]>();
+const recordings = new Map<string, string>();
+function memo<T>(cache: Map<string, T>, key: string, compute: () => T): T {
+    if (key.length > 1024) return compute();
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+    const value = compute();
+    cache.set(key, value);
+    if (cache.size > 2048) cache.delete(cache.keys().next().value!);
+    return value;
+}
+export const normalize = (value: string): string =>
+    memo(normalized, value, () => value.toLowerCase().normalize('NFKC').trim().replace(/\s+/g, ' '));
 export function tokensOf(track: Track): string[] {
-    const title = normalize(track.title)
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((token) => titleStyles.has(token));
-    const metadata = [track.genre || '', ...(track.tags || []), ...title];
-    return [
-        ...new Set(
-            metadata
-                .flatMap((item) => normalize(item).split(/[^\p{L}\p{N}]+/u))
-                .filter((token) => token.length >= 3 && token.length <= 30 && !stop.has(token)),
-        ),
-    ];
+    return memo(tokenized, JSON.stringify([track.title, track.genre, track.tags]), () => {
+        const title = normalize(track.title)
+            .split(/[^\p{L}\p{N}]+/u)
+            .filter((token) => titleStyles.has(token));
+        const metadata = [track.genre || '', ...(track.tags || []), ...title];
+        return [
+            ...new Set(
+                metadata
+                    .flatMap((item) => normalize(item).split(/[^\p{L}\p{N}]+/u))
+                    .filter((token) => token.length >= 3 && token.length <= 30 && !stop.has(token)),
+            ),
+        ];
+    }).slice();
 }
 export function recordingKey(track: Track): string {
-    const clean = (text: string) =>
-        normalize(text)
-            .replace(/\b(?:official|audio|video|lyrics)\b/g, '')
-            .replace(/[^\p{L}\p{N}]+/gu, ' ')
-            .trim()
-            .replace(/\s+/g, ' ');
-    return `${clean(track.artist)}|${clean(track.title)}`;
+    return memo(recordings, JSON.stringify([track.artist, track.title]), () => {
+        const clean = (text: string) =>
+            normalize(text)
+                .replace(/\b(?:official|audio|video|lyrics)\b/g, '')
+                .replace(/[^\p{L}\p{N}]+/gu, ' ')
+                .trim()
+                .replace(/\s+/g, ' ');
+        return `${clean(track.artist)}|${clean(track.title)}`;
+    });
 }
 export function measuredBpm(features?: SoundFeatures): number | undefined {
     const bpm = features?.bpm,

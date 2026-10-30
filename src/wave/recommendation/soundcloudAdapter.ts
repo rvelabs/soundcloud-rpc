@@ -369,6 +369,7 @@ export class SoundCloudRecommender {
     diagnostics(): object {
         return {
             candidates: this.candidates.size,
+            similarity: this.session.similarityDiagnostics(),
             feedback: this.feedbackEvents.length,
             styles: [...this.session.profile().styles]
                 .sort((a, b) => b[1] - a[1])

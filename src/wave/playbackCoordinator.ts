@@ -20,7 +20,9 @@ export class PlaybackCoordinator {
         const task = Promise.resolve().then(async () => {
             if (epoch !== this.epoch || !this.player.active()) return;
             if (this.player.nativeReady() && ['user', 'native-user', 'finish', 'error'].includes(reason)) {
-                if (await this.player.advanceNative(reason)) return;
+                try {
+                    if (await this.player.advanceNative(reason)) return;
+                } catch {}
                 if (epoch !== this.epoch || !this.player.active()) return;
             }
             await this.player.select(reason === 'native-user' ? 'user' : reason);

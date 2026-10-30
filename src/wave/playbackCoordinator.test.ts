@@ -1,6 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PlaybackCoordinator } from './playbackCoordinator';
 describe('playback transition ownership', () => {
+    it('uses the prepared fallback when native queue inspection throws', async () => {
+        const select = vi.fn(async () => {});
+        const coordinator = new PlaybackCoordinator({
+            active: () => true,
+            nativeReady: () => true,
+            advanceNative: async () => {
+                throw new Error('navigation interrupted');
+            },
+            select,
+        });
+        await coordinator.request('finish');
+        expect(select).toHaveBeenCalledWith('finish');
+    });
     it('coalesces overlapping next requests from buttons and media keys', async () => {
         let finish!: (value: boolean) => void;
         const advanceNative = vi.fn(

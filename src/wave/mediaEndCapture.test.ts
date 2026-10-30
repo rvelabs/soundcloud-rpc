@@ -1,7 +1,84 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInNewContext } from 'node:vm';
 import { installWaveMediaEndCapture } from './mediaEndCapture';
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 describe('media end preparation', () => {
+    it('recovers a swallowed end once without advancing a manual pause or an inactive wave', async () => {
+        class Media extends EventTarget {
+            duration = 180;
+            currentTime = 0;
+            currentSrc = 'one';
+            src = 'one';
+            paused = true;
+            ended = false;
+            seeking = false;
+            playbackRate = 1;
+            play() {
+                this.paused = false;
+                return Promise.resolve();
+            }
+        }
+        const window = new EventTarget() as EventTarget & {
+            __waveMediaEndState: { active: boolean; queueReady: boolean; currentPath: string };
+            __waveMediaEndSnapshot: () => { endedEvents: number; recoveredEvents: number };
+        };
+        let badge = '/artist/one';
+        const completions: string[] = [];
+        window.addEventListener('__soundcloudWaveMediaEnded', (event) =>
+            completions.push((event as CustomEvent).detail),
+        );
+        runInNewContext(`(${installWaveMediaEndCapture.toString()})()`, {
+            window,
+            Event,
+            CustomEvent,
+            HTMLMediaElement: Media,
+            setTimeout,
+            clearTimeout,
+            document: { querySelectorAll: () => [], querySelector: () => ({ pathname: badge }) },
+        });
+        window.__waveMediaEndState = { active: true, queueReady: false, currentPath: badge };
+        const media = new Media();
+        media.addEventListener('ended', (event) => event.stopImmediatePropagation(), true);
+        await media.play();
+        media.currentTime = 179;
+        media.dispatchEvent(new Event('timeupdate'));
+        media.currentTime = 180;
+        media.ended = media.paused = true;
+        media.dispatchEvent(new Event('pause'));
+        media.dispatchEvent(new Event('ended'));
+        await vi.advanceTimersByTimeAsync(500);
+        expect(completions).toEqual(['/artist/one']);
+        expect(window.__waveMediaEndSnapshot()).toMatchObject({ endedEvents: 0, recoveredEvents: 1 });
+        media.dispatchEvent(new Event('timeupdate'));
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(completions).toHaveLength(1);
+        media.src = media.currentSrc = 'two';
+        media.currentTime = 0;
+        media.ended = false;
+        await media.play();
+        media.currentTime = 10;
+        badge = window.__waveMediaEndState.currentPath = '/artist/two';
+        window.dispatchEvent(new Event('__soundcloudWaveMediaState'));
+        media.currentTime = 179.9;
+        media.dispatchEvent(new Event('timeupdate'));
+        media.paused = true;
+        media.dispatchEvent(new Event('pause'));
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(completions).toHaveLength(1);
+        expect(vi.getTimerCount()).toBe(0);
+        await media.play();
+        media.dispatchEvent(new Event('playing'));
+        media.currentTime = 180;
+        media.ended = media.paused = true;
+        media.dispatchEvent(new Event('pause'));
+        media.dispatchEvent(new Event('ended'));
+        await vi.advanceTimersByTimeAsync(500);
+        expect(completions).toEqual(['/artist/one', '/artist/two']);
+        window.__waveMediaEndState.active = false;
+        window.dispatchEvent(new Event('__soundcloudWaveMediaState'));
+        expect(vi.getTimerCount()).toBe(0);
+    });
     it('corrects a delayed badge at the beginning, preserving old end events and pause resumes', () => {
         class Media extends EventTarget {
             duration = 180;
@@ -23,6 +100,8 @@ describe('media end preparation', () => {
             Event,
             CustomEvent,
             HTMLMediaElement: Media,
+            setTimeout,
+            clearTimeout,
             document: { querySelectorAll: () => [], querySelector: () => ({ pathname: badge }) },
         });
         window.__waveMediaEndState = { active: true, queueReady: true, currentPath: badge };
@@ -94,6 +173,8 @@ describe('media end preparation', () => {
             Event,
             CustomEvent,
             HTMLMediaElement: Media,
+            setTimeout,
+            clearTimeout,
             document: { querySelectorAll: () => [], querySelector: () => ({ pathname: currentPath }) },
         });
         window.__waveMediaEndState = { active: true, queueReady: false, handoffPending: true };

@@ -224,6 +224,7 @@ export function recommend(
     context: Context,
     limit = 10,
     suppliedProfile?: TasteProfile,
+    similarity: typeof catalogSimilarity = catalogSimilarity,
 ): Recommendation[] {
     const profile = suppliedProfile || buildProfile(events, context.now);
     const reactions = context.sessionReactions || recentReactions(events, context.now);
@@ -293,7 +294,7 @@ export function recommend(
         controls.tempo === 'any' || matches.length
             ? matches
             : genrePool.filter((track) => measuredBpm(track.features) === undefined);
-    const compare = catalogSimilarity([
+    const compare = similarity([
         ...(context.similarityCorpus || pool),
         ...profile.positiveSeeds,
         ...profile.negativeSeeds,

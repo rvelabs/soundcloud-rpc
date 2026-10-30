@@ -62,14 +62,17 @@ export const audioMonitorScript = String.raw`
       bindings.delete(selector);
       if (!element) continue;
       const observer = new MutationObserver(scheduleNotify);
-      observer.observe(element, { childList: true, subtree: true, characterData: true, attributes: true,
-        attributeFilter: ['class','title','aria-label','aria-pressed','aria-valuemax','href','style'] });
+      observer.observe(element, selector === '.playbackTimeline__progressWrapper'
+        ? { attributes: true, attributeFilter: ['aria-valuemax'] }
+        : { childList: true, subtree: true, characterData: true, attributes: true,
+          attributeFilter: ['class','title','aria-label','aria-pressed','href','style'] });
       bindings.set(selector, { element, observer });
       scheduleNotify();
     }
   };
   const documentObserver = new MutationObserver(() => {
     if (reconcileTimer !== undefined || disposed) return;
+    if (bindings.size === selectors.length && [...bindings.values()].every(binding => binding.element.isConnected)) return;
     reconcileTimer = setTimeout(() => { reconcileTimer = undefined; reconcile(); }, 100);
   });
   const onSeek = event => {

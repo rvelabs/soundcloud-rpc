@@ -12,7 +12,13 @@ const healthy = process.env.WAVE_TEST_HEALTHY_HANDOFF === '1';
 const manual = process.env.WAVE_TEST_MANUAL_HANDOFF === '1';
 const delayedBadge = process.env.WAVE_TEST_DELAYED_BADGE === '1';
 const cachedPlay = process.env.WAVE_TEST_CACHED_PLAY === '1';
-const extended = delayedBadge || cachedPlay;
+const modalSearch = process.env.WAVE_TEST_MODAL_SEARCH === '1';
+const settingsOpen = modalSearch && process.env.WAVE_TEST_MODAL_CLOSED !== '1';
+const lostEnded = process.env.WAVE_TEST_LOST_ENDED === '1';
+const transientFailure = process.env.WAVE_TEST_TRANSIENT_FAILURE === '1';
+const longPlayback = process.env.WAVE_TEST_LONG_PLAYBACK === '1';
+const audioCache = process.env.WAVE_TEST_AUDIO_CACHE === '1';
+const extended = delayedBadge || cachedPlay || modalSearch || lostEnded || transientFailure || audioCache;
 const ids = [
     'one',
     'two',
@@ -24,7 +30,7 @@ const ids = [
     'eight',
     ...(extended ? Array.from({ length: 8 }, (_, index) => 'extra-' + index) : []),
 ];
-const targetTracks = extended ? 12 : 7;
+const targetTracks = longPlayback ? 4 : extended ? 12 : 7;
 const seed = balanced ? 'https://soundcloud.com/artist/three' : 'https://soundcloud.com/seed/favorite';
 fs.writeFileSync(
     path.join(profile, 'config.json'),
@@ -32,7 +38,7 @@ fs.writeFileSync(
         adBlocker: false,
         discordRichPresence: false,
         minimizeToTray: true,
-        waveQueueUnavailableV17_2_default: 0,
+        waveQueueUnavailableV17_2_default: modalSearch ? Date.now() : 0,
         waveControls_default: { mood: 'any', tone: 'bass', tempo: 'any', discovery: balanced ? 'balanced' : 'new' },
         waveFeedbackV1_default: [
             { track: { id: seed, title: 'Favorite', artist: 'Seed' }, kind: 'like', at: Date.now() - 7 * 86400000 },
@@ -74,10 +80,28 @@ fs.writeFileSync(
                 catalogCheckedAt: Date.now(),
             })),
         },
+        ...(audioCache
+            ? {
+                  waveAudioAnalysisV1_default: ids.map((id) => [
+                      JSON.stringify(['/artist/' + id, 90, '']),
+                      {
+                          at: Date.now(),
+                          version: 1,
+                          features: {
+                              source: 'media-element-v1',
+                              sampleSeconds: 60,
+                              energy: 0.25,
+                              bass: 0.6,
+                              brightness: 0.2,
+                          },
+                      },
+                  ]),
+              }
+            : {}),
     }),
 );
 const rate = 8000,
-    frames = rate * 2;
+    frames = rate * (longPlayback ? 31 : 2);
 const audio = Buffer.alloc(44 + frames * 2);
 audio.write('RIFF');
 audio.writeUInt32LE(audio.length - 8, 4);
@@ -94,14 +118,16 @@ audio.write('data', 36);
 audio.writeUInt32LE(frames * 2, 40);
 const source = 'data:audio/wav;base64,' + audio.toString('base64');
 const fixture = `<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#111;color:white}</style>
-<main id="content"><div class="l-main"><div class="l-content">${ids.map((id) => `<div class="sound"><a class="soundTitle__title" href="https://soundcloud.com/artist/${id}">${id}</a><div class="soundTitle__playButton"><button class="playButton" onclick="playTrack('${id}')">Play</button></div><button class="sc-button-more" onclick="showMore('${id}')">More</button></div>`).join('')}</div></div></main>
+${modalSearch ? '<header><input class="headerSearch__input"><button class="headerSearch__submit">Search</button></header>' : ''}
+<main id="content"><div class="l-main"><div class="l-content">${modalSearch ? '' : ids.map((id) => `<div class="sound"><a class="soundTitle__title" href="https://soundcloud.com/artist/${id}">${id}</a><div class="soundTitle__playButton"><button class="playButton" onclick="playTrack('${id}')">Play</button></div><button class="sc-button-more" onclick="showMore('${id}')">More</button></div>`).join('')}</div></div></main>
 <ul class="queue__itemsContainer"></ul><div class="playControls"><button class="playControls__play"></button><button class="skipControl__next" onclick="window.nextClicks=(window.nextClicks||0)+1; if(${healthy})nextQueued()">Next</button><a class="playbackSoundBadge__titleLink"></a><a class="playbackSoundBadge__lightLink">Artist</a><div class="playbackTimeline__timePassed"><span>0:00</span></div><div class="playbackTimeline__duration"><span>1:30</span></div></div>
 <script>
 window.sitePlay=HTMLMediaElement.prototype.play;
+if(${modalSearch}){window.searches=[];document.querySelector('.headerSearch__input').addEventListener('input',event=>{window.searchModel=event.target.value});document.querySelector('.headerSearch__submit').onclick=()=>{const id=window.searchModel;searches.push(id);if(!${JSON.stringify(ids)}.includes(id))throw Error('Search model did not receive query');history.pushState({},'','/search?q='+encodeURIComponent(id));const panel=document.querySelector('.l-main');panel.innerHTML='<div class="l-content"><div class="sound"><a class="soundTitle__title" href="https://soundcloud.com/artist/'+id+'">'+id+'</a><div class="soundTitle__playButton"><button class="playButton">Play</button></div></div></div>';panel.querySelector('.playButton').onclick=()=>playTrack(id)};onpopstate=()=>{document.querySelector('.l-main').innerHTML='<div class="l-content"></div>'};}
 window.maxQueued=0;new MutationObserver(()=>{window.maxQueued=Math.max(window.maxQueued,document.querySelectorAll('.queue__itemsContainer .queueItemView').length)}).observe(document.querySelector('.queue__itemsContainer'),{childList:true});
 window.showMore=(id)=>{document.querySelector('.dropdownMenu')?.remove();const menu=document.createElement('div');menu.className='dropdownMenu';menu.innerHTML='<button class="addToNextUp" title="Add to Next up">Add</button>';const button=menu.firstChild;button.onclick=()=>{button.classList.add('sc-button-selected');const row=document.createElement('li');row.className='queueItemView';row.innerHTML='<a href="https://soundcloud.com/artist/'+id+'">'+id+'</a><button class="queueItemView__remove" onclick="this.parentElement.remove()">Remove</button>';document.querySelector('.queue__itemsContainer').append(row)};document.body.append(menu)};window.audio=new Audio();audio.volume=0.01;window.played=[];window.endedAt=[];window.nativeAutoplay=0;
-window.playTrack=(id)=>{played.push({id,at:Date.now()});const badge=()=>{document.querySelector('.playbackSoundBadge__titleLink').href='https://soundcloud.com/artist/'+id;document.querySelector('.playbackSoundBadge__titleLink').textContent=id;};if(!${delayedBadge}||played.length<3)badge();document.querySelector('.playControls__play').classList.add('playing');audio.src=${JSON.stringify(source)};void (${cachedPlay}?sitePlay.call(audio):audio.play());if(${delayedBadge}&&played.length>=3)setTimeout(badge,150);};
-audio.addEventListener('ended',()=>{endedAt.push({id:document.querySelector('.playbackSoundBadge__titleLink').pathname.split('/').pop(),at:Date.now()})},true);
+window.failedPlayClicks=0;window.playTrack=(id)=>{if(${transientFailure}&&played.length===2&&failedPlayClicks<3){failedPlayClicks++;return}played.push({id,at:Date.now()});const badge=()=>{document.querySelector('.playbackSoundBadge__titleLink').href='https://soundcloud.com/artist/'+id;document.querySelector('.playbackSoundBadge__titleLink').textContent=id;};if(!${delayedBadge}||played.length<3)badge();document.querySelector('.playControls__play').classList.add('playing');audio.src=${JSON.stringify(source)};void (${cachedPlay}?sitePlay.call(audio):audio.play());if(${delayedBadge}&&played.length>=3)setTimeout(badge,150);};
+audio.addEventListener('ended',event=>{endedAt.push({id:document.querySelector('.playbackSoundBadge__titleLink').pathname.split('/').pop(),at:Date.now()});if(${lostEnded}&&played.length>=3)event.stopImmediatePropagation()},true);
 window.nextQueued=()=>{const link=document.querySelector('.queue__itemsContainer a');if(link){const id=link.pathname.split('/').pop();link.closest('li').remove();playTrack(id)}};audio.addEventListener('ended',()=>{nativeAutoplay++;if(${healthy}||(${delayedBadge}&&played.length<3))nextQueued()});
 document.querySelector('.playControls__play').onclick=()=>{if(audio.paused){void audio.play();document.querySelector('.playControls__play').classList.add('playing')}else{audio.pause();document.querySelector('.playControls__play').classList.remove('playing')}};
 setInterval(()=>{document.querySelector('.playbackTimeline__timePassed span').textContent='0:0'+Math.floor(audio.currentTime)},250);
@@ -140,6 +166,8 @@ app.whenReady().then(async () => {
             await wait(50);
         }
         assert(contents, 'main client ready');
+        if (settingsOpen)
+            await contents.executeJavaScript("document.querySelector('.cw-settings-dialog').showModal()", true);
         await contents.executeJavaScript('waveInline.start()', true);
         window.minimize();
         if (manual) {
@@ -149,7 +177,7 @@ app.whenReady().then(async () => {
             }
             await contents.executeJavaScript("document.querySelector('.skipControl__next').click()", true);
         }
-        for (let index = 0; index < (extended ? 480 : 280); index++) {
+        for (let index = 0; index < (longPlayback ? 1250 : extended ? 480 : 280); index++) {
             if (await contents.executeJavaScript('played.length>=' + targetTracks)) break;
             await wait(100);
         }
@@ -166,7 +194,7 @@ app.whenReady().then(async () => {
             'no unrelated native-autoplay track starts',
         );
         assert.equal(new Set(state.played.map((item) => item.id)).size, state.played.length);
-        assert(state.nativeAutoplay >= 1, 'native queue initially owns the ended event');
+        if (!modalSearch) assert(state.nativeAutoplay >= 1, 'native queue initially owns the ended event');
         if (balanced)
             assert.deepEqual(
                 state.played.slice(0, 7).map((item) => ['three', 'six'].includes(item.id)),
@@ -179,7 +207,9 @@ app.whenReady().then(async () => {
         });
         assert(
             gaps.every(
-                (gap, index) => (manual && index === 0 && gap === null) || (gap !== null && gap >= 0 && gap < 3500),
+                (gap, index) =>
+                    (manual && index === 0 && gap === null) ||
+                    (gap !== null && gap >= 0 && gap < (transientFailure ? 22000 : 3500)),
             ),
             JSON.stringify({ gaps, state }),
         );
@@ -202,7 +232,7 @@ app.whenReady().then(async () => {
                 1,
                 'one native click per user request',
             );
-        if (!healthy && !manual && !balanced) {
+        if (!healthy && !manual && !balanced && !modalSearch && !longPlayback) {
             for (let index = 0; delayedBadge && index < 50; index++) {
                 if (
                     await contents.executeJavaScript(
@@ -222,18 +252,57 @@ app.whenReady().then(async () => {
             );
         }
         const capture = await contents.executeJavaScript('window.__waveMediaEndSnapshot()');
+        if (audioCache) {
+            let reused = false;
+            for (let i = 0; i < 40; i++) {
+                reused = await contents.executeJavaScript(
+                    `(async()=>{const state=await waveInline.ready();return state.candidate?.features?.sampleSeconds===60&&window.__waveMediaEndState.analysisReadyPath===document.querySelector('.playbackSoundBadge__titleLink').pathname})()`,
+                );
+                if (reused) break;
+                await wait(50);
+            }
+            assert(reused, 'persisted high-quality analysis reaches ranking and suppresses renderer sampling');
+        }
+        if (modalSearch) {
+            assert.equal(
+                await contents.executeJavaScript("document.querySelector('.cw-settings-dialog')?.matches(':modal')"),
+                settingsOpen,
+                'settings state is preserved across real SPA content replacements',
+            );
+            assert(
+                (await contents.executeJavaScript('searches.length')) >= targetTracks,
+                'every track uses the native search without taking focus from settings',
+            );
+        }
         assert(
-            capture.endedEvents >= targetTracks - 1 - (manual ? 1 : 0),
+            capture.endedEvents + (capture.recoveredEvents || 0) >= targetTracks - 1 - (manual ? 1 : 0),
             'media completion remains observed across the entire sequence, excluding the manually skipped track',
         );
         assert(capture.media.length <= 8, 'diagnostics retain at most eight weak media references');
+        if (lostEnded)
+            assert(
+                capture.recoveredEvents >= targetTracks - 3,
+                'lost end events are recovered after the first two tracks',
+            );
+        if (transientFailure)
+            assert.equal(
+                await contents.executeJavaScript('failedPlayClicks'),
+                3,
+                'three failed play attempts recover without user input',
+            );
         const report = {
             capturedEndEvents: capture.endedEvents,
+            recoveredEndEvents: capture.recoveredEvents || 0,
+            transientFailureRecovery: transientFailure,
+            trackDurationSeconds: longPlayback ? 31 : 2,
             delayedBadge,
             cachedPlay,
+            audioAnalysisReused: audioCache,
+            modalSearch,
+            settingsOpen,
             healthyNativeQueue: healthy,
             balancedPrebuffer: balanced,
-            dislikeRecalculatesQueue: !healthy && !manual && !balanced,
+            dislikeRecalculatesQueue: !healthy && !manual && !balanced && !modalSearch && !longPlayback,
             pauseDuringHandoffPreserved: healthy,
             manualNextRecovery: manual,
             automaticTransitions: state.played.length - 1,
@@ -250,4 +319,4 @@ app.whenReady().then(async () => {
         app.exit(1);
     }
 });
-setTimeout(() => app.exit(2), extended ? 75000 : 45000).unref();
+setTimeout(() => app.exit(2), longPlayback ? 135000 : extended ? 75000 : 45000).unref();

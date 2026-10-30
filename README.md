@@ -9,8 +9,8 @@
 ## Why install it?
 
 - **My Wave** finds music related to tracks you enjoy, learns from your reactions and prepares the next tracks while you
-  listen. Choose a mood, activity or music language. Animated artwork pauses when the app is unfocused, minimized or out
-  of view; music keeps playing.
+  listen. Choose a mood, activity or music language. A static background avoids continuous animation; music keeps playing
+  when the app is minimized.
 - **Playlist import** brings public Spotify, Yandex Music and YouTube Music playlists to SoundCloud. Review matches and
   save the found part even when some tracks are unavailable, and resume saved checks after restarting. YouTube
   continuations and Spotify's scrolling track list are read automatically, up to 500 tracks. Import a CSV/TXT/TSV track

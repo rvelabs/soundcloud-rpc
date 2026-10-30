@@ -5,6 +5,42 @@ import type { Track } from './types';
 afterEach(() => vi.restoreAllMocks());
 const track = (id: string): Track => ({ id, artist: id, title: id, genre: 'ambient' });
 describe('recommendation session caching and sequential balance', () => {
+    it('reuses tag statistics across sound updates and settings while protecting owned candidates', () => {
+        const session = new RecommendationSession({ related: async () => [] });
+        const tracks = [
+            { ...track('one'), tags: ['ambient'], features: { energy: 0.1 } },
+            { ...track('two'), tags: ['ambient', 'chill'] },
+        ];
+        session.addCandidates(tracks);
+        session.rankBuffered(tracks);
+        session.setControls({ tone: 'bass' });
+        session.addCandidates([{ ...tracks[0], features: { energy: 0.8 } }]);
+        session.rankBuffered(tracks);
+        expect(session.similarityDiagnostics()).toMatchObject({ builds: 1, hits: 1 });
+        const returned = session.rank()[0];
+        returned.track.tags?.push('fake');
+        returned.track.artist = 'Changed';
+        expect(session.rank()[0].track.artist).not.toBe('Changed');
+        expect(session.rank()[0].track.tags).not.toContain('fake');
+        session.addCandidates([{ ...tracks[0], tags: ['jazz'] }]);
+        session.rankBuffered(tracks);
+        expect(session.similarityDiagnostics()).toMatchObject({ builds: 3 });
+    });
+    it('retains ranks for equivalent metadata but detects updates on reused input objects', () => {
+        const session = new RecommendationSession({ related: async () => [] });
+        const candidate = { ...track('one'), tags: ['ambient'], features: { energy: 0.2 } };
+        session.addCandidates([candidate]);
+        const recommend = vi.spyOn(ranker, 'recommend');
+        session.rank();
+        session.addCandidates([{ ...candidate, tags: [...candidate.tags], features: { ...candidate.features } }]);
+        session.rank();
+        expect(recommend).toHaveBeenCalledTimes(1);
+        candidate.features.energy = 0.8;
+        candidate.tags.push('bass');
+        session.addCandidates([candidate]);
+        session.rank();
+        expect(recommend).toHaveBeenCalledTimes(2);
+    });
     it('caches stable ranks but invalidates feedback, reservations, controls and time', () => {
         let now = 1000000;
         const session = new RecommendationSession({ related: async () => [] }, () => now);

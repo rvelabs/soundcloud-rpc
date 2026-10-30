@@ -27,8 +27,56 @@ const metadata = (path: string, title = 'Original Song', artist = 'Original Arti
     ]) +
     ';';
 const source = { title: 'Original Song', artist: 'Original Artist', durationSeconds: 180 };
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+});
 describe('lightweight public SoundCloud search', () => {
+    it('preserves the fetch timeout after a request waits behind another search', async () => {
+        vi.useFakeTimers();
+        vi.spyOn(AbortSignal, 'timeout').mockImplementation((delay) => {
+            const controller = new AbortController();
+            setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), delay);
+            return controller.signal;
+        });
+        const request = vi.fn<typeof fetch>(async (url, init) => {
+            const address = new URL(String(url));
+            const second =
+                address.searchParams.get('q')?.includes('Second Song') || address.pathname === '/artist/second';
+            if (address.pathname.includes('/search/'))
+                await new Promise<void>((resolve, reject) => {
+                    const abort = () => {
+                        clearTimeout(timer);
+                        reject(init?.signal?.reason);
+                    };
+                    const timer = setTimeout(
+                        () => {
+                            init?.signal?.removeEventListener('abort', abort);
+                            resolve();
+                        },
+                        second ? 1000 : 6000,
+                    );
+                    init?.signal?.addEventListener('abort', abort, { once: true });
+                });
+            return new Response(
+                address.pathname.includes('/search/')
+                    ? page([
+                          {
+                              url: second ? '/artist/second' : '/artist/first',
+                              title: second ? 'Second Song' : source.title,
+                          },
+                      ])
+                    : metadata(address.pathname, second ? 'Second Song' : source.title),
+            );
+        });
+        const fallback = vi.fn(async (track: SourceTrack) => ({ source: track }));
+        const model = new PublicSoundCloudSearch(request, fallback, new AbortController().signal, () => 1);
+        const pending = Promise.all([model.match(source), model.match({ ...source, title: 'Second Song' })]);
+        await vi.runAllTimersAsync();
+        const results = await pending;
+        expect(results.every((result) => result.soundcloud)).toBe(true);
+        expect(fallback).not.toHaveBeenCalled();
+    });
     it('parses public result links, entities and hydration without running JavaScript', () => {
         const parsed = parsePublicSearch(
             page([

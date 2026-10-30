@@ -80,8 +80,8 @@ export class PublicSoundCloudSearch {
         this.pool = new TaskPool(concurrency);
     }
     private async page(url: string): Promise<string> {
-        const signal = AbortSignal.any([this.signal, AbortSignal.timeout(6500)]);
         return this.pool.run(async () => {
+            const signal = AbortSignal.any([this.signal, AbortSignal.timeout(6500)]);
             signal.throwIfAborted();
             const response = await this.request(url, { redirect: 'error', signal, headers: { Accept: 'text/html' } });
             if (!response.ok) {
@@ -95,7 +95,7 @@ export class PublicSoundCloudSearch {
                 throw new SearchRequestError(response.status === 429);
             }
             return readTextLimited(response, 3000000);
-        }, signal);
+        }, this.signal);
     }
     private search(query: string): Promise<ReturnType<typeof parsePublicSearch>> {
         const cached = this.searches.get(query);

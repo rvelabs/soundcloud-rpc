@@ -5,6 +5,7 @@ import type { WaveCandidate } from './waveEngine';
 import { readTextLimited } from '../utils/readText';
 type PublicMetadata = {
     durationSeconds?: number;
+    audioRevision?: string;
     genre?: string;
     tags?: string[];
     bpm?: number;
@@ -42,6 +43,8 @@ export function parsePublicTrackMetadata(html: string, url?: string): PublicMeta
         const bpm = Number(hydrated.bpm);
         return {
             durationSeconds: hydrated.duration ? hydrated.duration / 1000 : undefined,
+            audioRevision:
+                typeof hydrated.last_modified === 'string' ? hydrated.last_modified.slice(0, 100) : undefined,
             genre: hydrated.genre || undefined,
             tags,
             language: hydrated.language,
@@ -66,11 +69,19 @@ export function parsePublicTrackMetadata(html: string, url?: string): PublicMeta
     return { ...(durationSeconds ? { durationSeconds } : {}), ...(genre ? { genre } : {}) };
 }
 let metadataFetch: typeof fetch = (...args) => fetch(...args);
-export function setPublicMetadataFetch(value: typeof fetch): void {
+export function setPublicMetadataFetch(value: typeof fetch): () => void {
     fetchGeneration++;
+    const generation = fetchGeneration;
     metadataFetch = value;
     cache.clear();
     inFlight.clear();
+    return () => {
+        if (generation !== fetchGeneration) return;
+        fetchGeneration++;
+        metadataFetch = (...args) => fetch(...args);
+        cache.clear();
+        inFlight.clear();
+    };
 }
 export async function enrichPublicTrack(candidate: WaveCandidate): Promise<WaveCandidate> {
     const generation = fetchGeneration;

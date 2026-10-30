@@ -22,6 +22,7 @@ export interface WaveCandidate {
     recommendationReasons?: string[];
     recommendationEvidence?: import('./recommendation/evidence').PreferenceEvidence[];
     durationSeconds?: number;
+    audioRevision?: string;
     features?: SoundFeatures;
 }
 export interface AudioFeatures {

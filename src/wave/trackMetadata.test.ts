@@ -1,6 +1,26 @@
-import { describe, expect, it } from 'vitest';
-import { parsePublicTrackMetadata } from './trackMetadata';
+import { describe, expect, it, vi } from 'vitest';
+import { enrichPublicTrack, parsePublicTrackMetadata, setPublicMetadataFetch } from './trackMetadata';
 describe('public SoundCloud track metadata', () => {
+    it('releases a window-owned fetch without resetting a newer controller', async () => {
+        const first = vi.fn(async () => new Response('<meta itemprop="duration" content="PT60S">'));
+        const second = vi.fn(async () => new Response('<meta itemprop="duration" content="PT90S">'));
+        const releaseFirst = setPublicMetadataFetch(first as typeof fetch);
+        const releaseSecond = setPublicMetadataFetch(second as typeof fetch);
+        try {
+            releaseFirst();
+            const track = await enrichPublicTrack({
+                url: 'https://soundcloud.com/artist/fetch-owner',
+                title: 'Track',
+                artist: 'Artist',
+                sourceRank: 0,
+            });
+            expect(track.durationSeconds).toBe(90);
+            expect(first).not.toHaveBeenCalled();
+            expect(second).toHaveBeenCalledTimes(1);
+        } finally {
+            releaseSecond();
+        }
+    });
     it('recognizes a long DJ set that a search card may present as a normal track', () => {
         const html =
             '<meta itemprop="duration" content="PT01H55M23S" />' + '<meta itemprop="genre" content="Avantgarde" />';
