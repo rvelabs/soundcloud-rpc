@@ -43,6 +43,18 @@
         platformLabel: 'Playlist source',
         yandex: 'Yandex Music',
         transferResult: 'Keep the matches, even when not every track is found.',
+        eqKicker: 'MAKE THE SOUND YOURS',
+        eqTitle: 'More bass.<br>Or more detail.',
+        eqIntro: 'Ten bands, 42 presets and your own settings — right in the native SoundCloud player.',
+        eqDetail:
+            'From softer highs to punchier bass. Choose a genre, bring vocals forward, or adjust every band. Your settings save automatically.',
+        eqSafety: 'Automatic headroom helps avoid overload when boosting frequencies.',
+        eqName: 'Equalizer',
+        eqPresetsLabel: 'Preset preview',
+        eqWarm: 'Warm',
+        eqPunch: 'Bass punch',
+        eqVocal: 'Vocals',
+        eqDemoNote: 'Try the presets on this diagram. Adjust your sound in the app.',
         extrasKicker: 'ALSO ON THE RECORD',
         extrasTitle: 'Little things.<br>A big difference.',
         discordBody: 'Let your friends see what’s playing.',
@@ -115,6 +127,11 @@
     const recordDisc = document.querySelector('.record-disc');
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
     const reveals = new Set();
+    const eqCurves = {
+        warm: [2, 3, 3, 2, 1, 0, -1, -1, -2, -2],
+        punch: [0, 2, 5, 2, -1, -1, 0, 0, 0, 0],
+        vocal: [-3, -2, -1, 0, 2, 3, 4, 2, 0, -1],
+    };
     let language = 'ru',
         source = 'spotify',
         visible = true,
@@ -176,6 +193,17 @@
         for (const button of document.querySelectorAll('[data-source]'))
             button.setAttribute('aria-pressed', String(button.dataset.source === source));
     };
+    for (const button of document.querySelectorAll('[data-eq]'))
+        button.addEventListener('click', () => {
+            const curve = eqCurves[button.dataset.eq];
+            for (const [index, band] of [...document.querySelectorAll('.eq-bands > div')].entries()) {
+                band.style.setProperty('--gain', curve[index]);
+                band.querySelector('span').textContent = curve[index] > 0 ? '+' + curve[index] : String(curve[index]);
+            }
+            for (const preset of document.querySelectorAll('[data-eq]'))
+                preset.setAttribute('aria-pressed', String(preset === button));
+            document.querySelector('.eq-demo-announcement').textContent = button.textContent;
+        });
     const setLanguage = (next) => {
         language = next === 'en' ? 'en' : 'ru';
         document.documentElement.lang = language;
@@ -216,17 +244,28 @@
                     if (!entry.isIntersecting) continue;
                     observer.unobserve(entry.target);
                     if (reduce.matches || document.hidden) continue;
-                    const animation = entry.target.animate(
-                        [
-                            { opacity: 0, transform: 'translateY(22px)' },
-                            { opacity: 1, transform: 'translateY(0)' },
-                        ],
-                        { duration: 650, easing: 'cubic-bezier(.22,1,.36,1)' },
-                    );
-                    trackAnimation(animation);
+                    const targets =
+                        entry.target.dataset.reveal === 'stagger'
+                            ? [...entry.target.children].filter((element) => !element.classList.contains('giant-arrow'))
+                            : [entry.target];
+                    targets.forEach((target, index) => {
+                        const animation = target.animate(
+                            [
+                                { opacity: 0, translate: '0 28px' },
+                                { opacity: 1, translate: '0 0' },
+                            ],
+                            {
+                                duration: 850,
+                                delay: Math.min(index * 85, 340),
+                                fill: 'backwards',
+                                easing: 'cubic-bezier(.22,1,.36,1)',
+                            },
+                        );
+                        trackAnimation(animation);
+                    });
                 }
             },
-            { threshold: 0.08 },
+            { threshold: 0, rootMargin: '0px 0px -28px 0px' },
         );
         for (const section of document.querySelectorAll('[data-reveal]')) observer.observe(section);
     }

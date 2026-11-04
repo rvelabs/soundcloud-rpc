@@ -861,6 +861,215 @@ h3 {
     padding-block: 86px 96px;
     border-bottom: 1px solid var(--line);
 }
+.equalizer-section {
+    padding-block: 100px;
+    border-bottom: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: 72px;
+}
+.equalizer-copy .eyebrow {
+    margin-bottom: 28px;
+}
+.equalizer-copy h2 {
+    font-size: clamp(32px, 3.8vw, 50px);
+    line-height: 1.1;
+}
+.equalizer-copy .section-intro {
+    margin-top: 25px;
+    max-width: 440px;
+    color: #55554e;
+}
+.eq-safety {
+    max-width: 390px;
+    padding-left: 16px;
+    border-left: 2px solid var(--orange);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.7;
+}
+.equalizer-demo {
+    min-width: 0;
+    padding: 30px 28px 22px;
+    color: #f3f1eb;
+    background: #242421;
+    border-radius: 8px;
+    box-shadow: 0 24px 50px -30px #1b1b1955;
+}
+.eq-demo-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 19px;
+    font-weight: 600;
+}
+.eq-badge {
+    font:
+        9px Arial,
+        sans-serif;
+    letter-spacing: 1px;
+    color: #aaa99e;
+}
+.eq-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 24px;
+}
+.eq-presets button {
+    background: transparent;
+    border: 1px solid #55554d;
+    border-radius: 3px;
+    padding: 10px 13px;
+    font-size: 11px;
+    min-height: 44px;
+    transition:
+        background 240ms,
+        color 240ms,
+        border-color 240ms;
+}
+.eq-presets button:hover {
+    border-color: #f3f1eb;
+}
+.eq-presets button[aria-pressed='true'] {
+    background: var(--orange);
+    border-color: var(--orange);
+    color: #fff;
+}
+.eq-bands {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 9px;
+    margin-block: 28px 24px;
+}
+.eq-bands > div {
+    display: grid;
+    justify-items: center;
+    gap: 15px;
+    font:
+        10px Arial,
+        sans-serif;
+}
+.eq-bands i {
+    display: block;
+    width: 3px;
+    height: 128px;
+    background: #53534b;
+    border-radius: 4px;
+    position: relative;
+}
+.eq-bands i::after {
+    content: '';
+    position: absolute;
+    width: 13px;
+    height: 13px;
+    top: 50%;
+    left: -5px;
+    background: var(--orange);
+    border-radius: 50%;
+    transform: translateY(calc(-50% - var(--gain) * 7px));
+    transition: transform 600ms var(--ease);
+}
+.eq-bands small {
+    color: #aaa99e;
+    font-size: 10px;
+}
+.eq-demo-note {
+    border-top: 1px solid #44443d;
+    padding-top: 18px;
+    margin: 0;
+    color: #aaa99e;
+    font-size: 11px;
+    line-height: 1.7;
+}
+.eq-demo-announcement {
+    position: absolute;
+    clip-path: inset(50%);
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+.reading-progress {
+    display: none;
+}
+@supports (animation-timeline: scroll()) {
+    .reading-progress {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--orange);
+        z-index: 50;
+        transform-origin: left;
+        animation: reading-progress linear both;
+        animation-timeline: scroll(root block);
+    }
+    @keyframes reading-progress {
+        from {
+            transform: scaleX(0);
+        }
+        to {
+            transform: scaleX(1);
+        }
+    }
+}
+@supports (animation-timeline: view()) {
+    @media (min-width: 801px) and (prefers-reduced-motion: no-preference) {
+        .settings-preview {
+            animation: photo-drift linear both;
+            animation-timeline: view();
+            animation-range: entry 0% exit 100%;
+        }
+        @keyframes photo-drift {
+            from {
+                translate: 0 24px;
+            }
+            to {
+                translate: 0 -24px;
+            }
+        }
+    }
+}
+@media (max-width: 1100px) {
+    .equalizer-section {
+        gap: 36px;
+    }
+}
+@media (max-width: 800px) {
+    .equalizer-section {
+        grid-template-columns: 1fr;
+        padding-block: 64px;
+        gap: 32px;
+    }
+    .equalizer-copy .section-intro,
+    .equalizer-copy .import-detail {
+        max-width: 520px;
+    }
+    .equalizer-demo {
+        width: 100%;
+        max-width: 600px;
+        justify-self: center;
+    }
+}
+@media (max-width: 600px) {
+    .equalizer-demo {
+        padding: 24px 18px 20px;
+    }
+    .eq-bands {
+        gap: 6px;
+    }
+    .eq-badge {
+        font-size: 8px;
+    }
+    .eq-presets button {
+        padding-inline: 10px;
+    }
+}
 .extras .eyebrow {
     margin-bottom: 28px;
 }

@@ -7,7 +7,7 @@
         <title>SoundCloud Desktop — хватит слушать по кругу</title>
         <meta
             name="description"
-            content="Новая музыка в знакомом SoundCloud. Моя волна, перенос плейлистов из Spotify, Яндекс Музыки и YouTube Music. Бесплатный открытый клиент для Windows от rvelabs."
+            content="Моя волна, эквалайзер с 42 пресетами и перенос плейлистов из Spotify, Яндекс Музыки и YouTube Music. Бесплатный открытый клиент SoundCloud для Windows от rvelabs."
         />
         <meta name="robots" content="index,follow" />
         <link rel="canonical" href="https://rvelabs.github.io/soundcloud-rpc/" />
@@ -33,13 +33,14 @@
                 "applicationCategory": "MultimediaApplication",
                 "url": "https://rvelabs.github.io/soundcloud-rpc/",
                 "downloadUrl": "https://github.com/rvelabs/soundcloud-rpc/releases/latest",
+                "softwareVersion": "0.31.0",
                 "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
                 "author": { "@type": "Person", "name": "rvelabs", "url": "https://github.com/rvelabs" },
-                "description": "Unofficial open-source SoundCloud desktop client with personalized radio, playlist import, Discord Rich Presence and Last.fm."
+                "description": "Unofficial open-source SoundCloud desktop client with personalized radio, a 10-band equalizer with 42 presets, playlist import, Discord Rich Presence and Last.fm."
             }
         </script>
-        <link rel="stylesheet" href="./styles.css?v=20261027-decorative-record" />
-        <script src="./site.js?v=20261027-language-auto" defer></script>
+        <link rel="stylesheet" href="./styles.css?v=20261105-equalizer" />
+        <script src="./site.js?v=20261105-equalizer" defer></script>
     </head>
     <body>
         <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -65,6 +66,7 @@
             </defs>
         </svg>
         <a class="skip" href="#main" data-i18n="skip">К содержимому</a>
+        <div class="reading-progress" aria-hidden="true"></div>
         <header class="header">
             <nav class="wrap navigation" aria-label="Основная навигация" data-label="navLabel">
                 <a class="brand" href="#" aria-label="SoundCloud Desktop"
@@ -89,7 +91,7 @@
         </header>
         <main id="main">
             <section class="hero wrap" aria-labelledby="hero-title">
-                <div class="hero-copy">
+                <div class="hero-copy" data-reveal="stagger">
                     <p class="eyebrow hero-eyebrow">
                         <span class="status-dot"></span
                         ><span data-i18n="heroKicker">ТВОЙ SOUNDCLOUD, С ПРОДОЛЖЕНИЕМ</span>
@@ -150,7 +152,7 @@
                         </p>
                     </div>
                     <div class="wave-layout">
-                        <div class="wave-explanation" data-reveal>
+                        <div class="wave-explanation" data-reveal="stagger">
                             <div class="feature-row">
                                 <span class="row-number">01</span>
                                 <div>
@@ -285,14 +287,60 @@
                     </div>
                 </div>
             </section>
+            <section class="equalizer-section wrap" id="equalizer" aria-labelledby="equalizer-title">
+                <div class="equalizer-copy" data-reveal="stagger">
+                    <p class="eyebrow">
+                        <span class="orange">03</span><span data-i18n="eqKicker">ТВОЙ ХАРАКТЕР ЗВУКА</span>
+                    </p>
+                    <h2 id="equalizer-title" data-i18n="eqTitle">Больше баса.<br />Или больше деталей.</h2>
+                    <p class="section-intro" data-i18n="eqIntro">
+                        Десять полос, 42 пресета и твои собственные настройки — прямо в штатном плеере SoundCloud.
+                    </p>
+                    <p class="import-detail" data-i18n="eqDetail">
+                        От мягких высоких до упругого баса. Выбери жанр, выдели вокал или настрой каждую полосу.
+                        Настройки сохраняются автоматически.
+                    </p>
+                    <p class="eq-safety" data-i18n="eqSafety">
+                        Автоматический запас громкости помогает избежать перегрузки при усилении частот.
+                    </p>
+                </div>
+                <div class="equalizer-demo" data-reveal>
+                    <div class="eq-demo-heading">
+                        <span data-i18n="eqName">Эквалайзер</span><span class="eq-badge">10 BAND / 42 PRESETS</span>
+                    </div>
+                    <div class="eq-presets" role="group" aria-label="Пример пресета" data-label="eqPresetsLabel">
+                        <button type="button" data-eq="warm" aria-pressed="true" data-i18n="eqWarm">Тёплое</button>
+                        <button type="button" data-eq="punch" aria-pressed="false" data-i18n="eqPunch">
+                            Упругий бас
+                        </button>
+                        <button type="button" data-eq="vocal" aria-pressed="false" data-i18n="eqVocal">Вокал</button>
+                    </div>
+                    <div class="eq-bands" aria-hidden="true">
+                        <div style="--gain: 2"><span>+2</span><i></i><small>31</small></div>
+                        <div style="--gain: 3"><span>+3</span><i></i><small>63</small></div>
+                        <div style="--gain: 3"><span>+3</span><i></i><small>125</small></div>
+                        <div style="--gain: 2"><span>+2</span><i></i><small>250</small></div>
+                        <div style="--gain: 1"><span>+1</span><i></i><small>500</small></div>
+                        <div style="--gain: 0"><span>0</span><i></i><small>1k</small></div>
+                        <div style="--gain: -1"><span>−1</span><i></i><small>2k</small></div>
+                        <div style="--gain: -1"><span>−1</span><i></i><small>4k</small></div>
+                        <div style="--gain: -2"><span>−2</span><i></i><small>8k</small></div>
+                        <div style="--gain: -2"><span>−2</span><i></i><small>16k</small></div>
+                    </div>
+                    <p class="eq-demo-note" data-i18n="eqDemoNote">
+                        Попробуй пресеты на схеме. Звук настраивается в приложении.
+                    </p>
+                    <span class="eq-demo-announcement" aria-live="polite" role="status"></span>
+                </div>
+            </section>
             <section class="extras wrap" aria-labelledby="extras-title">
                 <div data-reveal>
                     <p class="eyebrow">
-                        <span class="orange">03</span><span data-i18n="extrasKicker">ЧТО ЕЩЁ ВНУТРИ</span>
+                        <span class="orange">04</span><span data-i18n="extrasKicker">ЧТО ЕЩЁ ВНУТРИ</span>
                     </p>
                     <h2 id="extras-title" data-i18n="extrasTitle">Маленькие вещи.<br />Большая разница.</h2>
                 </div>
-                <div class="extras-list" data-reveal>
+                <div class="extras-list" data-reveal="stagger">
                     <div>
                         <span>Discord Rich Presence</span>
                         <p data-i18n="discordBody">Покажи друзьям, что слушаешь.</p>
@@ -305,7 +353,9 @@
                     </div>
                     <div>
                         <span data-i18n="backgroundTitle">Музыка в фоне</span>
-                        <p data-i18n="backgroundBody">Сверни окно — музыка продолжит играть. У Моей волны лёгкий статичный фон.</p>
+                        <p data-i18n="backgroundBody">
+                            Сверни окно — музыка продолжит играть. У Моей волны лёгкий статичный фон.
+                        </p>
                         <span class="extra-mark" aria-hidden="true">↗</span>
                     </div>
                     <div>
@@ -329,7 +379,7 @@
                         ><svg class="icon"><use href="#diagonal" /></svg
                     ></a>
                 </div>
-                <div class="questions" data-reveal>
+                <div class="questions" data-reveal="stagger">
                     <details>
                         <summary>
                             <span data-i18n="faqOfficialQ">Это официальный SoundCloud?</span><i aria-hidden="true"></i>
@@ -395,7 +445,7 @@
                 </div>
             </section>
             <section class="download-section" aria-labelledby="download-title">
-                <div class="wrap download-inner">
+                <div class="wrap download-inner" data-reveal="stagger">
                     <p class="eyebrow" data-i18n="downloadKicker">СЛЕДУЮЩИЙ ТРЕК МОЖЕТ СТАТЬ ЛЮБИМЫМ</p>
                     <h2 id="download-title" data-i18n="downloadTitle">Дальше —<br />твоя музыка.</h2>
                     <div class="download-actions">

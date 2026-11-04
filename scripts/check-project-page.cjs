@@ -112,6 +112,74 @@ app.whenReady().then(async () => {
         assert.equal(state.canonical, 'https://rvelabs.github.io/soundcloud-rpc/');
         assert.equal(state.schema['@type'], 'SoftwareApplication');
         assert.deepEqual(errors, []);
+        await wc.executeJavaScript(
+            "document.querySelector('#equalizer').scrollIntoView({behavior:'instant',block:'center'});true;",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 140));
+        assert(
+            await wc.executeJavaScript(
+                "document.querySelector('.equalizer-demo').getAnimations().some(a=>a.effect.getTiming().duration===850)",
+            ),
+            'new section reveals when scrolled into view',
+        );
+        const { equalizerPresets } = require(path.join(root, 'tsc/audio/equalizerSettings.js'));
+        for (const id of ['punch', 'vocal', 'warm']) {
+            const preview = await wc.executeJavaScript(
+                `(()=>{document.querySelector('[data-eq="${id}"]').click();return {selected:document.querySelectorAll('[data-eq][aria-pressed="true"]').length,gains:[...document.querySelectorAll('.eq-bands > div')].map(b=>Number(b.style.getPropertyValue('--gain')))}})()`,
+            );
+            assert.equal(preview.selected, 1);
+            assert.deepEqual(
+                preview.gains,
+                equalizerPresets.find((preset) => preset.id === id).gains,
+                'website preview matches the shipped preset',
+            );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        fs.writeFileSync(
+            path.join(out, 'equalizer-desktop.png'),
+            (await wc.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG(),
+        );
+        await wc.executeJavaScript(
+            "document.querySelector('#collection').scrollIntoView({behavior:'instant',block:'center'});true;",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        assert.notEqual(
+            await wc.executeJavaScript("getComputedStyle(document.querySelector('.transfer')).transform"),
+            'none',
+            'reveals preserve the tilted card design',
+        );
+        await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+            width: 390,
+            height: 844,
+            deviceScaleFactor: 1,
+            mobile: true,
+        });
+        await wc.executeJavaScript(
+            "document.querySelector('#equalizer').scrollIntoView({behavior:'instant',block:'start'});true;",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        fs.writeFileSync(
+            path.join(out, 'equalizer-mobile.png'),
+            (await wc.capturePage(undefined, { stayHidden: true, stayAwake: true })).toPNG(),
+        );
+        await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+        });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        assert.equal(
+            await wc.executeJavaScript(
+                "document.getAnimations().filter(a=>a.playState==='running'&&!a.effect?.target?.classList.contains('vinyl')).length",
+            ),
+            0,
+            'reduced motion cancels entrance and scroll effects',
+        );
+        await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', {
+            width: 1200,
+            height: 800,
+            deviceScaleFactor: 1,
+            mobile: false,
+        });
+        await wc.executeJavaScript("scrollTo({top:0,behavior:'instant'});true;");
         await wc.insertCSS(
             '.header .navigation{height:88px}.hero.wrap{padding-top:36px}.hero .hero-copy h1{font-size:108px;margin-block:20px}.hero .record-art{width:420px;margin:0;align-self:start}.hero .hero-actions,.hero .fineprint,.hero .hero-baseline{display:none}',
         );
@@ -138,6 +206,10 @@ app.whenReady().then(async () => {
             schema: true,
             consoleErrors: 0,
             socialPreview: true,
+            scrollReveals: true,
+            equalizerPreviewMatchesApp: true,
+            reducedMotionCancelsEffects: true,
+            tiltedCardPreserved: true,
         };
         fs.writeFileSync(path.join(out, 'page-results.json'), JSON.stringify(result, null, 2));
         fs.writeSync(1, JSON.stringify(result) + '\n');
