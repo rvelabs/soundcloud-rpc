@@ -9,12 +9,15 @@
 ## Why install it?
 
 - **My Wave** finds music related to tracks you enjoy, learns from your reactions and prepares the next tracks while you
-  listen. Choose a mood, activity or music language. A static background avoids continuous animation; music keeps playing
-  when the app is minimized.
+  listen. Choose a mood, activity or music language. A static background avoids continuous animation; music keeps
+  playing when the app is minimized.
 - **Playlist import** brings public Spotify, Yandex Music and YouTube Music playlists to SoundCloud. Review matches and
   save the found part even when some tracks are unavailable, and resume saved checks after restarting. YouTube
   continuations and Spotify's scrolling track list are read automatically, up to 500 tracks. Import a CSV/TXT/TSV track
   list when a source cannot be reached.
+- **10-band equalizer** in the native player: 42 presets grouped by sound, genre and instrument, manual tuning, preamp
+  and automatic headroom. Settings persist across restarts; processing continues when minimized. Protected or non-CORS
+  streams may not support processing.
 - **Familiar SoundCloud controls**, plus Discord Rich Presence, Last.fm, themes and plugins. My Wave and playlist import
   and client settings support **English and Russian**, with an automatic language option.
 
@@ -24,6 +27,7 @@
 2. Like a few tracks or play a favorite, then open **Home → My Wave → Listen**.
 3. Use **Customize** for mood, activity, music language and interface language. Playlist import has its own card below
    My Wave.
+4. Open the **equalizer** beside the native player's queue button to choose a preset or tune the sound.
 
 Upgrading preserves your profile. The installer is currently unsigned, so Windows may show a publisher warning. SHA-256
 checksums are included with releases.
@@ -129,8 +133,8 @@ sign-in cookies and tokens.
   Spotify читаются автоматически, максимум 500 треков. Если Spotify всё ещё отдаёт часть списка, клиент предложит вход в
   отдельном окне и объяснит причину. Можно отказаться или закрыть окно — прочитанные треки сохранятся. Для полного
   анонимного списка вход не предлагается.
-- Статичный фон карточки без постоянной анимации и реакции на звук снижает затраты на отрисовку.
-  Музыка продолжает играть.
+- Статичный фон карточки без постоянной анимации и реакции на звук снижает затраты на отрисовку. Музыка продолжает
+  играть.
 
 Установите сборку из [Releases](https://github.com/rvelabs/soundcloud-rpc/releases/latest), войдите в SoundCloud и
 нажмите «Слушать» на главной. Для нового аккаунта сначала добавьте несколько лайков или включите любимую запись.

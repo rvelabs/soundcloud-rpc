@@ -1230,6 +1230,7 @@ export function createWaveController(options: {
                     monitorActive: Boolean(window.__soundCloudMonitorActive),
                     monitorDisposed: Boolean(window.__soundCloudMonitorDisposed),
                     capture: window.__waveMediaEndSnapshot?.(),
+                    equalizer: window.__soundcloudEqualizer?.snapshot?.(),
                     mediaState: window.__waveMediaEndState
                 })`,
                         true,

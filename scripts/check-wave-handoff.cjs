@@ -22,6 +22,7 @@ const stalledBackgroundInput = process.env.WAVE_TEST_BACKGROUND_INPUT_STALL === 
 const importPressure = process.env.WAVE_TEST_IMPORT_PRESSURE === '1';
 const terminalPause = process.env.WAVE_TEST_TERMINAL_PAUSE === '1';
 const coldBuffer = process.env.WAVE_TEST_COLD_BUFFER === '1';
+const equalizer = process.env.WAVE_TEST_EQUALIZER === '1';
 const extended =
     delayedBadge ||
     cachedPlay ||
@@ -31,7 +32,8 @@ const extended =
     audioCache ||
     importPressure ||
     terminalPause ||
-    coldBuffer;
+    coldBuffer ||
+    equalizer;
 const ids = [
     'one',
     'two',
@@ -51,6 +53,7 @@ fs.writeFileSync(
         adBlocker: false,
         discordRichPresence: false,
         minimizeToTray: true,
+        ...(equalizer ? { equalizerSettingsV1: { enabled: true, preset: 'bass' } } : {}),
         waveQueueUnavailableV17_2_default: modalSearch ? Date.now() : 0,
         waveControls_default: { mood: 'any', tone: 'bass', tempo: 'any', discovery: balanced ? 'balanced' : 'new' },
         waveFeedbackV1_default: [
@@ -136,11 +139,12 @@ ${modalSearch ? '<header><input class="headerSearch__input"><button class="heade
 <ul class="queue__itemsContainer"></ul><div class="playControls"><button class="playControls__play"></button><button class="skipControl__next" onclick="window.nextClicks=(window.nextClicks||0)+1; if(${healthy})nextQueued()">Next</button><a class="playbackSoundBadge__titleLink"></a><a class="playbackSoundBadge__lightLink">Artist</a><div class="playbackTimeline__timePassed"><span>0:00</span></div><div class="playbackTimeline__duration"><span>1:30</span></div></div>
 <script>
 window.sitePlay=HTMLMediaElement.prototype.play;
+${equalizer ? `window.eqSource=URL.createObjectURL(new Blob([Uint8Array.from(atob('${audio.toString('base64')}'),value=>value.charCodeAt(0))],{type:'audio/wav'}));` : ''}
 if(${modalSearch}){window.searches=[];document.querySelector('.headerSearch__input').addEventListener('input',event=>{window.searchModel=event.target.value});document.querySelector('.headerSearch__submit').onclick=()=>{const id=window.searchModel;searches.push(id);if(!${JSON.stringify(ids)}.includes(id))throw Error('Search model did not receive query');history.pushState({},'','/search?q='+encodeURIComponent(id));const panel=document.querySelector('.l-main');panel.innerHTML='<div class="l-content"><div class="sound"><a class="soundTitle__title" href="https://soundcloud.com/artist/'+id+'">'+id+'</a><div class="soundTitle__playButton"><button class="playButton">Play</button></div></div></div>';panel.querySelector('.playButton').onclick=()=>playTrack(id)};onpopstate=()=>{document.querySelector('.l-main').innerHTML='<div class="l-content"></div>'};}
 window.maxQueued=0;new MutationObserver(()=>{window.maxQueued=Math.max(window.maxQueued,document.querySelectorAll('.queue__itemsContainer .queueItemView').length)}).observe(document.querySelector('.queue__itemsContainer'),{childList:true});
 window.showMore=(id)=>{document.querySelector('.dropdownMenu')?.remove();const menu=document.createElement('div');menu.className='dropdownMenu';menu.innerHTML='<button class="addToNextUp" title="Add to Next up">Add</button>';const button=menu.firstChild;button.onclick=()=>{button.classList.add('sc-button-selected');const row=document.createElement('li');row.className='queueItemView';row.innerHTML='<a href="https://soundcloud.com/artist/'+id+'">'+id+'</a><button class="queueItemView__remove" onclick="this.parentElement.remove()">Remove</button>';document.querySelector('.queue__itemsContainer').append(row)};document.body.append(menu)};window.audio=new Audio();audio.volume=0.01;window.played=[];window.endedAt=[];window.nativeAutoplay=0;
 if(${terminalPause}){const ended=Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype,'ended').get;Object.defineProperty(audio,'ended',{get(){return played.length>=3?false:ended.call(this)}});}
-window.failedPlayClicks=0;window.playTrack=(id)=>{if(${transientFailure}&&played.length===2&&failedPlayClicks<3){failedPlayClicks++;return}played.push({id,at:Date.now()});const badge=()=>{document.querySelector('.playbackSoundBadge__titleLink').href='https://soundcloud.com/artist/'+id;document.querySelector('.playbackSoundBadge__titleLink').textContent=id;};if(!${delayedBadge}||played.length<3)badge();document.querySelector('.playControls__play').classList.add('playing');audio.src=${JSON.stringify(source)};void (${cachedPlay}?sitePlay.call(audio):audio.play());if(${delayedBadge}&&played.length>=3)setTimeout(badge,150);};
+window.failedPlayClicks=0;window.playTrack=(id)=>{if(${transientFailure}&&played.length===2&&failedPlayClicks<3){failedPlayClicks++;return}played.push({id,at:Date.now()});const badge=()=>{document.querySelector('.playbackSoundBadge__titleLink').href='https://soundcloud.com/artist/'+id;document.querySelector('.playbackSoundBadge__titleLink').textContent=id;};if(!${delayedBadge}||played.length<3)badge();document.querySelector('.playControls__play').classList.add('playing');audio.src=${equalizer ? 'window.eqSource' : JSON.stringify(source)};void (${cachedPlay}?sitePlay.call(audio):audio.play());if(${delayedBadge}&&played.length>=3)setTimeout(badge,150);};
 audio.addEventListener('ended',event=>{endedAt.push({id:document.querySelector('.playbackSoundBadge__titleLink').pathname.split('/').pop(),at:Date.now()});if((${lostEnded}||${terminalPause})&&played.length>=3)event.stopImmediatePropagation()},true);
 window.nextQueued=()=>{const link=document.querySelector('.queue__itemsContainer a');if(link){const id=link.pathname.split('/').pop();link.closest('li').remove();playTrack(id)}};audio.addEventListener('ended',()=>{nativeAutoplay++;if(${healthy}||(${delayedBadge}&&played.length<3))nextQueued()});
 document.querySelector('.playControls__play').onclick=()=>{if(audio.paused){void audio.play();document.querySelector('.playControls__play').classList.add('playing')}else{audio.pause();document.querySelector('.playControls__play').classList.remove('playing')}};
@@ -194,6 +198,16 @@ app.whenReady().then(async () => {
             await wait(50);
         }
         assert(contents, 'main client ready');
+        if (equalizer) {
+            for (let i = 0; i < 40; i++) {
+                if (await contents.executeJavaScript("!!document.querySelector('#sc-equalizer')?.shadowRoot")) break;
+                await wait(25);
+            }
+            await contents.executeJavaScript(
+                "document.querySelector('#sc-equalizer').shadowRoot.querySelector('.toggle').click();true;",
+                true,
+            );
+        }
         let backgroundPhase = false,
             blockedInput = 0;
         if (stalledBackgroundInput) {
@@ -224,6 +238,46 @@ app.whenReady().then(async () => {
             '({played,endedAt,nativeAutoplay,maxQueued,time:audio.currentTime,paused:audio.paused})',
         );
         assert(state.played.length >= targetTracks, JSON.stringify(state));
+        if (equalizer) {
+            assert.equal(
+                await contents.executeJavaScript(
+                    "document.querySelector('#sc-equalizer').shadowRoot.querySelector('.panel').hidden",
+                ),
+                false,
+                'the equalizer panel stays open across automatic wave transitions',
+            );
+            let eq;
+            for (let i = 0; i < 40; i++) {
+                eq = await contents.executeJavaScript(
+                    '({...__soundcloudEqualizer.snapshot(),progress:audio.currentTime,paused:audio.paused})',
+                );
+                if (eq.contextState === 'running' && !eq.paused && eq.progress > 0.1) break;
+                await wait(25);
+            }
+            assert(
+                eq.enabled &&
+                    eq.attached === 1 &&
+                    eq.headroomDb > 4 &&
+                    eq.contextState === 'running' &&
+                    !eq.paused &&
+                    eq.progress > 0.1,
+                'the real equalizer remains connected across wave transitions: ' + JSON.stringify(eq),
+            );
+            await contents.executeJavaScript(
+                "const slider=document.querySelector('#sc-equalizer').shadowRoot.querySelector('[data-band=\"0\"]');slider.value='4.5';slider.dispatchEvent(new Event('input'));true;",
+                true,
+            );
+            await wait(450);
+            const Conf = require('conf');
+            const persisted = new Conf({ cwd: profile, encryptionKey: 'soundcloud-rpc-config' }).get(
+                'equalizerSettingsV1',
+            );
+            assert.equal(
+                persisted.gains[0],
+                4.5,
+                'settings persist through the actual trusted main-process IPC handler',
+            );
+        }
         if (coldBuffer) {
             const discovery = await contents.executeJavaScript(
                 '(async()=> (await waveInline.ready()).diagnostics.discovery)()',
@@ -359,6 +413,7 @@ app.whenReady().then(async () => {
             importPressure,
             terminalPause,
             coldBuffer,
+            equalizer,
             terminalPauseEvents: capture.terminalPauseEvents || 0,
             modalSearch,
             settingsOpen,

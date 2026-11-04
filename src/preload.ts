@@ -2,9 +2,46 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { TrackInfo, TrackUpdateReason } from './types';
 import { installWaveMediaEndCapture } from './wave/mediaEndCapture';
 import { installAudioFeatureCapture } from './wave/audioFeatureCapture';
+import { installEqualizerEngine } from './audio/equalizerEngine';
+import { installEqualizerPanel, type EqualizerModel } from './audio/equalizerPanel';
+import type { EqualizerSettings } from './audio/equalizerSettings';
 if (location.origin === 'https://soundcloud.com') {
+    contextBridge.executeInMainWorld({ func: installEqualizerEngine });
     contextBridge.executeInMainWorld({ func: installWaveMediaEndCapture });
     contextBridge.executeInMainWorld({ func: installAudioFeatureCapture });
+    contextBridge.exposeInMainWorld('soundcloudEqualizer', {
+        save: (settings: EqualizerSettings) => ipcRenderer.send('equalizer:save', settings),
+    });
+    void ipcRenderer
+        .invoke('equalizer:load')
+        .then(async (model: EqualizerModel) => {
+            contextBridge.executeInMainWorld({
+                func: (settings: EqualizerSettings) => {
+                    (
+                        window as typeof window & {
+                            __soundcloudEqualizer?: { set: (value: EqualizerSettings) => void };
+                        }
+                    ).__soundcloudEqualizer?.set(settings);
+                },
+                args: [model.settings],
+            });
+            if (document.readyState === 'loading')
+                await new Promise<void>((resolve) =>
+                    document.addEventListener('DOMContentLoaded', () => resolve(), { once: true }),
+                );
+            contextBridge.executeInMainWorld({ func: installEqualizerPanel, args: [model] });
+        })
+        .catch(() => {});
+    ipcRenderer.on('wave-inline:interface-language', (_event, language: string) => {
+        contextBridge.executeInMainWorld({
+            func: (value: string) => {
+                (
+                    window as typeof window & { __soundcloudEqualizerPanel?: { language: (value: string) => void } }
+                ).__soundcloudEqualizerPanel?.language(value);
+            },
+            args: [language],
+        });
+    });
 }
 let waveTransportActive = false;
 let waveNativeQueueReady = false;

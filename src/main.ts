@@ -4,6 +4,7 @@ import { attachWindowView } from './utils/windowViews';
 import { WorkerSetup } from './network/workerSetup';
 import { ConnectionRecovery } from './network/connectionRecovery';
 import { WorkScheduler } from './utils/workScheduler';
+import { equalizerFrequencies, equalizerPresets, normalizeEqualizer } from './audio/equalizerSettings';
 
 import { installNativePageCover } from './wave/nativePageCover';
 import {
@@ -534,7 +535,7 @@ let headerView: WebContentsView | null;
 let contentView: WebContentsView;
 const windowIpc = new IpcRegistry(ipcMain, (event, channel) => {
     if (isQuitting) return false;
-    if (/^(wave-inline:|playlist-import:|soundcloud:)/.test(channel)) return isTrustedSoundCloudSender(event);
+    if (/^(wave-inline:|playlist-import:|soundcloud:|equalizer:)/.test(channel)) return isTrustedSoundCloudSender(event);
     return settingsManager?.owns(event.sender) === true || headerView?.webContents === event.sender;
 });
 
@@ -621,6 +622,29 @@ async function init() {
     const clientWindow = mainWindow;
     const windowTasks = new WindowTasks(() => !clientWindow.isDestroyed() && !clientContents.isDestroyed());
     clientContents.once('destroyed', () => windowTasks.dispose());
+    let equalizer = normalizeEqualizer(store.get('equalizerSettingsV1'));
+    let equalizerSaveTimer: ReturnType<typeof setTimeout> | undefined;
+    let equalizerDirty = false;
+    const flushEqualizer = () => {
+        clearTimeout(equalizerSaveTimer);
+        if (!equalizerDirty) return;
+        store.set('equalizerSettingsV1', equalizer);
+        equalizerDirty = false;
+    };
+    windowIpc.handle('equalizer:load', () => ({
+        settings: equalizer,
+        presets: equalizerPresets,
+        frequencies: equalizerFrequencies,
+        interfaceLanguage: store.get('waveInterfaceLanguage', 'auto'),
+        systemLocale: app.getLocale(),
+    }));
+    windowIpc.on('equalizer:save', (_event, value: unknown) => {
+        equalizer = normalizeEqualizer(value);
+        equalizerDirty = true;
+        clearTimeout(equalizerSaveTimer);
+        equalizerSaveTimer = setTimeout(flushEqualizer, 300);
+        equalizerSaveTimer.unref();
+    });
     contentView.setBounds({
         x: 0,
         y: 32,
@@ -690,6 +714,7 @@ async function init() {
         },
     }));
     const stopControllers = () => {
+        flushEqualizer();
         windowTasks.dispose();
         windowImport.dispose();
         windowWave.stop();
