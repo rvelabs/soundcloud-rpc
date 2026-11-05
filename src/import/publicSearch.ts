@@ -1,6 +1,6 @@
 import { readTextLimited } from '../utils/readText';
 import type { WorkScheduler } from '../utils/workScheduler';
-import { readTrackHydration } from '../wave/trackHydration';
+import { readTrackHydration, type CatalogTrack } from '../wave/trackHydration';
 import { trackPath } from '../wave/nativeQueue';
 import { classifyTrackAvailability, type TrackAvailability } from './availability';
 import type { ImportMatch } from './match';
@@ -8,12 +8,15 @@ import { matchIdentity, matchQueries, type MatchCandidate } from './matchIdentit
 import type { SourceTrack } from './source';
 import { TaskPool } from './taskPool';
 import { cancelImportOperation } from './parallel';
+import type { SoundCloudCatalog } from '../soundcloud/catalog';
 interface SearchHit extends MatchCandidate {
     url: string;
 }
 interface InspectedHit extends SearchHit {
+    apiId?: number;
     availability: TrackAvailability;
 }
+type SearchResult = ReturnType<typeof parsePublicSearch> & { api?: boolean };
 function decode(value: string): string {
     return value
         .replace(/<[^>]*>/g, '')
@@ -67,10 +70,11 @@ class SearchRequestError extends Error {
 }
 export class PublicSoundCloudSearch {
     private pool: TaskPool;
-    private searches = new Map<string, { until: number; task: Promise<ReturnType<typeof parsePublicSearch>> }>();
+    private searches = new Map<string, { until: number; task: Promise<SearchResult> }>();
     private details = new Map<string, { until: number; task: Promise<InspectedHit | undefined> }>();
     private unsupported = false;
     private limitedUntil = 0;
+    private catalogRevision = -1;
     constructor(
         private request: typeof fetch,
         private fallback: (source: SourceTrack) => Promise<ImportMatch>,
@@ -78,6 +82,7 @@ export class PublicSoundCloudSearch {
         concurrency: () => number = () => 10,
         private now = Date.now,
         private scheduler?: WorkScheduler,
+        private catalog?: SoundCloudCatalog,
     ) {
         this.pool = new TaskPool(concurrency);
     }
@@ -103,15 +108,35 @@ export class PublicSoundCloudSearch {
             this.signal,
         );
     }
-    private search(query: string): Promise<ReturnType<typeof parsePublicSearch>> {
+    private search(query: string): Promise<SearchResult> {
         const cached = this.searches.get(query);
         if (cached && cached.until > this.now()) return cached.task;
-        const task = this.page('https://soundcloud.com/search/sounds?q=' + encodeURIComponent(query))
-            .then(parsePublicSearch)
-            .catch((error) => {
-                this.searches.delete(query);
-                throw error;
-            });
+        const task = (async () => {
+            const tracks = await this.catalog?.search(query, this.signal);
+            if (tracks)
+                return {
+                    supported: true,
+                    api: true,
+                    tracks: tracks.map((track) => ({
+                        url: track.permalink_url,
+                        title: track.title,
+                        artist: track.user?.username || '',
+                        publisherArtist: track.publisher_metadata?.artist,
+                        description: track.description,
+                        durationSeconds: track.duration ? track.duration / 1000 : undefined,
+                    })),
+                };
+            if (this.catalog?.limited) {
+                this.limitedUntil = this.now() + this.catalog.retryAfterMs;
+                throw new SearchRequestError(true);
+            }
+            return parsePublicSearch(
+                await this.page('https://soundcloud.com/search/sounds?q=' + encodeURIComponent(query)),
+            );
+        })().catch((error) => {
+            if (this.searches.get(query)?.task === task) this.searches.delete(query);
+            throw error;
+        });
         this.searches.set(query, { until: this.now() + 2 * 60000, task });
         if (this.searches.size > 600) this.searches.delete(this.searches.keys().next().value!);
         return task;
@@ -119,40 +144,55 @@ export class PublicSoundCloudSearch {
     private inspect(hit: SearchHit): Promise<InspectedHit | undefined> {
         const cached = this.details.get(hit.url);
         if (cached && cached.until > this.now()) return cached.task;
-        const task = this.page(hit.url)
-            .then((html) => {
-                const data = readTrackHydration(html)?.find(
+        const task = (async () => {
+            let data: CatalogTrack | null | undefined = await this.catalog?.resolve(hit.url, 'import', this.signal);
+            if ((!data || classifyTrackAvailability(data).status === 'unknown') && this.catalog?.limited) {
+                this.limitedUntil = this.now() + this.catalog.retryAfterMs;
+                throw new SearchRequestError(true);
+            }
+            if (!data || classifyTrackAvailability(data).status === 'unknown') {
+                const html = await this.page(hit.url);
+                data = readTrackHydration(html)?.find(
                     (track) => track.permalink_url && trackPath(track.permalink_url) === trackPath(hit.url),
                 );
-                if (!data?.title) return undefined;
-                return {
-                    url: hit.url,
-                    title: data.title.slice(0, 200),
-                    artist: data.user?.username?.slice(0, 200) || hit.artist,
-                    publisherArtist: data.publisher_metadata?.artist?.slice(0, 200),
-                    description: data.description?.slice(0, 4000),
-                    durationSeconds: data.duration && Number.isFinite(data.duration) ? data.duration / 1000 : undefined,
-                    availability: classifyTrackAvailability(data),
-                };
-            })
-            .catch((error) => {
-                this.details.delete(hit.url);
-                throw error;
-            });
+            }
+            if (!data?.title) return undefined;
+            return {
+                apiId: Number.isSafeInteger(data.id) && Number(data.id) > 0 ? data.id : undefined,
+                url: hit.url,
+                title: data.title.slice(0, 200),
+                artist: data.user?.username?.slice(0, 200) || hit.artist,
+                publisherArtist: data.publisher_metadata?.artist?.slice(0, 200),
+                description: data.description?.slice(0, 4000),
+                durationSeconds: data.duration && Number.isFinite(data.duration) ? data.duration / 1000 : undefined,
+                availability: classifyTrackAvailability(data),
+            };
+        })().catch((error) => {
+            if (this.details.get(hit.url)?.task === task) this.details.delete(hit.url);
+            throw error;
+        });
         this.details.set(hit.url, { until: this.now() + 2 * 60000, task });
         if (this.details.size > 700) this.details.delete(this.details.keys().next().value!);
         return task;
     }
     async match(source: SourceTrack): Promise<ImportMatch> {
         this.signal.throwIfAborted();
+        if (this.catalog && this.catalogRevision !== this.catalog.revision) {
+            this.catalogRevision = this.catalog.revision;
+            this.searches.clear();
+            this.details.clear();
+            this.unsupported = false;
+        }
         if (this.limitedUntil > this.now()) return { source, error: new SearchRequestError(true).message };
-        if (this.unsupported) return this.fallback(source);
+        if (this.unsupported && !this.catalog?.available) return this.fallback(source);
         const deadline = AbortSignal.any([this.signal, AbortSignal.timeout(10000)]);
         const inspected = new Set<string>();
         let review: ImportMatch | undefined;
         try {
+            let allApi = true;
             for (const query of matchQueries(source)) {
                 const results = await cancelImportOperation(this.search(query), deadline);
+                if (!results.api) allApi = false;
                 if (!results.supported) {
                     this.unsupported = true;
                     break;
@@ -172,6 +212,7 @@ export class PublicSoundCloudSearch {
                     const found: ImportMatch = {
                         source,
                         soundcloud: {
+                            apiId: candidate.apiId,
                             url: candidate.url,
                             title: candidate.title,
                             artist: candidate.artist,
@@ -188,6 +229,7 @@ export class PublicSoundCloudSearch {
                     if (!review || review.soundcloud!.score < identity.score) review = found;
                 }
             }
+            if (allApi) return review || { source };
         } catch (error) {
             this.signal.throwIfAborted();
             if (this.limitedUntil > this.now() || (error instanceof SearchRequestError && error.limited))

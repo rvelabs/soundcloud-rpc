@@ -22,7 +22,11 @@ describe('native SoundCloud queue bridge', () => {
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce('already');
         view.executeJavaScript = vi.fn((code, ...args) =>
-            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+            code.includes('nativeQueueModel')
+                ? Promise.resolve({ state: 'unsupported' })
+                : code.startsWith('({ path:')
+                  ? Promise.resolve({ path: '', playing: false })
+                  : execute(code, ...args),
         );
         const queued = addToNativeNextUp(view, 'https://soundcloud.com/artist/one');
         const play = playInNativePlayer(view, 'https://soundcloud.com/artist/two', undefined, undefined, () => active);
@@ -57,7 +61,11 @@ describe('native SoundCloud queue bridge', () => {
             .mockResolvedValueOnce(undefined)
             .mockResolvedValueOnce(['https://soundcloud.com/artist/my-track']);
         view.executeJavaScript = vi.fn((code, ...args) =>
-            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+            code.includes('nativeQueueModel')
+                ? Promise.resolve({ state: 'unsupported' })
+                : code.startsWith('({ path:')
+                  ? Promise.resolve({ path: '', playing: false })
+                  : execute(code, ...args),
         );
         await addToNativeNextUp(view, 'https://soundcloud.com/artist/my-track');
         expect(execute.mock.calls[3][0]).toContain('button.addToNextUp');
@@ -78,7 +86,11 @@ describe('native SoundCloud queue bridge', () => {
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce({ path: '/artist/my-track', playing: true });
         view.executeJavaScript = vi.fn((code, ...args) =>
-            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+            code.includes('nativeQueueModel')
+                ? Promise.resolve({ state: 'unsupported' })
+                : code.startsWith('({ path:')
+                  ? Promise.resolve({ path: '', playing: false })
+                  : execute(code, ...args),
         );
         await playInNativePlayer(view, 'https://soundcloud.com/artist/my-track');
         expect(execute.mock.calls[2][0]).toContain('.soundTitle__playButton .playButton');
@@ -105,7 +117,11 @@ describe('native SoundCloud queue bridge', () => {
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce({ path: '/artist/next-track', playing: true });
         view.executeJavaScript = vi.fn((code, ...args) =>
-            code.startsWith('({ path:') ? Promise.resolve({ path: '', playing: false }) : execute(code, ...args),
+            code.includes('nativeQueueModel')
+                ? Promise.resolve({ state: 'unsupported' })
+                : code.startsWith('({ path:')
+                  ? Promise.resolve({ path: '', playing: false })
+                  : execute(code, ...args),
         );
         const queued = addToNativeNextUp(view, 'https://soundcloud.com/artist/queued-track');
         const played = playInNativePlayer(view, 'https://soundcloud.com/artist/next-track');

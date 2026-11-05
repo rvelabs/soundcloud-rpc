@@ -22,7 +22,7 @@ export class RelatedDiscovery {
         };
     }
     constructor(
-        private load: (url: string) => Promise<WaveCandidate[]>,
+        private load: (url: string, advance?: boolean) => Promise<WaveCandidate[]>,
         private now = Date.now,
     ) {}
     async discover(seeds: Track[], isActive = () => true): Promise<WaveCandidate[]> {
@@ -35,16 +35,14 @@ export class RelatedDiscovery {
             if (!trackPath(seed.id)) continue;
             const cached = this.cache.get(seed.id);
             let tracks =
-                cached &&
-                this.now() >= cached.at &&
-                this.now() - cached.at < (cached.tracks.length ? 30 * 60000 : 15000)
+                cached && this.now() >= cached.at && this.now() - cached.at < (cached.tracks.length ? 60000 : 15000)
                     ? cached.tracks
                     : undefined;
             if (!tracks) {
                 let task = this.pending.get(seed.id);
                 if (!task) {
                     this.loads++;
-                    task = this.load(seed.id);
+                    task = this.load(seed.id, Boolean(cached?.tracks.length));
                     this.pending.set(seed.id, task);
                 }
                 try {
@@ -65,10 +63,13 @@ export class RelatedDiscovery {
                 const old = merged.get(track.url);
                 merged.set(track.url, {
                     ...track,
-                    source: 'related',
+                    source: track.source || 'related',
                     sourceQuery: undefined,
                     sourceRank: Math.min(old?.sourceRank ?? Infinity, track.sourceRank),
-                    relatedTo: [...new Set([...(old?.relatedTo || []), seed.id])],
+                    relatedTo:
+                        track.source && track.source !== 'related'
+                            ? track.relatedTo
+                            : [...new Set([...(old?.relatedTo || []), seed.id])],
                 });
             }
         }

@@ -8,6 +8,7 @@ export interface ImportMatch {
     source: SourceTrack;
     error?: string;
     soundcloud?: {
+        apiId?: number;
         url: string;
         title: string;
         artist: string;

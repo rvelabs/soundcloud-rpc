@@ -27,7 +27,11 @@ import { IpcRegistry } from '../utils/ipcRegistry';
 import type { DataStore } from '../storage/asyncDataStore';
 import type { ConnectionRecovery } from '../network/connectionRecovery';
 import { createAvailabilityChecker, cacheTrackAvailability } from './availability';
+import type { SoundCloudCatalog } from '../soundcloud/catalog';
+import { saveApiPlaylist } from '../soundcloud/playlistWriter';
+import { ApiWriteError } from '../soundcloud/accountTypes';
 export function createPlaylistImportController(options: {
+    catalog?: SoundCloudCatalog;
     scheduler?: WorkScheduler;
     window: BrowserWindow;
     contents: WebContents;
@@ -177,6 +181,7 @@ export function createPlaylistImportController(options: {
                 controller.signal,
                 importRoute,
                 (task) => scheduler.run('network', 'import', task, controller.signal),
+                options.catalog,
             );
             importProgress('matching', 0, source.tracks.length, 'Ищем совпадения…', {
                 title: source.title,
@@ -243,6 +248,7 @@ export function createPlaylistImportController(options: {
                 () => concurrency,
                 Date.now,
                 scheduler,
+                options.catalog,
             );
             const matches = await mapImportTracks(source.tracks, {
                 concurrency,
@@ -422,21 +428,58 @@ export function createPlaylistImportController(options: {
         importCommitController = controller;
         const task = (async () => {
             const title = playlistTitle;
+            await options.catalog?.prime(
+                chosen.flatMap((item) => (item.soundcloud?.apiId ? [item.soundcloud.apiId] : [])),
+                controller.signal,
+            );
             const availability = createAvailabilityChecker(
                 clientContents.session,
                 controller.signal,
                 availabilityRoute(),
                 (task) => scheduler.run('network', 'import', task, controller.signal),
+                options.catalog,
             );
+            let apiTarget = false;
+            const previousTarget = draft.writtenTitle === title ? draft.writtenPlaylistId : undefined;
             const result = await saveImportSelection(chosen, {
+                writeMany: options.catalog
+                    ? async (items) => {
+                          return saveApiPlaylist(options.catalog!, items, {
+                              title,
+                              playlistId: previousTarget,
+                              accountId: draft.writtenAccountId,
+                              signal: controller.signal,
+                              concurrency: automaticImportConcurrency(availableParallelism(), freemem(), items.length),
+                              target: (id, accountId) => {
+                                  apiTarget = true;
+                                  if (draft.writtenTitle !== title) draft.savedUrls = [];
+                                  draft.writtenTitle = title;
+                                  draft.writtenPlaylistId = id;
+                                  draft.writtenAccountId = accountId;
+                                  importJournal.save(draft);
+                              },
+                              saved: (item) => {
+                                  draft.savedUrls = [...new Set([...(draft.savedUrls || []), item.soundcloud!.url])];
+                                  importJournal.save(draft, true);
+                              },
+                              progress: (completed, total, detail) =>
+                                  importProgress('adding', completed, total, detail || title),
+                          });
+                      }
+                    : undefined,
                 saved: (item) => {
                     if (draft.writtenTitle !== title) draft.savedUrls = [];
+                    if (!apiTarget) {
+                        delete draft.writtenPlaylistId;
+                        delete draft.writtenAccountId;
+                    }
                     draft.writtenTitle = title;
                     draft.savedUrls = [...new Set([...(draft.savedUrls || []), item.soundcloud!.url])];
-                    importJournal.save(draft);
+                    importJournal.save(draft, true);
                 },
                 check: availability,
-                stopOnError: (error) => error instanceof PlaylistWriteError && error.fatal,
+                stopOnError: (error) =>
+                    (error instanceof PlaylistWriteError || error instanceof ApiWriteError) && error.fatal,
                 concurrency: automaticImportConcurrency(availableParallelism(), freemem(), chosen.length),
                 signal: controller.signal,
                 create: (item) =>
@@ -519,6 +562,7 @@ export function createPlaylistImportController(options: {
                       total: importDraft.matches.length,
                       matched: importDraft.matches.filter((match) => match.soundcloud).length,
                       updatedAt: importDraft.updatedAt,
+                      catalogApi: options.catalog?.diagnostics(),
                   }
                 : undefined;
         },

@@ -6,6 +6,8 @@ export interface WaveCandidate {
     title: string;
     artist: string;
     sourceRank: number;
+    apiId?: number;
+    uploaderId?: number;
     language?: string;
     playbackCount?: number;
     genre?: string;
@@ -15,7 +17,7 @@ export interface WaveCandidate {
     liked?: boolean;
     sourceQuery?: string;
     relatedTo?: string[];
-    source?: 'related' | 'personal';
+    source?: 'related' | 'personal' | 'collection' | 'home' | 'following';
     metadataChecked?: boolean;
     catalogCheckedAt?: number;
     playability?: 'available' | 'blocked' | 'preview' | 'protected' | 'unknown';

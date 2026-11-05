@@ -53,6 +53,28 @@ describe('saving a found subset', () => {
         expect(result.successful.map((item) => item.source.title)).toEqual(['fresh']);
         expect(create).toHaveBeenCalledTimes(1);
     });
+    it('never retries an uncertain bulk write through the native creation dialog', async () => {
+        const create = vi.fn(async (): Promise<'added'> => 'added');
+        const options = {
+            check: async () => state('available'),
+            create,
+            add: create,
+            concurrency: 2,
+            progress: () => {},
+        };
+        await expect(
+            saveImportSelection([match('fresh')], {
+                ...options,
+                writeMany: async () => {
+                    throw new Error('Uncertain write');
+                },
+            }),
+        ).rejects.toThrow('Uncertain write');
+        expect(create).not.toHaveBeenCalled();
+        const result = await saveImportSelection([match('fresh')], { ...options, writeMany: async () => null });
+        expect(result.added).toBe(1);
+        expect(create).toHaveBeenCalledTimes(1);
+    });
     it('does not report a saved playlist if no candidate was ever confirmed or cancellation occurs', async () => {
         const create = vi.fn(async (): Promise<'added'> => 'added'),
             item = match('old', 600000),

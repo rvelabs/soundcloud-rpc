@@ -26,8 +26,14 @@ import {
     trackPath,
     NativeTrackNotFoundError,
     NativeActionCanceledError,
+    NativeQueueUncertainError,
 } from './nativeQueue';
-import { enrichPublicTrack, setPublicMetadataFetch } from './trackMetadata';
+import { enrichPublicTrack, enrichCatalogTrack, setPublicMetadataFetch } from './trackMetadata';
+import type { SoundCloudCatalog, ApiTrack } from '../soundcloud/catalog';
+import { setTimeout as delay } from 'node:timers/promises';
+import { hasCatalogMetadata } from './trackHydration';
+import { nativeLikeBridge } from '../soundcloud/nativeLikeBridge';
+import { nativeQueueDiagnostics } from '../soundcloud/nativeQueueBridge';
 import { installWaveMediaEndCapture } from './mediaEndCapture';
 import { installAudioFeatureCapture } from './audioFeatureCapture';
 import { setStationAutoplay } from './nativeAutoplay';
@@ -48,6 +54,7 @@ import type { DataStore } from '../storage/asyncDataStore';
 import { confirmTrackPlayback } from '../import/availability';
 import { AudioAnalysisCache } from './audioAnalysisCache';
 export function createWaveController(options: {
+    catalog?: SoundCloudCatalog;
     scheduler?: WorkScheduler;
     window: BrowserWindow;
     contents: WebContents;
@@ -87,8 +94,15 @@ export function createWaveController(options: {
     const waveListening = new ListeningEvidence();
     const audioAnalysis = new AudioAnalysisCache(libraryStore, currentAccountId);
     const scheduler = options.scheduler || new WorkScheduler();
-    const enrichCandidate = (track: WaveCandidate, priority: WorkPriority = 'prefetch') =>
-        scheduler.run('network', priority, async () => audioAnalysis.enrich(await enrichPublicTrack(track)));
+    const enrichCandidate = async (track: WaveCandidate, priority: WorkPriority = 'prefetch') => {
+        const age = Date.now() - Number(track.catalogCheckedAt || 0);
+        if (track.catalogCheckedAt && age >= 0 && age < 30 * 60000 && (track.apiId || !options.catalog?.available))
+            return audioAnalysis.enrich(track);
+        const metadata = await options.catalog?.resolve(track.url, priority);
+        if (metadata && hasCatalogMetadata(metadata)) return audioAnalysis.enrich(enrichCatalogTrack(track, metadata));
+        if (options.catalog?.limited) return audioAnalysis.enrich(track);
+        return scheduler.run('network', priority, async () => audioAnalysis.enrich(await enrichPublicTrack(track)));
+    };
     let waveStarting = false;
     let waveVisible = false;
     let onNativeWaveTrackUpdate: ((track: TrackInfo) => void) | null = null;
@@ -255,13 +269,50 @@ export function createWaveController(options: {
             waveLikeView.webContents.close({ waitForBeforeUnload: false });
         waveLikeView = null;
     };
-    const relatedDiscovery = new RelatedDiscovery((url) =>
-        discoveryPage.use((contents) =>
+    const apiCandidates = (tracks: ApiTrack[]) =>
+        tracks.map((track, sourceRank) =>
+            enrichCatalogTrack(
+                {
+                    url: track.permalink_url,
+                    title: track.title,
+                    artist: track.user?.username || '',
+                    sourceRank,
+                    source: track.radioSource || 'related',
+                },
+                track,
+            ),
+        );
+    const relatedDiscovery = new RelatedDiscovery(async (url, advance) => {
+        const tracks = await options.catalog?.discover(url, advance);
+        if (tracks) return apiCandidates(tracks);
+        if (options.catalog?.limited) return [];
+        return discoveryPage.use((contents) =>
             scheduler.run('page', 'prefetch', () => discoverRelatedCandidates(contents, url)),
-        ),
-    );
+        );
+    });
+    let extraTask: Promise<void> | undefined,
+        extraAt = 0;
     const waveRecommender = new SoundCloudRecommender(libraryStore, currentAccountId, async (seeds) => {
         const generation = waveGeneration;
+        if (options.catalog && !seeds.length) {
+            const home = await options.catalog.homeCandidates();
+            return generation === waveGeneration && home ? apiCandidates(home) : [];
+        }
+        if (options.catalog && seeds[0] && !extraTask && Date.now() - extraAt > 60000) {
+            extraAt = Date.now();
+            const catalog = options.catalog,
+                revision = catalog.revision;
+            extraTask = Promise.allSettled([catalog.collectionCandidates(seeds[0].id), catalog.followingCandidates()])
+                .then((results) => {
+                    if (generation !== waveGeneration || !waveVisible || revision !== catalog.revision) return;
+                    for (const result of results)
+                        if (result.status === 'fulfilled' && result.value)
+                            waveRecommender.addCandidates(apiCandidates(result.value));
+                })
+                .finally(() => {
+                    extraTask = undefined;
+                });
+        }
         return relatedDiscovery.discover(seeds, () => waveVisible && generation === waveGeneration);
     });
     let waveMetadataWarmupStarted = false;
@@ -503,6 +554,7 @@ export function createWaveController(options: {
             const path = trackPath(waveFuture[i].url);
             if (
                 path === trackPath(waveCurrent) ||
+                !waveRecommender.accepts(waveFuture[i]) ||
                 path === trackPath(getTrack().url || '') ||
                 waveHistory.slice(-10).some((track) => trackPath(track.url) === path)
             )
@@ -573,7 +625,14 @@ export function createWaveController(options: {
                 let chosen: WaveCandidate | undefined;
                 let playError: unknown;
                 for (let attempt = 0; attempt < 3; attempt++) {
-                    const candidate = await takeDiverseUpcoming();
+                    let committed = reason !== 'start' ? nativeQueued.shift() : undefined;
+                    while (committed && !waveRecommender.accepts(committed)) {
+                        await removeNativeNextUp(clientContents, [committed.url]);
+                        waveRecommender.release(committed);
+                        if (generation !== waveGeneration || !waveVisible) return;
+                        committed = nativeQueued.shift();
+                    }
+                    const candidate = committed || (await takeDiverseUpcoming());
                     if (generation !== waveGeneration || !waveVisible) return;
                     if (!candidate) break;
                     traceWave('candidate-selected', waveCurrent, candidate.url, reason);
@@ -592,6 +651,7 @@ export function createWaveController(options: {
                                 candidate.sourceQuery,
                                 () => generation === waveGeneration && waveVisible,
                                 (phase) => traceWave('native-step', previous, candidate.url, phase),
+                                Boolean(committed),
                             ),
                         );
                         traceWave('candidate-playing', previous, candidate.url, reason);
@@ -608,6 +668,7 @@ export function createWaveController(options: {
                         waveCurrent = previous;
                         waveRecommender.release(candidate);
                         waveRecommender.reserve(candidate);
+                        if (error instanceof NativeQueueUncertainError) throw error;
                     }
                 }
                 if (generation !== waveGeneration || !waveVisible) return;
@@ -913,6 +974,54 @@ export function createWaveController(options: {
     };
     if (savedControls && typeof savedControls === 'object') setControls(savedControls);
     let waveTasteTask: Promise<void> | undefined;
+    let signalsTask: Promise<void> | undefined, signalsController: AbortController | undefined;
+    const syncLibrarySignals = () => {
+        if (
+            (signalsTask && !signalsController?.signal.aborted) ||
+            !options.catalog ||
+            !waveVisible ||
+            windowWorkStopped
+        )
+            return;
+        signalsController?.abort();
+        const catalog = options.catalog,
+            controller = new AbortController();
+        signalsController = controller;
+        const task = (async () => {
+            while (waveVisible && !controller.signal.aborted && !windowWorkStopped && !quitting()) {
+                const snapshot = await catalog.librarySignals(controller.signal);
+                if (!snapshot || controller.signal.aborted) return;
+                waveRecommender.setLibrarySignals(snapshot.likedIds, snapshot.blockedIds);
+                if (
+                    [...nativeQueued, ...(nativeAdding ? [nativeAdding] : [])].some(
+                        (candidate) => !waveRecommender.accepts(candidate),
+                    )
+                ) {
+                    nativeQueueAttempt++;
+                    waveQueueEpoch++;
+                    wavePrepared.clear(true);
+                    await resetNativeQueue();
+                    if (controller.signal.aborted || !waveVisible) return;
+                    void fillNativeQueue().catch((error) =>
+                        console.debug('Wave library queue refresh unavailable:', error),
+                    );
+                }
+                if (!snapshot.more) return;
+                await delay(catalog.limited ? Math.max(1500, Math.min(60000, catalog.retryAfterMs)) : 1500, undefined, {
+                    signal: controller.signal,
+                    ref: false,
+                });
+            }
+        })()
+            .catch((error) => {
+                if (!controller.signal.aborted) console.debug('Wave library IDs unavailable:', error);
+            })
+            .finally(() => {
+                if (signalsTask === task) signalsTask = undefined;
+                if (signalsController === controller) signalsController = undefined;
+            });
+        signalsTask = task;
+    };
     const loadWaveTaste = async (): Promise<void> => {
         if (waveTasteTask) return waveTasteTask;
         if (waveHistoryLoaded || windowWorkStopped || quitting() || clientContents.isDestroyed()) return;
@@ -925,9 +1034,43 @@ export function createWaveController(options: {
             await previousSearch;
             try {
                 if (windowWorkStopped || quitting() || clientContents.isDestroyed()) return;
-                const personal = await discoveryPage.use((contents) =>
-                    scheduler.run('page', 'prefetch', () => discoverPersonalHistory(contents)),
-                );
+                const api = await options.catalog?.personalHistory();
+                const missing = { likes: !api?.likes, recent: !api?.recent };
+                const legacy =
+                    !options.catalog?.limited && (missing.likes || missing.recent)
+                        ? await discoveryPage.use((contents) =>
+                              scheduler.run('page', 'prefetch', () => discoverPersonalHistory(contents, missing)),
+                          )
+                        : { likes: [], recent: [] };
+                const personal = {
+                    likes: api?.likes
+                        ? api.likes.map((track, sourceRank) => ({
+                              ...enrichCatalogTrack(
+                                  {
+                                      url: track.permalink_url,
+                                      title: track.title,
+                                      artist: track.user?.username || '',
+                                      sourceRank,
+                                  },
+                                  track,
+                              ),
+                              liked: true,
+                          }))
+                        : legacy.likes,
+                    recent: api?.recent
+                        ? api.recent.map((track, sourceRank) =>
+                              enrichCatalogTrack(
+                                  {
+                                      url: track.permalink_url,
+                                      title: track.title,
+                                      artist: track.user?.username || '',
+                                      sourceRank,
+                                  },
+                                  track,
+                              ),
+                          )
+                        : legacy.recent,
+                };
                 if (windowWorkStopped || quitting() || clientContents.isDestroyed()) return;
                 waveRecommender.seedLikes(personal.likes);
                 waveRecommender.seedRecent(personal.recent);
@@ -947,6 +1090,7 @@ export function createWaveController(options: {
         }
     };
     const disposeWaveViews = () => {
+        signalsController?.abort();
         if (!options.scheduler) scheduler.dispose();
         windowIpc.dispose();
         endedRecovery.cancel();
@@ -1097,6 +1241,7 @@ export function createWaveController(options: {
         if (waveVisible) return;
         waveVisible = true;
         waveGeneration++;
+        syncLibrarySignals();
         sendInline('active', true);
     };
     const hideWave = () => {
@@ -1104,6 +1249,7 @@ export function createWaveController(options: {
         endedRecovery.cancel();
         sendInline('queue-ready', false);
         waveVisible = false;
+        signalsController?.abort();
         playback.invalidate();
         waveReachedEnd = false;
         waveGeneration++;
@@ -1201,7 +1347,9 @@ export function createWaveController(options: {
             duration: getTrack().duration,
             playing: getTrack().isPlaying,
         },
-        source: 'related-tracks',
+        source: 'soundcloud-and-local-ranking',
+        catalogApi: options.catalog?.diagnostics(),
+        nativeApi: nativeQueueDiagnostics(clientContents),
         events: events(),
         import: importDiagnostics(),
         controls: { ...waveControls },
@@ -1288,6 +1436,23 @@ export function createWaveController(options: {
                 } catch {}
             }
             if (!waveVisible || waveCurrent !== candidate.url) throw new Error('Трек уже сменился.');
+            if (options.catalog) {
+                const [account, track] = await Promise.all([
+                    options.catalog.profile(),
+                    options.catalog.resolve(candidate.url, 'playback'),
+                ]);
+                if (account && track) {
+                    const input = { id: track.id, accountId: account.id, sync: false, liked: desired };
+                    const ready = await nativeLikeBridge(clientContents, input);
+                    if (ready && waveVisible && waveCurrent === candidate.url) {
+                        const result = await options.catalog.setLiked(candidate.url, desired);
+                        if (result) {
+                            await nativeLikeBridge(clientContents, { ...input, sync: true });
+                            return result.liked;
+                        }
+                    }
+                }
+            }
             return setTrackLiked(getLikeView(), candidate.url, desired, candidate.title);
         })();
         likeTask = task;
@@ -1295,6 +1460,7 @@ export function createWaveController(options: {
             const liked = await task;
             waveKnownLikes.set(candidate.url, liked);
             waveRecommender.record(candidate, liked ? 'like' : 'unlike');
+            syncLibrarySignals();
             if (waveCurrent === candidate.url && waveVisible) {
                 if (getTrack().url === candidate.url) setTrack({ ...getTrack(), isLiked: liked });
                 sendLikeState(candidate.url);

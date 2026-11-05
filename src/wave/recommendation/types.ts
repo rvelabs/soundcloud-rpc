@@ -9,6 +9,8 @@ export interface SoundFeatures {
 }
 export interface Track {
     id: string;
+    apiId?: number;
+    uploaderId?: number;
     title: string;
     artist: string;
     genre?: string;
@@ -20,7 +22,7 @@ export interface Track {
     sourceRank?: number;
     queryHint?: string;
     relatedTo?: string[];
-    source?: 'related' | 'personal';
+    source?: 'related' | 'personal' | 'collection' | 'home' | 'following';
 }
 export type FeedbackKind = 'like' | 'unlike' | 'dislike' | 'play' | 'skip' | 'complete';
 export interface Feedback {
@@ -57,6 +59,7 @@ export interface Context {
     now: number;
     activity?: 'focus' | 'relax' | 'workout' | 'wake' | 'commute' | 'sleep';
     recentTrackIds?: string[];
+    knownLikedApiIds?: ReadonlySet<number>;
     reservedTrackIds?: string[];
     allowUnverified?: boolean;
     recentArtists?: string[];

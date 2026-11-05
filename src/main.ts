@@ -5,6 +5,7 @@ import { WorkerSetup } from './network/workerSetup';
 import { ConnectionRecovery } from './network/connectionRecovery';
 import { WorkScheduler } from './utils/workScheduler';
 import { equalizerFrequencies, equalizerPresets, normalizeEqualizer } from './audio/equalizerSettings';
+import { installSoundCloudCatalog } from './soundcloud/catalogSession';
 
 import { installNativePageCover } from './wave/nativePageCover';
 import {
@@ -535,7 +536,8 @@ let headerView: WebContentsView | null;
 let contentView: WebContentsView;
 const windowIpc = new IpcRegistry(ipcMain, (event, channel) => {
     if (isQuitting) return false;
-    if (/^(wave-inline:|playlist-import:|soundcloud:|equalizer:)/.test(channel)) return isTrustedSoundCloudSender(event);
+    if (/^(wave-inline:|playlist-import:|soundcloud:|equalizer:)/.test(channel))
+        return isTrustedSoundCloudSender(event);
     return settingsManager?.owns(event.sender) === true || headerView?.webContents === event.sender;
 });
 
@@ -675,7 +677,9 @@ async function init() {
 
     const workScheduler = new WorkScheduler();
     clientContents.once('destroyed', () => workScheduler.dispose());
+    const catalog = installSoundCloudCatalog(clientContents, workScheduler, availabilityRoute);
     const windowImport = createPlaylistImportController({
+        catalog,
         scheduler: workScheduler,
         window: mainWindow,
         contents: clientContents,
@@ -690,6 +694,7 @@ async function init() {
         trace: traceWave,
     });
     const windowWave = (waveController = createWaveController({
+        catalog,
         scheduler: workScheduler,
         window: mainWindow,
         contents: clientContents,
@@ -1091,7 +1096,11 @@ async function init() {
         if (accountPollBusy || !contentView || clientContents.isDestroyed()) return;
         accountPollBusy = true;
         try {
-            const username = await clientContents.executeJavaScript(`
+            const profile = await catalog.profile();
+            const username =
+                profile?.permalink ||
+                profile?.username ||
+                (await clientContents.executeJavaScript(`
 				(() => {
 					try {
 						const profileBtn = document.querySelector('.header__userNav [data-menu-name="profile"]');
@@ -1110,7 +1119,7 @@ async function init() {
 						return null;
 					}
 				})()
-			`);
+			`));
             if (username && typeof username === 'string' && username.trim() !== '') {
                 const accounts = store.get('accounts', [{ id: 'default', name: 'Main Account' }]);
                 const currentId = store.get('currentAccountId', 'default');

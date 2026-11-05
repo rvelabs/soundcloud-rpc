@@ -99,7 +99,10 @@ async function loadDiscoveryPage(view: WebContents, url: string): Promise<void> 
         clearTimeout(timeout);
     }
 }
-export async function discoverPersonalHistory(view: WebContents): Promise<{
+export async function discoverPersonalHistory(
+    view: WebContents,
+    parts = { likes: true, recent: true },
+): Promise<{
     likes: WaveCandidate[];
     recent: WaveCandidate[];
 }> {
@@ -112,7 +115,10 @@ export async function discoverPersonalHistory(view: WebContents): Promise<{
             return [];
         }
     };
-    return { likes: await read('/you/likes'), recent: await read('/you/history') };
+    return {
+        likes: parts.likes ? await read('/you/likes') : [],
+        recent: parts.recent ? await read('/you/history') : [],
+    };
 }
 export async function discoverRelatedCandidates(view: WebContents, trackUrl: string): Promise<WaveCandidate[]> {
     const path = trackPath(trackUrl);

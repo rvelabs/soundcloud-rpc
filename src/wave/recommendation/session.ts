@@ -46,12 +46,26 @@ export class RecommendationSession {
         this.rankingCache.clear();
     }
     private excludedArtists = new Set<string>();
+    private knownApiIds = new Set<number>();
+    private blockedUploaders = new Set<number>();
+    setLibrarySignals(liked: readonly number[], blocked: readonly number[]): void {
+        this.knownApiIds = new Set(liked.filter((id) => Number.isSafeInteger(id) && id > 0));
+        this.blockedUploaders = new Set(blocked.filter((id) => Number.isSafeInteger(id) && id > 0));
+        this.invalidateRanking();
+    }
     setExcludedArtists(artists: string[]): void {
         this.excludedArtists = new Set(artists.map(artistIdentity));
         this.invalidateRanking();
     }
     private allowed(track: Track): boolean {
-        return !this.excludedArtists.has(artistIdentity(track.artist));
+        return (
+            !this.excludedArtists.has(artistIdentity(track.artist)) &&
+            !this.blockedUploaders.has(track.uploaderId || 0) &&
+            (!['new', 'popular'].includes(this.controls.discovery) || !this.knownApiIds.has(track.apiId || 0))
+        );
+    }
+    accepts(track: Track): boolean {
+        return this.allowed(track);
     }
     private controls: Controls = { ...defaultControls };
     private activity?: Context['activity'];
@@ -196,6 +210,7 @@ export class RecommendationSession {
             now,
             activity: this.activity,
             recentTrackIds: this.recentIds,
+            knownLikedApiIds: this.knownApiIds,
             reservedTrackIds: includeReserved ? [...this.reservedIds] : [],
             allowUnverified: includeReserved,
             recentArtists: [

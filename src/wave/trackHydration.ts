@@ -1,7 +1,8 @@
 export interface CatalogTrack {
+    id?: number;
     title?: string;
     description?: string;
-    user?: { username?: string };
+    user?: { username?: string; id?: number };
     permalink_url?: string;
     streamable?: boolean;
     state?: string;
@@ -24,6 +25,16 @@ export interface CatalogTrack {
             };
         }[];
     };
+}
+export function hasCatalogMetadata(track: CatalogTrack): boolean {
+    return (
+        typeof track.duration === 'number' &&
+        Number.isFinite(track.duration) &&
+        track.duration >= 0 &&
+        typeof track.streamable === 'boolean' &&
+        Boolean(track.state && track.policy) &&
+        Array.isArray(track.media?.transcodings)
+    );
 }
 export function readTrackHydration(html: string): CatalogTrack[] | null {
     const marker = /window\.__sc_hydration\s*=\s*/.exec(html);

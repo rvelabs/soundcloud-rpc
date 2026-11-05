@@ -38,6 +38,18 @@ export const waveEnglish: Record<string, string> = {
     'Ссылка на плейлист или альбом Spotify': 'Playlist or Spotify album link',
     'Не удалось прочитать источник': 'Could not read the source',
     'SoundCloud требует повторного входа (HTTP 401).': 'SoundCloud requires you to sign in again (HTTP 401).',
+    'SoundCloud не подтвердил результат записи. Найденные треки сохранены — повторите добавление.':
+        'SoundCloud did not confirm the write. Found matches are preserved; retry saving.',
+    'SoundCloud требует повторного входа или подтверждения аккаунта.':
+        'SoundCloud requires sign-in or account verification.',
+    'SoundCloud не сохранил изменение.': 'SoundCloud did not save the change.',
+    'SoundCloud не подтвердил действие очереди. Повторите после проверки плеера.':
+        'SoundCloud did not confirm the queue action. Check the player before retrying.',
+    'Целевой плейлист относится к другому аккаунту SoundCloud.':
+        'The destination playlist belongs to another SoundCloud account.',
+    'Не удалось полностью прочитать целевой плейлист. Повторите добавление.':
+        'Could not read the entire destination playlist. Retry saving.',
+    'Плейлист SoundCloud ограничен 500 треками.': 'SoundCloud playlists are limited to 500 tracks.',
     'SoundCloud ограничил добавление треков. Повторите позже (HTTP 429).':
         'SoundCloud has rate-limited playlist writes. Try again later (HTTP 429).',
     'SoundCloud не разрешил создание плейлиста. Проверьте вход и подтверждение почты (HTTP 403).':

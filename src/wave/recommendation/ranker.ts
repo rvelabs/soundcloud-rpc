@@ -271,10 +271,13 @@ export function recommend(
     const unseen = [...unique.values()].filter((track) => {
         const key = recordingKey(track);
         if (profile.dislikedIds.has(track.id) || recentIds.has(track.id) || blockedRecordings.has(key)) return false;
-        if (favoriteMode && !favorites.has(track.id)) return false;
+        if (favoriteMode && !favorites.has(track.id) && !context.knownLikedApiIds?.has(track.apiId || 0)) return false;
         if (
             ['new', 'popular'].includes(controls.discovery) &&
-            (profile.heardIds.has(track.id) || profile.likedIds.has(track.id) || knownRecordings.has(key))
+            (profile.heardIds.has(track.id) ||
+                profile.likedIds.has(track.id) ||
+                context.knownLikedApiIds?.has(track.apiId || 0) ||
+                knownRecordings.has(key))
         )
             return false;
         return true;
@@ -338,7 +341,10 @@ export function recommend(
         if (controls.discovery === 'balanced') {
             const wantKnown = (chosen.length + (context.sequenceOffset || 0)) % 3 === 2;
             const mixed = scored.filter((entry) => {
-                const known = profile.heardIds.has(entry.track.id) || knownRecordings.has(recordingKey(entry.track));
+                const known =
+                    profile.heardIds.has(entry.track.id) ||
+                    context.knownLikedApiIds?.has(entry.track.apiId || 0) ||
+                    knownRecordings.has(recordingKey(entry.track));
                 return known === wantKnown;
             });
             if (mixed.length) group = mixed;

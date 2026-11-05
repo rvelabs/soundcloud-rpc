@@ -12,6 +12,8 @@ export interface ImportJob {
     title?: string;
     savedUrls?: string[];
     writtenTitle?: string;
+    writtenPlaylistId?: number;
+    writtenAccountId?: number;
 }
 const trackKey = (track: SourceTrack) =>
     createHash('sha256')

@@ -10,6 +10,8 @@ const checks = scripts.length
     ? scripts
     : [
           'check-native-queue.cjs',
+          'check-wave-native-api.cjs',
+          'check-wave-native-api-recovery.cjs',
           'check-wave-playback.cjs',
           'check-wave-handoff.cjs',
           'check-wave-delayed-badge.cjs',
@@ -41,6 +43,8 @@ const checks = scripts.length
           'check-import-interface.cjs',
           'check-import-virtual.cjs',
           'check-import-search.cjs',
+          'check-catalog-api.cjs',
+          'check-account-api.cjs',
           'check-source-pagination.cjs',
           'check-network-settings.cjs',
           'check-network-recovery.cjs',

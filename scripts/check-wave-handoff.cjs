@@ -9,6 +9,7 @@ fs.mkdirSync(profile, { recursive: true });
 app.setPath('userData', profile);
 const balanced = process.env.WAVE_TEST_BALANCED === '1';
 const healthy = process.env.WAVE_TEST_HEALTHY_HANDOFF === '1';
+const nativeApi = process.env.WAVE_TEST_NATIVE_API === '1';
 const manual = process.env.WAVE_TEST_MANUAL_HANDOFF === '1';
 const delayedBadge = process.env.WAVE_TEST_DELAYED_BADGE === '1';
 const cachedPlay = process.env.WAVE_TEST_CACHED_PLAY === '1';
@@ -150,6 +151,7 @@ window.nextQueued=()=>{const link=document.querySelector('.queue__itemsContainer
 document.querySelector('.playControls__play').onclick=()=>{if(audio.paused){void audio.play();document.querySelector('.playControls__play').classList.add('playing')}else{audio.pause();document.querySelector('.playControls__play').classList.remove('playing')}};
 setInterval(()=>{document.querySelector('.playbackTimeline__timePassed span').textContent='0:0'+Math.floor(audio.currentTime)},250);
 setInterval(()=>{if(audio.currentTime>1.5 && window.__waveMediaEndState)window.__waveMediaEndState.queueReady=true},40);
+${nativeApi ? '(' + require('./helpers/native-queue-fixture.cjs').toString() + ')(' + JSON.stringify(ids) + ');' : ''}
 </script>`;
 app.on('browser-window-created', (_event, window) => window.on('show', () => window.hide()));
 app.on('window-all-closed', () => {});
@@ -198,6 +200,7 @@ app.whenReady().then(async () => {
             await wait(50);
         }
         assert(contents, 'main client ready');
+        const initialUrl = contents.getURL();
         if (equalizer) {
             for (let i = 0; i < 40; i++) {
                 if (await contents.executeJavaScript("!!document.querySelector('#sc-equalizer')?.shadowRoot")) break;
@@ -402,6 +405,7 @@ app.whenReady().then(async () => {
                 'three failed play attempts recover without user input',
             );
         const report = {
+            nativeApi,
             capturedEndEvents: capture.endedEvents,
             recoveredEndEvents: capture.recoveredEvents || 0,
             transientFailureRecovery: transientFailure,
@@ -428,6 +432,13 @@ app.whenReady().then(async () => {
             nativeQueueInitiallyObserved: true,
             gapsMs: gaps,
         };
+        if (nativeApi) {
+            const calls = await contents.executeJavaScript('fixtureApiCalls');
+            assert(calls.add >= 2 && calls.play >= 1, 'native model API adds and starts tracks');
+            assert.equal(calls.dom, 0, 'no card search or More/Play DOM interaction');
+            report.apiCalls = calls;
+            assert.equal(contents.getURL(), initialUrl, 'route remains on the original home page');
+        }
         fs.writeFileSync(path.join(out, 'wave-handoff.json'), JSON.stringify(report, null, 2));
         console.log(JSON.stringify(report));
         app.exit(0);

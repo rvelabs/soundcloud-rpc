@@ -1,5 +1,6 @@
 import { beginNativePageCover } from './nativePresentation';
 import type { WebContents } from 'electron';
+import { nativeQueueBridge } from '../soundcloud/nativeQueueBridge';
 export function trackPath(value: string): string | null {
     try {
         const url = new URL(value);
@@ -27,7 +28,14 @@ export class NativeActionCanceledError extends Error {
         super('Действие Моей волны отменено.');
     }
 }
+export class NativeQueueUncertainError extends Error {
+    constructor() {
+        super('SoundCloud не подтвердил действие очереди. Повторите после проверки плеера.');
+    }
+}
 export async function listNativeNextUp(contents: WebContents): Promise<string[]> {
+    const direct = await nativeQueueBridge(contents, 'list', []);
+    if (direct.state === 'done' && direct.urls) return direct.urls.filter((url) => trackPath(url) !== null);
     const links = (await contents.executeJavaScript(
         `[...document.querySelectorAll('.queue__itemsContainer a[href]')].map((a) => a.href.split('?')[0])`,
         true,
@@ -38,6 +46,13 @@ export async function removeNativeNextUp(contents: WebContents, urls: string[]):
     const paths = [...new Set(urls.map(trackPath).filter((value): value is string => Boolean(value)))];
     if (!paths.length) return true;
     if (contents.isDestroyed()) return false;
+    const direct = await nativeQueueBridge(
+        contents,
+        'remove',
+        paths.map((path) => 'https://soundcloud.com' + path),
+    );
+    if (direct.state === 'done') return true;
+    if (direct.state !== 'unsupported') return false;
     await contents.executeJavaScript(
         `(() => {
         const paths = new Set(${JSON.stringify(paths)});
@@ -259,8 +274,18 @@ async function performNativeCard(
     action: (target: string) => Promise<void>,
     isActive: () => boolean,
     onPhase: NativePhase,
+    operation: 'add' | 'play',
+    committed = false,
 ): Promise<void> {
     if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
+    onPhase('native-api');
+    const direct = await nativeQueueBridge(contents, operation, [url], isActive);
+    if (direct.state === 'done') return;
+    if (direct.state === 'cancelled') throw new NativeActionCanceledError();
+    if (direct.state === 'unavailable') throw new NativeTrackNotFoundError();
+    if (direct.state === 'uncertain') throw new NativeQueueUncertainError();
+    if (committed && !(await removeNativeNextUp(contents, [url]))) throw new NativeQueueUncertainError();
+    if (!isActive()) throw new NativeActionCanceledError();
     const target = trackPath(url);
     if (!target) throw new Error('Некорректная ссылка на трек SoundCloud.');
     const previous = contents.getURL();
@@ -347,10 +372,23 @@ async function withNativeCard(
     action: (target: string) => Promise<void>,
     isActive: () => boolean,
     onPhase: NativePhase,
+    operation: 'add' | 'play',
+    committed = false,
 ): Promise<void> {
     const prior = nativeActionTail.get(contents) || Promise.resolve();
     const result = prior.then(() =>
-        performNativeCard(contents, url, title, sourceQuery, maxQueries, action, isActive, onPhase),
+        performNativeCard(
+            contents,
+            url,
+            title,
+            sourceQuery,
+            maxQueries,
+            action,
+            isActive,
+            onPhase,
+            operation,
+            committed,
+        ),
     );
     const tail = result.then(
         () => {},
@@ -383,6 +421,7 @@ export async function addToNativeNextUp(
         },
         isActive,
         onPhase,
+        'add',
     );
 }
 export async function playInNativePlayer(
@@ -392,6 +431,7 @@ export async function playInNativePlayer(
     sourceQuery?: string,
     isActive = () => true,
     onPhase: NativePhase = () => {},
+    committed = false,
 ): Promise<void> {
     if (!isActive() || contents.isDestroyed()) throw new NativeActionCanceledError();
     const current = await contents.executeJavaScript(
@@ -440,5 +480,7 @@ export async function playInNativePlayer(
         },
         isActive,
         onPhase,
+        'play',
+        committed,
     );
 }

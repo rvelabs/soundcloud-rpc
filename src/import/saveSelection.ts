@@ -1,13 +1,14 @@
 import type { ImportMatch } from './match';
 import type { TrackAvailability } from './availability';
 import { mapImportTracks } from './parallel';
-import { writePartialPlaylist } from './partialPlaylist';
+import { writePartialPlaylist, type PartialPlaylistResult } from './partialPlaylist';
 export async function saveImportSelection(
     matches: readonly ImportMatch[],
     options: {
         check: (url: string) => Promise<TrackAvailability>;
         create: (item: ImportMatch) => Promise<'added' | 'already'>;
         add: (item: ImportMatch) => Promise<'added' | 'already'>;
+        writeMany?: (items: readonly ImportMatch[]) => Promise<PartialPlaylistResult<ImportMatch> | null>;
         concurrency: number;
         signal?: AbortSignal;
         stopOnError?: (error: unknown) => boolean;
@@ -55,14 +56,16 @@ export async function saveImportSelection(
                 : 'Доступные полные версии не найдены. Плейлист не создан. Повторите поиск.',
         );
     options.progress('creating', 0, available.length, '');
-    const result = await writePartialPlaylist(available, {
-        title: (item) => item.source.title,
-        create: options.create,
-        add: options.add,
-        signal: options.signal,
-        stopOnError: options.stopOnError,
-        saved: options.saved,
-        progress: (completed, item) => options.progress('adding', completed, available.length, item.source.title),
-    });
+    const result =
+        (await options.writeMany?.(available)) ||
+        (await writePartialPlaylist(available, {
+            title: (item) => item.source.title,
+            create: options.create,
+            add: options.add,
+            signal: options.signal,
+            stopOnError: options.stopOnError,
+            saved: options.saved,
+            progress: (completed, item) => options.progress('adding', completed, available.length, item.source.title),
+        }));
     return { ...result, failures: [...failures, ...result.failures] };
 }

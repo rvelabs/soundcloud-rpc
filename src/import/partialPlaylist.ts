@@ -1,3 +1,9 @@
+export interface PartialPlaylistResult<T> {
+    added: number;
+    already: number;
+    successful: T[];
+    failures: { title: string; reason: string }[];
+}
 export async function writePartialPlaylist<T>(
     items: readonly T[],
     options: {
@@ -9,15 +15,7 @@ export async function writePartialPlaylist<T>(
         stopOnError?: (error: unknown) => boolean;
         saved?: (item: T, outcome: 'added' | 'already') => void;
     },
-): Promise<{
-    added: number;
-    already: number;
-    successful: T[];
-    failures: {
-        title: string;
-        reason: string;
-    }[];
-}> {
+): Promise<PartialPlaylistResult<T>> {
     let created = false,
         added = 0,
         already = 0;

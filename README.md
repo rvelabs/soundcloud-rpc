@@ -41,7 +41,8 @@ upgrade to enable this. A deployed Cloudflare Worker is updated separately.
 
 ## What to expect
 
-Recommendations use SoundCloud related tracks and local ranking. This is an independent algorithm; it does not reproduce
+Recommendations combine related tracks, stations, shared playlists and local ranking; home selections help new accounts.
+Liked-track IDs and blocked uploaders sync in the background. This is an independent algorithm; it does not reproduce
 Yandex Music's proprietary model. Cold starts depend on SoundCloud. Tempo, mood and language matching depend on
 available metadata. Balanced mode mixes new and older familiar recordings; New excludes known recordings. When the
 browser permits it, short samples from the SoundCloud player supply local loudness and spectrum measurements; protected
@@ -109,9 +110,13 @@ npm run dev
 npm run build-win
 ```
 
-Source: [recommendations](src/wave/recommendation), [playlist import](src/import), [network transport](src/network).
-Reproducible Electron checks are in [scripts](scripts). Detailed changes and verification notes are in
-[Releases](https://github.com/rvelabs/soundcloud-rpc/releases).
+Source: [recommendations](src/wave/recommendation), [playlist import](src/import), [network transport](src/network). The
+[API adapter](src/soundcloud) reuses the web session for search, batch metadata, stations, likes, history and playlist
+import. It verifies playlist writes and preserves partial imports. Credentials stay in memory; cached responses are
+shared by import and radio. Page readers remain a fallback; rate limits pause new requests. These web endpoints are
+undocumented and may change. A native queue adapter adds tracks without searching or navigating; page controls remain a
+fallback when that interface is unavailable. Reproducible Electron checks are in [scripts](scripts). Detailed changes
+and verification notes are in [Releases](https://github.com/rvelabs/soundcloud-rpc/releases).
 
 For a bug report, use **Customize → Copy diagnostics**. Check the public track links before sharing; the report excludes
 sign-in cookies and tokens.

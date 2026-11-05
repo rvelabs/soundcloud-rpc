@@ -3,6 +3,7 @@ import { trackPath } from '../wave/nativeQueue';
 import { readTrackHydration } from '../wave/trackHydration';
 import { readTextLimited } from '../utils/readText';
 import { TaskPool } from './taskPool';
+import type { SoundCloudCatalog } from '../soundcloud/catalog';
 export interface TrackAvailability {
     status: 'available' | 'blocked' | 'preview' | 'protected' | 'unknown';
     reason: string;
@@ -99,6 +100,7 @@ export function createAvailabilityChecker(
     signal?: AbortSignal,
     route = '',
     schedule: <T>(task: () => Promise<T>) => Promise<T> = (task) => task(),
+    catalog?: SoundCloudCatalog,
 ): (url: string) => Promise<TrackAvailability> {
     const inFlight = new Map<string, Promise<TrackAvailability>>();
     let pool = sessionPools.get(session);
@@ -116,37 +118,42 @@ export function createAvailabilityChecker(
         let task = inFlight.get(path);
         if (!task) {
             task = pool
-                .run(
-                    () =>
-                        schedule(async () => {
-                            try {
-                                signal?.throwIfAborted();
-                                const timeout = AbortSignal.timeout(6500);
-                                const response = await session.fetch(`https://soundcloud.com${path}`, {
-                                    redirect: 'error',
-                                    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-                                    headers: { Accept: 'text/html' },
-                                });
-                                if (!response.ok) void response.body?.cancel().catch(() => {});
-                                if (response.status === 429) {
-                                    const retry = Number(response.headers.get('retry-after'));
-                                    pool!.backoff(Number.isFinite(retry) && retry > 0 ? retry * 1000 : 10000);
-                                    return result('unknown', 'SoundCloud ограничил частоту проверок. Повторим позже.');
-                                }
-                                if ([403, 404, 410, 451].includes(response.status))
-                                    return result('blocked', 'Трек недоступен в текущем аккаунте или регионе.');
-                                if (!response.ok)
-                                    return result('unknown', 'SoundCloud временно не подтвердил доступность.');
-                                const html = await readTextLimited(response);
-                                signal?.throwIfAborted();
-                                return parseTrackAvailability(html, url);
-                            } catch {
-                                signal?.throwIfAborted();
-                                return result('unknown', 'Не удалось проверить доступность. Повторите поиск.');
+                .run(async () => {
+                    const track = await catalog?.resolve(url, 'import', signal);
+                    if (track) {
+                        const availability = classifyTrackAvailability(track);
+                        if (availability.status !== 'unknown') return availability;
+                    }
+                    if (catalog?.limited)
+                        return result('unknown', 'SoundCloud ограничил частоту проверок. Повторим позже.');
+                    return schedule(async () => {
+                        try {
+                            signal?.throwIfAborted();
+                            const timeout = AbortSignal.timeout(6500);
+                            const response = await session.fetch(`https://soundcloud.com${path}`, {
+                                redirect: 'error',
+                                signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+                                headers: { Accept: 'text/html' },
+                            });
+                            if (!response.ok) void response.body?.cancel().catch(() => {});
+                            if (response.status === 429) {
+                                const retry = Number(response.headers.get('retry-after'));
+                                pool!.backoff(Number.isFinite(retry) && retry > 0 ? retry * 1000 : 10000);
+                                return result('unknown', 'SoundCloud ограничил частоту проверок. Повторим позже.');
                             }
-                        }),
-                    signal,
-                )
+                            if ([403, 404, 410, 451].includes(response.status))
+                                return result('blocked', 'Трек недоступен в текущем аккаунте или регионе.');
+                            if (!response.ok)
+                                return result('unknown', 'SoundCloud временно не подтвердил доступность.');
+                            const html = await readTextLimited(response);
+                            signal?.throwIfAborted();
+                            return parseTrackAvailability(html, url);
+                        } catch {
+                            signal?.throwIfAborted();
+                            return result('unknown', 'Не удалось проверить доступность. Повторите поиск.');
+                        }
+                    });
+                }, signal)
                 .then((value) => {
                     remember(session, key, value);
                     return value;

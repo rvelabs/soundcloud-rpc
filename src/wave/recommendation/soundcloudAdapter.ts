@@ -9,6 +9,8 @@ const kinds = new Set<FeedbackKind>(['like', 'unlike', 'dislike', 'play', 'skip'
 export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Track {
     return {
         id: candidate.url,
+        apiId: candidate.apiId,
+        uploaderId: candidate.uploaderId,
         title: candidate.title,
         artist: candidate.artist,
         genre: candidate.genre,
@@ -204,6 +206,12 @@ export class SoundCloudRecommender {
         this.candidates.clear();
         this.session.clearCandidates();
         this.restoreFavorites();
+    }
+    setLibrarySignals(liked: readonly number[], blocked: readonly number[]): void {
+        this.session.setLibrarySignals(liked, blocked);
+    }
+    accepts(candidate: WaveCandidate): boolean {
+        return this.session.accepts(toTrack(candidate));
     }
     setAnchor(candidate?: WaveCandidate): void {
         this.session.setAnchor(candidate ? toTrack(candidate) : undefined);

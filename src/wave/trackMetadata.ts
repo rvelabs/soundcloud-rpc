@@ -1,5 +1,5 @@
 import { trackPath } from './nativeQueue';
-import { readTrackHydration } from './trackHydration';
+import { readTrackHydration, hasCatalogMetadata, type CatalogTrack } from './trackHydration';
 import { classifyTrackAvailability, type TrackAvailability } from '../import/availability';
 import type { WaveCandidate } from './waveEngine';
 import { readTextLimited } from '../utils/readText';
@@ -30,33 +30,50 @@ const inFlight = new Map<
     }>
 >();
 let fetchGeneration = 0;
+function catalogMetadata(hydrated: CatalogTrack): PublicMetadata {
+    const tags = [...(hydrated.tag_list || '').matchAll(/"([^"\n]+)"|(\S+)/g)]
+        .map((match) => (match[1] || match[2]).slice(0, 60))
+        .slice(0, 24);
+    const bpm = Number(hydrated.bpm);
+    return {
+        durationSeconds: hydrated.duration ? hydrated.duration / 1000 : undefined,
+        audioRevision: typeof hydrated.last_modified === 'string' ? hydrated.last_modified.slice(0, 100) : undefined,
+        genre: hydrated.genre || undefined,
+        tags,
+        language: hydrated.language,
+        playbackCount:
+            typeof hydrated.playback_count === 'number' && Number.isFinite(hydrated.playback_count)
+                ? Math.max(0, hydrated.playback_count)
+                : undefined,
+        artist: hydrated.publisher_metadata?.artist,
+        ...(bpm >= 50 && bpm <= 220 ? { bpm, bpmConfidence: 0.75 } : {}),
+        playability: classifyTrackAvailability(hydrated).status,
+    };
+}
+export function enrichCatalogTrack(candidate: WaveCandidate, data: CatalogTrack): WaveCandidate {
+    const metadata = catalogMetadata(data);
+    return {
+        ...candidate,
+        apiId: hydratedId(data.id, candidate.apiId),
+        uploaderId: hydratedId(data.user?.id, candidate.uploaderId),
+        ...Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)),
+        artist: metadata.artist || candidate.artist,
+        tags: metadata.tags?.length ? metadata.tags : candidate.tags,
+        durationSeconds: metadata.durationSeconds || candidate.durationSeconds,
+        genre: metadata.genre || candidate.genre,
+        catalogCheckedAt: hasCatalogMetadata(data) ? Date.now() : undefined,
+    };
+}
+function hydratedId(value: unknown, fallback?: number): number | undefined {
+    return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : fallback;
+}
 export function parsePublicTrackMetadata(html: string, url?: string): PublicMetadata {
     const hydrated = url
         ? readTrackHydration(html)?.find(
               (track) => track.permalink_url && trackPath(track.permalink_url) === trackPath(url),
           )
         : undefined;
-    if (hydrated) {
-        const tags = [...(hydrated.tag_list || '').matchAll(/"([^"\n]+)"|(\S+)/g)]
-            .map((match) => (match[1] || match[2]).slice(0, 60))
-            .slice(0, 24);
-        const bpm = Number(hydrated.bpm);
-        return {
-            durationSeconds: hydrated.duration ? hydrated.duration / 1000 : undefined,
-            audioRevision:
-                typeof hydrated.last_modified === 'string' ? hydrated.last_modified.slice(0, 100) : undefined,
-            genre: hydrated.genre || undefined,
-            tags,
-            language: hydrated.language,
-            playbackCount:
-                typeof hydrated.playback_count === 'number' && Number.isFinite(hydrated.playback_count)
-                    ? Math.max(0, hydrated.playback_count)
-                    : undefined,
-            artist: hydrated.publisher_metadata?.artist,
-            ...(bpm >= 50 && bpm <= 220 ? { bpm, bpmConfidence: 0.75 } : {}),
-            playability: classifyTrackAvailability(hydrated).status,
-        };
-    }
+    if (hydrated) return catalogMetadata(hydrated);
     const meta = (key: string): string => {
         const tag = html.match(new RegExp(`<meta\\s+[^>]*itemprop=["']${key}["'][^>]*>`, 'i'))?.[0] || '';
         return tag.match(/\bcontent=["']([^"']*)["']/i)?.[1] || '';
