@@ -265,6 +265,7 @@ export class RecommendationSession {
             this.corpusRevision,
             Math.floor(this.now() / 60000),
             profile.positiveSeeds.map(metadata),
+            profile.trustedSeeds.map(metadata),
             profile.negativeSeeds.map(metadata),
             context.sessionReactions?.map((event) => metadata(event.track)),
             context.recentTracks?.map(metadata),
@@ -325,6 +326,7 @@ export class RecommendationSession {
                 {
                     ...this.profile(),
                     positiveSeeds: this.profile().positiveSeeds.filter((track) => this.allowed(track)),
+                    trustedSeeds: this.profile().trustedSeeds.filter((track) => this.allowed(track)),
                 },
                 controls,
                 rotation,

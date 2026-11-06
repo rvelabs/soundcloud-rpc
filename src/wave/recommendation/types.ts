@@ -30,7 +30,7 @@ export interface Feedback {
     kind: FeedbackKind;
     at: number;
     listenedFraction?: number;
-    origin?: 'library';
+    origin?: 'library' | 'wave';
 }
 export interface Controls {
     mood: 'any' | 'calm' | 'energetic' | 'happy' | 'sad';
@@ -51,6 +51,7 @@ export const defaultControls: Controls = {
 export interface Recommendation {
     track: Track;
     score: number;
+    quality?: number;
     reasons: string[];
     measuredTempoMatch: boolean;
     evidence?: import('./evidence').PreferenceEvidence[];

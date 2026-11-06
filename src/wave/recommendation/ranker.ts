@@ -1,4 +1,12 @@
-import { buildProfile, measuredBpm, normalize, recordingKey, tokensOf } from './profile';
+import {
+    buildProfile,
+    measuredBpm,
+    normalize,
+    recordingKey,
+    tokensOf,
+    tasteTokenWeight,
+    hasMusicalMetadata,
+} from './profile';
 import type { TasteProfile } from './profile';
 import {
     activities,
@@ -90,15 +98,36 @@ function scoreTrack(
     context: Context,
     compare: (a: Track, b: Track) => number,
     recentArtist: number,
-    intent: { rejected: Set<string>; positive: Array<{ track: Track; weight: number }> },
-): Recommendation {
+    intent: {
+        rejected: Set<string>;
+        positive: Array<{ track: Track; weight: number }>;
+        references: Track[];
+        referenceIds: Set<string>;
+        established: boolean;
+        negative: Feedback[];
+    },
+): Recommendation | null {
     const tags = tokensOf(track);
     const reasons: string[] = [];
     const tokenAffinity =
-        tags.reduce((sum, token) => sum + Math.max(-5, Math.min(5, profile.tokens.get(token) || 0)), 0) /
-        Math.sqrt(Math.max(1, tags.length));
+        tags.reduce(
+            (sum, token) => sum + Math.max(-5, Math.min(5, profile.tokens.get(token) || 0)) * tasteTokenWeight(token),
+            0,
+        ) / Math.sqrt(Math.max(1, tags.length));
     const affinity = Math.max(-3.5, Math.min(3.5, tokenAffinity));
-    const seedSimilarity = Math.max(0, ...profile.positiveSeeds.map((seed) => compare(track, seed)));
+    const seedSimilarity = Math.max(0, ...intent.references.map((seed) => compare(track, seed)));
+    const usable = (track.relatedTo || []).filter((id) => !profile.dislikedIds.has(id) && !intent.rejected.has(id));
+    const references = usable.filter((id) => intent.referenceIds.has(id));
+    if (
+        intent.established &&
+        !controls.genre &&
+        !profile.likedIds.has(track.id) &&
+        !context.knownLikedApiIds?.has(track.apiId || 0) &&
+        hasMusicalMetadata(track) &&
+        seedSimilarity < 0.12 &&
+        references.length < 2
+    )
+        return null;
     const negativeSimilarity = Math.max(
         0,
         ...profile.negativeSeeds.map((seed) => compare(track, seed) * (profile.dislikedIds.has(seed.id) ? 1 : 0.3)),
@@ -106,16 +135,17 @@ function scoreTrack(
     const familiarFactor = ['familiar', 'favorites'].includes(controls.discovery)
         ? 2.2
         : controls.discovery === 'new'
-          ? 0.25
+          ? 1.25
           : 1.2;
     const affinityFactor =
-        controls.discovery === 'new' ? 0.35 : ['familiar', 'favorites'].includes(controls.discovery) ? 1.15 : 1;
+        controls.discovery === 'new' ? 0.9 : ['familiar', 'favorites'].includes(controls.discovery) ? 1.15 : 1;
     let score = affinity * affinityFactor + seedSimilarity * familiarFactor - negativeSimilarity * 2.2;
     if (track.source === 'related' && track.relatedTo?.length) {
-        const usable = track.relatedTo.filter((id) => !profile.dislikedIds.has(id) && !intent.rejected.has(id));
-        const references = usable.filter((id) => profile.positiveSeeds.some((seed) => seed.id === id));
         if (usable.length) {
-            score += 2.2 + Math.min(2, references.length) * 0.9;
+            score +=
+                (intent.references.length ? (hasMusicalMetadata(track) ? 0.35 : 0.9) : 2.2) +
+                seedSimilarity * 1.5 +
+                Math.min(2, references.length) * 0.35;
             reasons.push(
                 references.length ? 'похожие треки к понравившимся записям' : 'похожие треки к музыке текущей сессии',
             );
@@ -142,6 +172,23 @@ function scoreTrack(
     const currentInterest = Math.max(0, ...intent.positive.map((event) => compare(track, event.track) * event.weight));
     score += Math.min(controls.discovery === 'new' ? 0.4 : 0.7, currentInterest);
     if (currentInterest > 0.3) reasons.push('продолжение удачного направления текущей сессии');
+    const recentNegative = intent.negative.map((event) => ({
+        similarity: compare(track, event.track),
+        weight: Math.abs(sessionWeight(event)),
+        explicit: event.kind === 'dislike',
+    }));
+    const negativeNeighbors = recentNegative.filter((event) => event.similarity >= 0.25);
+    if (negativeNeighbors.length) {
+        const strength =
+            negativeNeighbors.some((event) => event.explicit) || negativeNeighbors.length >= 2 ? 2.5 : 0.45;
+        score -= Math.min(
+            5,
+            negativeNeighbors
+                .sort((a, b) => b.similarity * b.weight - a.similarity * a.weight)
+                .slice(0, 2)
+                .reduce((sum, event) => sum + event.similarity * event.weight, 0) * strength,
+        );
+    }
     const requested = normalize(controls.genre || '');
     if (requested) {
         score += 4;
@@ -203,8 +250,9 @@ function scoreTrack(
         if (match) reasons.push('подходит для выбранного занятия');
     }
     const preferredEnergy = profile.sound.energy;
-    if (preferredEnergy !== undefined && energy !== undefined && Number.isFinite(energy))
+    if (seedSimilarity >= 0.12 && preferredEnergy !== undefined && energy !== undefined && Number.isFinite(energy))
         score += (1 - Math.abs(preferredEnergy - energy)) * 0.8;
+    const quality = score;
     if (recentArtist >= 0) score -= 5 / (1 + recentArtist * 0.6);
     score += 0.4 / Math.sqrt(Math.max(0, track.sourceRank || 0) + 1);
     score += hash(track.id, context.seed || 1) * 0.12;
@@ -212,6 +260,7 @@ function scoreTrack(
     return {
         track,
         score,
+        quality,
         reasons,
         measuredTempoMatch: bpm !== undefined && tempoMatches(bpm, controls.tempo),
         evidence: preferenceEvidence(track, controls, context),
@@ -231,6 +280,12 @@ export function recommend(
     const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
     const intent = {
         rejected,
+        references: profile.trustedSeeds.length ? profile.trustedSeeds : profile.positiveSeeds,
+        referenceIds: new Set(
+            (profile.trustedSeeds.length ? profile.trustedSeeds : profile.positiveSeeds).map((seed) => seed.id),
+        ),
+        established: profile.trustedSeeds.filter(hasMusicalMetadata).length >= 3,
+        negative: reactions.filter((event) => sessionWeight(event) < 0),
         positive: reactions
             .filter((event) => sessionWeight(event) > 0)
             .map((event) => ({
@@ -300,6 +355,7 @@ export function recommend(
     const compare = similarity([
         ...(context.similarityCorpus || pool),
         ...profile.positiveSeeds,
+        ...profile.trustedSeeds,
         ...profile.negativeSeeds,
         ...reactions.map((event) => event.track),
         ...(context.recentTracks || []),
@@ -329,6 +385,7 @@ export function recommend(
             recentIndexes.get(artistOf(track)) ?? -1,
             intent,
         );
+        if (!item) continue;
         const key = recordingKey(track);
         const previous = recordings.get(key);
         if (!previous || item.score > previous.score) recordings.set(key, item);
@@ -337,10 +394,12 @@ export function recommend(
     const chosen: Recommendation[] = [];
     const usedArtists = new Set(recent.slice(0, 2));
     while (scored.length && chosen.length < limit) {
-        let group = scored;
+        const highestQuality = Math.max(...scored.map((entry) => entry.quality ?? entry.score));
+        const qualified = scored.filter((entry) => (entry.quality ?? entry.score) >= highestQuality - 1.8);
+        let group = qualified;
         if (controls.discovery === 'balanced') {
             const wantKnown = (chosen.length + (context.sequenceOffset || 0)) % 3 === 2;
-            const mixed = scored.filter((entry) => {
+            const mixed = qualified.filter((entry) => {
                 const known =
                     profile.heardIds.has(entry.track.id) ||
                     context.knownLikedApiIds?.has(entry.track.apiId || 0) ||
@@ -352,11 +411,11 @@ export function recommend(
         const highest = Math.max(...group.map((e) => e.score));
         const eligible = group.filter((entry) => entry.score >= highest - 3);
         const diverse = eligible.filter((entry) => !usedArtists.has(artistOf(entry.track)));
-        const noImmediateRepeat = group.filter(
+        const noImmediateRepeat = eligible.filter(
             (entry) =>
                 artistOf(entry.track) !== (chosen.length ? artistOf(chosen[chosen.length - 1].track) : recent[0]),
         );
-        const fair = (diverse.length ? diverse : noImmediateRepeat.length ? noImmediateRepeat : group).filter(
+        const fair = (diverse.length ? diverse : noImmediateRepeat.length ? noImmediateRepeat : eligible).filter(
             (entry) => {
                 const artist = artistOf(entry.track);
                 return (
@@ -373,7 +432,7 @@ export function recommend(
               ? diverse
               : noImmediateRepeat.length
                 ? noImmediateRepeat
-                : group;
+                : eligible;
         let next = options[0],
             best = -Infinity;
         const previous = chosen.length ? chosen[chosen.length - 1].track : context.anchor;

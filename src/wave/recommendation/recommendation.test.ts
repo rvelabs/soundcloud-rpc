@@ -19,7 +19,11 @@ const event = (item: Track, kind: Feedback['kind'], listenedFraction?: number): 
 describe('standalone recommendation modules', () => {
     it('learns from a liked genre and mixes an older favorite after two new tracks', () => {
         const seed = track('liked', 'A', 'shoegaze');
-        const candidates = [seed, track('new-shoegaze', 'B', 'shoegaze'), track('other', 'C', 'house')];
+        const candidates = [
+            seed,
+            track('new-shoegaze', 'B', 'shoegaze'),
+            { ...track('other', 'C', 'shoegaze'), sourceRank: 3 },
+        ];
         const result = recommend(candidates, [event(seed, 'like')], controls, { now });
         expect(result[0].track.id).toBe('new-shoegaze');
         expect(result.map((item) => item.track.id)).toEqual(['new-shoegaze', 'other', 'liked']);
@@ -148,7 +152,7 @@ describe('standalone recommendation modules', () => {
         const related = { ...catalog[1], source: 'related' as const, relatedTo: [liked.id] };
         expect(
             recommend([catalog[0], related], events, { ...controls, discovery: 'new' }, { now }, 1)[0].track.id,
-        ).toBe('explore');
+        ).toBe('similar');
     });
     it('re-ranks immediately after controls change and does not repeat reserved tracks', async () => {
         const catalog = [track('slow', 'A', 'ambient', 80, 0.1), track('fast', 'B', 'techno', 160, 0.9)];

@@ -296,11 +296,23 @@ export class SoundCloudRecommender {
         for (const event of events) this.session.feedback(event);
         this.save();
     }
-    record(candidate: WaveCandidate, kind: FeedbackKind, listenedFraction?: number, features?: SoundFeatures): void {
+    record(
+        candidate: WaveCandidate,
+        kind: FeedbackKind,
+        listenedFraction?: number,
+        features?: SoundFeatures,
+        origin?: Feedback['origin'],
+    ): void {
         const previous = this.candidates.get(candidate.url);
         const current = { ...previous, ...candidate, features: features || candidate.features || previous?.features };
         if (features) this.addCandidates([current]);
-        const event: Feedback = { track: toTrack(current, features), kind, at: this.now(), listenedFraction };
+        const event: Feedback = {
+            track: toTrack(current, features),
+            kind,
+            at: this.now(),
+            listenedFraction,
+            ...(origin ? { origin } : {}),
+        };
         this.feedbackEvents.push(event);
         if (this.feedbackEvents.length > 5000) this.feedbackEvents.splice(0, this.feedbackEvents.length - 5000);
         this.session.feedback(event);

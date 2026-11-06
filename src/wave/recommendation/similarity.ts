@@ -1,4 +1,4 @@
-import { tokensOf } from './profile';
+import { tokensOf, tasteTokenWeight } from './profile';
 import type { Track } from './types';
 export type Similarity = (a: Track, b: Track) => number;
 const documentsOf = (corpus: Track[]) =>
@@ -11,10 +11,10 @@ function createSimilarity(documents: ReturnType<typeof documentsOf>): () => Simi
     const weights = new Map(
         [...counts].map(([token, count]) => [
             token,
-            Math.min(2.5, 1 + Math.log((documents.length + 1) / (count + 1))) ** 2,
+            Math.min(2.5, 1 + Math.log((documents.length + 1) / (count + 1))) ** 2 * tasteTokenWeight(token),
         ]),
     );
-    const weight = (token: string) => weights.get(token) ?? 6.25;
+    const weight = (token: string) => weights.get(token) ?? 6.25 * tasteTokenWeight(token);
     const vectors = new Map<string, { tokens: Set<string>; norm: number }>();
     return () => {
         const pass = new WeakMap<Track, { tokens: Set<string>; norm: number }>();

@@ -6,6 +6,7 @@ export interface TasteProfile {
     dislikedIds: Set<string>;
     heardIds: Set<string>;
     positiveSeeds: Track[];
+    trustedSeeds: Track[];
     negativeSeeds: Track[];
     recordingsById: Map<string, Set<string>>;
     knownRecordings: Set<string>;
@@ -16,7 +17,76 @@ export interface TasteProfile {
         brightness?: number;
     };
 }
-const stop = new Set(['the', 'and', 'feat', 'with', 'music', 'track', 'official', 'original', 'remix']);
+const stop = new Set([
+    'the',
+    'and',
+    'feat',
+    'with',
+    'music',
+    'track',
+    'official',
+    'original',
+    'remix',
+    'newrelease',
+    'release',
+    'premiere',
+    'download',
+    'free',
+    'soundcloud',
+    'spotify',
+    'youtube',
+    'subscribe',
+    'follow',
+    'repost',
+]);
+const broad = new Set([
+    'electronic',
+    'underground',
+    'bass',
+    'vocal',
+    'instrumental',
+    'slow',
+    'slowed',
+    'fast',
+    'sped',
+    'bright',
+    'soft',
+    'dark',
+    'sad',
+    'happy',
+    'dance',
+    'chill',
+    'other',
+    'all',
+    'genres',
+    'alternative',
+    'misc',
+    'unknown',
+    'mix',
+    'experimental',
+    'various',
+    'dream',
+]);
+const aliases = new Map(
+    Object.entries({
+        эмбиент: 'ambient',
+        техно: 'techno',
+        хаус: 'house',
+        рок: 'rock',
+        метал: 'metal',
+        металл: 'metal',
+        фонк: 'phonk',
+        транс: 'trance',
+        джаз: 'jazz',
+        брейккор: 'breakcore',
+        джангл: 'jungle',
+        шугейз: 'shoegaze',
+        рэп: 'rap',
+    }),
+);
+export const tasteTokenWeight = (token: string): number => (broad.has(token) ? 0.15 : 1);
+export const hasMusicalMetadata = (track: Track): boolean =>
+    tokensOf(track).some((token) => tasteTokenWeight(token) === 1);
 const titleStyles = new Set([
     'ambient',
     'chill',
@@ -91,8 +161,19 @@ export function tokensOf(track: Track): string[] {
         return [
             ...new Set(
                 metadata
-                    .flatMap((item) => normalize(item).split(/[^\p{L}\p{N}]+/u))
-                    .filter((token) => token.length >= 3 && token.length <= 30 && !stop.has(token)),
+                    .flatMap((item) =>
+                        normalize(item)
+                            .replace(/\b(?:dnb|drumandbass|d(?:rum)?\s*(?:&|and|n|'n')\s*b(?:ass)?)\b/g, 'drum bass')
+                            .replace(/\bhip[\s-]?hop\b/g, 'hiphop rap')
+                            .replace(/\blo[\s-]?fi\b/g, 'lofi')
+                            .replace(/\b(?:r&b|rnb)\b/g, 'rhythm blues')
+                            .split(/[^\p{L}\p{N}]+/u),
+                    )
+                    .map((token) => aliases.get(token) || token)
+                    .filter(
+                        (token) =>
+                            token.length >= 3 && token.length <= 30 && !stop.has(token) && !/^\d{4}$/.test(token),
+                    ),
             ),
         ];
     }).slice();
@@ -133,9 +214,9 @@ export function feedbackWeight(item: Feedback): number {
         case 'skip':
             return fraction < 0.2 ? -0.75 : fraction < 0.5 ? -0.3 : 0;
         case 'complete':
-            return 2;
+            return item.origin === 'wave' ? 1 : 2;
         case 'play':
-            return fraction >= 0.7 ? 1.5 : fraction >= 0.35 ? 0.4 : 0;
+            return (fraction >= 0.7 ? 1.5 : fraction >= 0.35 ? 0.4 : 0) * (item.origin === 'wave' ? 0.5 : 1);
     }
 }
 export function buildProfile(events: Feedback[], now: number): TasteProfile {
@@ -146,6 +227,7 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
         dislikedIds: new Set(),
         heardIds: new Set(),
         positiveSeeds: [],
+        trustedSeeds: [],
         negativeSeeds: [],
         recordingsById: new Map(),
         knownRecordings: new Set(),
@@ -153,6 +235,7 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
         sound: {},
     };
     const explicit = new Map<string, Feedback>();
+    const trustedIds = new Set<string>();
     const tracks = new Map<
         string,
         {
@@ -188,11 +271,20 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
         if (['like', 'unlike', 'dislike'].includes(item.kind)) explicit.set(item.track.id, item);
         else {
             profile.heardIds.add(item.track.id);
+            if (
+                item.origin !== 'wave' &&
+                (!item.track.source || item.track.source === 'personal') &&
+                feedbackWeight(item) >= 1
+            )
+                trustedIds.add(item.track.id);
             add(item);
         }
     }
     for (const item of explicit.values()) {
-        if (item.kind === 'like') profile.likedIds.add(item.track.id);
+        if (item.kind === 'like') {
+            profile.likedIds.add(item.track.id);
+            trustedIds.add(item.track.id);
+        }
         if (item.kind === 'dislike') profile.dislikedIds.add(item.track.id);
         add(item);
         const entry = tracks.get(item.track.id)!;
@@ -214,6 +306,7 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
         const style = normalize(track.genre || '');
         if (style && style.length <= 60) profile.styles.set(style, (profile.styles.get(style) || 0) + weight);
         (weight > 0 ? profile.positiveSeeds : profile.negativeSeeds).push(track);
+        if (weight > 0 && trustedIds.has(track.id)) profile.trustedSeeds.push(track);
         if (weight > 0)
             for (const key of ['energy', 'bass', 'brightness'] as const) {
                 const value = track.features?.[key];
@@ -226,6 +319,24 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
     for (const key of ['energy', 'bass', 'brightness'] as const)
         if (counts[key]) profile.sound[key] = sums[key] / counts[key];
     profile.positiveSeeds = profile.positiveSeeds.slice(-80);
+    const neighborhoods = new Map<string, Track[]>();
+    for (const track of profile.trustedSeeds.slice().reverse()) {
+        const key =
+            normalize(track.genre || '') ||
+            tokensOf(track)
+                .filter((token) => tasteTokenWeight(token) === 1)
+                .slice(0, 2)
+                .sort()
+                .join('|');
+        if (!neighborhoods.has(key)) neighborhoods.set(key, []);
+        neighborhoods.get(key)!.push(track);
+    }
+    profile.trustedSeeds = [];
+    for (let index = 0; profile.trustedSeeds.length < 80; index++) {
+        const layer = [...neighborhoods.values()].flatMap((tracks) => (tracks[index] ? [tracks[index]] : []));
+        if (!layer.length) break;
+        profile.trustedSeeds.push(...layer.slice(0, 80 - profile.trustedSeeds.length));
+    }
     profile.negativeSeeds = profile.negativeSeeds.slice(-80);
     return profile;
 }

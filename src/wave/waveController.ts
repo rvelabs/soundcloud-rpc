@@ -409,6 +409,7 @@ export function createWaveController(options: {
             kind === 'complete' && fraction < 0.7 ? 'play' : kind,
             fraction,
             features,
+            'wave',
         );
         waveCurrentRecorded = true;
     };

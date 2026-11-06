@@ -1,7 +1,7 @@
 import { artistIdentity, sessionWeight } from './sessionSignals';
 import type { Context, Controls } from './types';
 import type { TasteProfile } from './profile';
-import { tokensOf } from './profile';
+import { tokensOf, hasMusicalMetadata } from './profile';
 import { moodEvidence } from './preferences';
 import type { Track } from './types';
 import { catalogSimilarity } from './similarity';
@@ -13,6 +13,13 @@ export function discoverySeeds(
     context?: Context,
 ): Track[] {
     const reactions = context?.sessionReactions || [];
+    const references = profile.trustedSeeds.length ? profile.trustedSeeds : profile.positiveSeeds;
+    const established = profile.trustedSeeds.filter(hasMusicalMetadata).length >= 3;
+    const seedCompare = catalogSimilarity([...references, ...(anchor ? [anchor] : [])]);
+    const compatible = (track: Track) =>
+        !established ||
+        references.some((seed) => seed.id === track.id || seedCompare(track, seed) >= 0.12) ||
+        !hasMusicalMetadata(track);
     const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
     const sessionAffinity = (track: Track) => {
         const tokens = tokensOf(track);
@@ -26,13 +33,14 @@ export function discoverySeeds(
         .slice()
         .reverse();
     const unique = new Map<string, Track>();
-    for (const track of [anchor, ...recentPositive.map((event) => event.track), ...profile.positiveSeeds].filter(
+    for (const track of [anchor, ...recentPositive.map((event) => event.track), ...references].filter(
         (item): item is Track => Boolean(item),
     )) {
         if (
             rejected.has(track.id) ||
             profile.dislikedIds.has(track.id) ||
             profile.negativeSeeds.some((seed) => seed.id === track.id) ||
+            !compatible(track) ||
             moodEvidence(track, controls.mood).conflict
         )
             continue;
