@@ -6,6 +6,7 @@ export type RadioReader = <T>(
     decode: (value: unknown) => T | null,
     signal?: AbortSignal,
     auth?: boolean,
+    background?: boolean,
 ) => Promise<T | null>;
 type Reference = { id?: number; urn?: string; owner?: number; count?: number; track?: number };
 const reference = (value: unknown): Reference | null => {
@@ -44,9 +45,11 @@ export class RadioSources {
     private collections = new Map<number, { at: number; tracks: ApiTrack[] }>();
     private library?: { owner: number; at: number; likes: IdProgress; blocked: IdProgress };
     private reactions = new Map<number, boolean>();
+    private personalState?: { owner: number; at: number; cursor?: string | null; pages: number; offset: number };
+    private extras = new Map<string, { at: number; tracks: ApiTrack[] }>();
     constructor(
         private read: RadioReader,
-        private batch: (ids: number[]) => Promise<ApiTrack[] | null>,
+        private batch: (ids: number[], background?: boolean) => Promise<ApiTrack[] | null>,
         private revision: () => number,
         private now: () => number,
     ) {}
@@ -55,6 +58,8 @@ export class RadioSources {
         this.collections.clear();
         this.library = undefined;
         this.reactions.clear();
+        this.personalState = undefined;
+        this.extras.clear();
     }
     diagnostics(): object {
         return {
@@ -64,6 +69,8 @@ export class RadioSources {
             blockedUploaders: this.library?.blocked.ids.size || 0,
             likesComplete: this.library?.likes.next === null,
             blocksComplete: this.library?.blocked.next === null,
+            extraSources: this.extras.size,
+            historyPages: this.personalState?.pages || 0,
         };
     }
     liked(id: number, desired: boolean): void {
@@ -290,6 +297,126 @@ export class RadioSources {
                   .slice(0, 12)
                   .map((track) => ({ ...track, radioSource: 'following' as const }))
             : null;
+    }
+    async personal(
+        owner: number,
+        signal?: AbortSignal,
+    ): Promise<{ likes: ApiTrack[]; recent: ApiTrack[]; playlists: ApiTrack[] } | null> {
+        const revision = this.revision();
+        if (!this.personalState || this.personalState.owner !== owner)
+            this.personalState = { owner, at: -Infinity, pages: 0, offset: 0 };
+        const state = this.personalState;
+        if (this.now() - state.at < 5 * 60000) return null;
+        state.at = this.now();
+        const historyPath = '/me/play-history/tracks';
+        let query: Record<string, string> = { limit: '100', linked_partitioning: '1' };
+        if (state.cursor) {
+            try {
+                const next = new URL(state.cursor);
+                if (
+                    next.origin !== 'https://api-v2.soundcloud.com' ||
+                    next.pathname !== historyPath ||
+                    next.username ||
+                    next.password ||
+                    next.href.length > 6000
+                )
+                    throw Error('Invalid history continuation');
+                next.searchParams.delete('client_id');
+                next.searchParams.delete('access_token');
+                query = Object.fromEntries(next.searchParams);
+            } catch {
+                state.cursor = null;
+            }
+        }
+        const [own, saved, history] = await Promise.all([
+            this.read(
+                `/users/${owner}/playlists`,
+                { limit: '4', representation: 'mini' },
+                (value) => parsePage(value, reference),
+                signal,
+                true,
+                true,
+            ),
+            this.read(
+                '/me/playlist_likes/ids',
+                { limit: '20' },
+                (value) => parsePage(value, (item) => (apiId(item) ? item : null)),
+                signal,
+                true,
+                true,
+            ),
+            state.cursor !== null && state.pages < 4
+                ? this.read(historyPath, query, parseTrackPage, signal, true, true)
+                : null,
+        ]);
+        signal?.throwIfAborted();
+        if (revision !== this.revision()) return null;
+        if (history) {
+            state.pages++;
+            state.cursor = history.next === state.cursor ? null : history.next;
+        }
+        const refs = [...(own?.items || []), ...(saved?.items || []).map((id) => ({ id }))];
+        const selected = [...new Map(refs.filter((ref) => ref.id).map((ref) => [ref.id, ref])).values()];
+        const chosen = selected.length
+            ? Array.from(
+                  { length: Math.min(3, selected.length) },
+                  (_, i) => selected[(state.offset + i) % selected.length],
+              )
+            : [];
+        const lists = await Promise.all(
+            chosen.map((ref) => this.read(`/playlists/${ref.id}`, {}, trackIds, signal, true, true)),
+        );
+        const library = this.library?.owner === owner ? this.library : undefined;
+        const likedIds = library ? [...library.likes.ids].filter((id) => this.reactions.get(id) !== false) : [];
+        const likedSample =
+            likedIds.length <= 12
+                ? likedIds
+                : Array.from(
+                      { length: 12 },
+                      (_, i) => likedIds[(Math.floor((i * likedIds.length) / 12) + state.offset) % likedIds.length],
+                  );
+        const ids = [...new Set([...likedSample, ...lists.flatMap((list) => sample(list || [], 6))])].slice(0, 30);
+        const tracks = await this.batch(ids, true);
+        signal?.throwIfAborted();
+        if (revision !== this.revision()) return null;
+        state.offset += 3;
+        const liked = new Set(likedSample.filter((id) => this.reactions.get(id) !== false));
+        return {
+            likes: (tracks || []).filter((track) => liked.has(track.id)),
+            recent: history?.items || [],
+            playlists: (tracks || [])
+                .filter((track) => !liked.has(track.id))
+                .map((track) => ({ ...track, radioSource: 'collection' as const })),
+        };
+    }
+    private async extra(
+        key: string,
+        path: string,
+        params: Record<string, string>,
+        source: ApiTrack['radioSource'],
+    ): Promise<ApiTrack[] | null> {
+        const hit = this.extras.get(key);
+        if (hit && this.now() - hit.at < 10 * 60000) return structuredClone(hit.tracks);
+        const revision = this.revision();
+        const page = await this.read(path, params, parseTrackPage, undefined, false, true);
+        if (revision !== this.revision()) return null;
+        if (!page) {
+            this.extras.set(key, { at: this.now(), tracks: [] });
+            while (this.extras.size > 40) this.extras.delete(this.extras.keys().next().value!);
+            return null;
+        }
+        const tracks = await this.batch(
+            page.items.slice(0, Math.min(12, Number(params.limit) || 12)).map((track) => track.id),
+            true,
+        );
+        if (!tracks || revision !== this.revision()) return null;
+        const result = tracks.map((track) => ({ ...track, radioSource: source }));
+        this.extras.set(key, { at: this.now(), tracks: result });
+        while (this.extras.size > 40) this.extras.delete(this.extras.keys().next().value!);
+        return structuredClone(result);
+    }
+    artist(owner: number): Promise<ApiTrack[] | null> {
+        return this.extra('artist:' + owner, `/users/${owner}/toptracks`, { limit: '4' }, 'artist');
     }
 }
 type IdProgress = {

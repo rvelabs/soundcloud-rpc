@@ -1,7 +1,16 @@
 import type { WebContents } from 'electron';
+import { nativeAutoplay } from '../soundcloud/nativePlayerBridge';
+import { nativeRuntimeExports } from '../soundcloud/nativeRuntime';
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 export async function setStationAutoplay(contents: WebContents, enabled: boolean): Promise<boolean | null> {
     if (contents.isDestroyed()) return null;
+    const native = (await contents
+        .executeJavaScript(
+            `(${nativeAutoplay.toString()})(${JSON.stringify(enabled)}, ${nativeRuntimeExports.toString()})`,
+            true,
+        )
+        .catch(() => null)) as { previous: boolean } | null;
+    if (native && typeof native.previous === 'boolean') return native.previous;
     const opened = (await contents.executeJavaScript(
         `(() => {
         const panel = document.querySelector('.queue');

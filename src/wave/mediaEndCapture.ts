@@ -76,6 +76,7 @@ export function installWaveMediaEndCapture(): void {
     };
     page.addEventListener('click', onInput, true);
     page.addEventListener('keydown', onInput, true);
+    page.addEventListener('__soundcloudWaveManualPause', () => notePause(true));
     const mediaSession = typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
     if (mediaSession) {
         const setHandler = mediaSession.setActionHandler;

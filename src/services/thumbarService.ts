@@ -2,6 +2,7 @@ import { WebContentsView, BrowserWindow, nativeImage } from 'electron';
 import * as path from 'path';
 import { TranslationService } from './translationService';
 import { RESOURCES_PATH } from '../main';
+import { controlNativePlayer } from '../soundcloud/nativePlayerBridge';
 export class ThumbarService {
     private translationService: TranslationService;
     private icons = new Map<string, ReturnType<typeof nativeImage.createFromPath>>();
@@ -47,28 +48,14 @@ export class ThumbarService {
                     : this.translationService.translate('like'),
                 icon: isLiked ? unlikeIcon : likeIcon,
                 click: () => {
-                    mainWindow.webContents
-                        .executeJavaScript(
-                            `
-                        (() => {
-                            document.querySelector('.playbackSoundBadge__like')?.click();
-                        })();
-                    `,
-                        )
-                        .catch(() => {});
+                    void controlNativePlayer(mainWindow.webContents, 'like');
                 },
             },
             {
                 tooltip: this.translationService.translate('previous'),
                 icon: backwardIcon,
                 click: () => {
-                    mainWindow.webContents
-                        .executeJavaScript(
-                            `
-                        document.querySelector('.skipControl__previous')?.click();
-                    `,
-                        )
-                        .catch(() => {});
+                    void controlNativePlayer(mainWindow.webContents, 'previous');
                 },
             },
             {
@@ -77,13 +64,7 @@ export class ThumbarService {
                     : this.translationService.translate('play'),
                 icon: isPlaying ? pauseIcon : playIcon,
                 click: () => {
-                    mainWindow.webContents
-                        .executeJavaScript(
-                            `
-                        document.querySelector('.playControls__play')?.click();
-                    `,
-                        )
-                        .catch(() => {});
+                    void controlNativePlayer(mainWindow.webContents, 'toggle');
                 },
             },
             {
@@ -91,13 +72,7 @@ export class ThumbarService {
                 icon: forwardIcon,
                 click: () => {
                     if (onNext?.()) return;
-                    mainWindow.webContents
-                        .executeJavaScript(
-                            `
-                        document.querySelector('.skipControl__next')?.click();
-                    `,
-                        )
-                        .catch(() => {});
+                    void controlNativePlayer(mainWindow.webContents, 'next');
                 },
             },
         ];

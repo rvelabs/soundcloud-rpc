@@ -1,9 +1,13 @@
+import { installNativePlayerMonitor } from '../soundcloud/nativePlayerBridge';
+import { nativeRuntimeExports } from '../soundcloud/nativeRuntime';
 export const audioMonitorScript = String.raw`
 (() => {
   if (window.__soundCloudMonitorActive) return;
   window.__soundCloudMonitorActive = true;
   window.__soundCloudMonitorDisposed = false;
-  let disposed = false, reconcileTimer, notifyTimer, last, lastProgressAt = 0;
+  window.__soundCloudMonitorMode = 'dom';
+  let disposed = false, reconcileTimer, notifyTimer, last, lastProgressAt = 0, nativeDispose, attachNative;
+  const retries = new Set();
   const bindings = new Map();
   const seconds = value => (value || '').split(':').reduce((sum, part) => sum * 60 + (Number(part) || 0), 0);
   const read = () => {
@@ -31,6 +35,8 @@ export const audioMonitorScript = String.raw`
   const notify = () => {
     if (disposed) return;
     const next = read();
+    if (last && next.url !== last.url) attachNative?.();
+    if (nativeDispose) return;
     const sameTrack = last && next.url === last.url;
     const elapsed = seconds(next.elapsed), previous = seconds(last?.elapsed), duration = seconds(next.duration);
     const changed = !last || ['title','author','artwork','url','duration','isPlaying','isLiked'].some(key => next[key] !== last[key]);
@@ -80,15 +86,39 @@ export const audioMonitorScript = String.raw`
   };
   const initialize = () => {
     if (disposed) return;
+    attachNative = () => {
+      if (disposed || nativeDispose) return;
+      nativeDispose = (${installNativePlayerMonitor.toString()})(${nativeRuntimeExports.toString()},
+        (track, cause) => window.soundcloudAPI.sendTrackUpdate(track, cause),
+        track => window.soundcloudAPI.sendTrackProgress?.(track));
+      if (!nativeDispose) return;
+      window.__soundCloudMonitorMode = 'sdk';
+      documentObserver.disconnect();
+      for (const {observer} of bindings.values()) observer.disconnect();
+      bindings.clear(); clearTimeout(reconcileTimer); clearTimeout(notifyTimer);
+      document.removeEventListener('click', onSeek, true);
+      document.removeEventListener('pointerup', onSeek, true);
+      for (const timer of retries) clearTimeout(timer);
+      retries.clear();
+    };
+    attachNative();
+    if (nativeDispose) return;
     reconcile(); notify();
     documentObserver.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('click', onSeek, true);
     document.addEventListener('pointerup', onSeek, true);
+    for (const after of [250, 1000, 3000, 8000]) {
+      const timer = setTimeout(() => { retries.delete(timer); attachNative(); }, after);
+      retries.add(timer);
+    }
   };
   window.addEventListener('pagehide', event => {
     if (event.persisted) return;
     window.__soundCloudMonitorDisposed = true;
     disposed = true; clearTimeout(reconcileTimer); clearTimeout(notifyTimer);
+    nativeDispose?.();
+    for (const timer of retries) clearTimeout(timer);
+    retries.clear();
     documentObserver.disconnect();
     for (const {observer} of bindings.values()) observer.disconnect();
     bindings.clear();

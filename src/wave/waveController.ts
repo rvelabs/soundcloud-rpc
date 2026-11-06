@@ -94,14 +94,31 @@ export function createWaveController(options: {
     const waveListening = new ListeningEvidence();
     const audioAnalysis = new AudioAnalysisCache(libraryStore, currentAccountId);
     const scheduler = options.scheduler || new WorkScheduler();
-    const enrichCandidate = async (track: WaveCandidate, priority: WorkPriority = 'prefetch') => {
+    let windowWorkStopped = false;
+    const hasFreshCatalog = (track: WaveCandidate) => {
         const age = Date.now() - Number(track.catalogCheckedAt || 0);
-        if (track.catalogCheckedAt && age >= 0 && age < 30 * 60000 && (track.apiId || !options.catalog?.available))
-            return audioAnalysis.enrich(track);
-        const metadata = await options.catalog?.resolve(track.url, priority);
+        return Boolean(
+            track.catalogCheckedAt && age >= 0 && age < 30 * 60000 && (track.apiId || !options.catalog?.available),
+        );
+    };
+    const enrichCandidate = async (track: WaveCandidate, priority: WorkPriority = 'prefetch') => {
+        if (windowWorkStopped || quitting() || clientContents.isDestroyed()) return track;
+        if (hasFreshCatalog(track)) return audioAnalysis.enrich(track);
+        const byId = track.apiId ? await options.catalog?.batch([track.apiId], priority) : null;
+        if (windowWorkStopped || quitting() || clientContents.isDestroyed()) return track;
+        const metadata =
+            byId?.find((item) => item.permalink_url === track.url) ||
+            (await options.catalog?.resolve(track.url, priority));
+        if (windowWorkStopped || quitting() || clientContents.isDestroyed()) return track;
         if (metadata && hasCatalogMetadata(metadata)) return audioAnalysis.enrich(enrichCatalogTrack(track, metadata));
         if (options.catalog?.limited) return audioAnalysis.enrich(track);
         return scheduler.run('network', priority, async () => audioAnalysis.enrich(await enrichPublicTrack(track)));
+    };
+    const enrichCandidates = async (tracks: WaveCandidate[], priority: WorkPriority = 'prefetch') => {
+        const stale = tracks.filter((track) => !hasFreshCatalog(track));
+        const ids = stale.flatMap((track) => (track.apiId ? [track.apiId] : []));
+        if (ids.length > 1) await options.catalog?.batch(ids, priority);
+        return Promise.all(tracks.map((track) => enrichCandidate(track, priority)));
     };
     let waveStarting = false;
     let waveVisible = false;
@@ -302,13 +319,24 @@ export function createWaveController(options: {
             extraAt = Date.now();
             const catalog = options.catalog,
                 revision = catalog.revision;
-            extraTask = Promise.allSettled([catalog.collectionCandidates(seeds[0].id), catalog.followingCandidates()])
-                .then((results) => {
-                    if (generation !== waveGeneration || !waveVisible || revision !== catalog.revision) return;
-                    for (const result of results)
-                        if (result.status === 'fulfilled' && result.value)
-                            waveRecommender.addCandidates(apiCandidates(result.value));
-                })
+            const candidates = Promise.allSettled([
+                catalog.collectionCandidates(seeds[0].id),
+                catalog.followingCandidates(),
+                catalog.artistCandidates(seeds[0].id),
+            ]).then((results) => {
+                if (generation !== waveGeneration || !waveVisible || revision !== catalog.revision) return;
+                for (const result of results)
+                    if (result.status === 'fulfilled' && result.value)
+                        waveRecommender.addCandidates(apiCandidates(result.value));
+            });
+            const library = catalog.libraryCandidates().then((personal) => {
+                if (!personal || generation !== waveGeneration || !waveVisible || revision !== catalog.revision) return;
+                waveRecommender.seedLikes(apiCandidates(personal.likes).map((track) => ({ ...track, liked: true })));
+                waveRecommender.seedRecent(apiCandidates(personal.recent));
+                waveRecommender.addCandidates(apiCandidates(personal.playlists));
+            });
+            extraTask = Promise.allSettled([candidates, library])
+                .then(() => {})
                 .finally(() => {
                     extraTask = undefined;
                 });
@@ -344,14 +372,16 @@ export function createWaveController(options: {
             void clientContents
                 .executeJavaScript(`(${extractWaveLinks.toString()})()`, true)
                 .then(async (tracks: WaveCandidate[]) => {
+                    if (windowWorkStopped || quitting() || clientContents.isDestroyed()) return;
                     waveRecommender.addCandidates(tracks.map((track) => ({ ...track, source: 'personal' })));
                     if (waveMetadataWarmupStarted) return;
                     waveMetadataWarmupStarted = true;
                     const ranked = waveRecommender.rank(8);
-                    if (ranked.length)
-                        waveRecommender.addCandidates(
-                            await Promise.all(ranked.map((track) => enrichCandidate(track, 'catalog'))),
-                        );
+                    if (ranked.length) {
+                        const warmed = await enrichCandidates(ranked, 'catalog');
+                        if (!windowWorkStopped && !quitting() && !clientContents.isDestroyed())
+                            waveRecommender.addCandidates(warmed);
+                    }
                 })
                 .catch((error) => console.debug('Wave home preload unavailable:', error));
         }, 400);
@@ -454,8 +484,6 @@ export function createWaveController(options: {
                         .rank(20)
                         .filter(
                             (item) =>
-                                (['favorites', 'balanced', 'familiar'].includes(waveControls.discovery || 'balanced') ||
-                                    item.source === 'related') &&
                                 item.url !== waveCurrent &&
                                 item.url !== getTrack().url &&
                                 !waveFuture.some((future) => future.url === item.url) &&
@@ -463,10 +491,17 @@ export function createWaveController(options: {
                         );
                 const cached = available().slice(0, 4);
                 if (cached.length) {
+                    const ids = cached
+                        .filter((item) => !hasFreshCatalog(item))
+                        .flatMap((item) => (item.apiId ? [item.apiId] : []));
+                    const metadataBatch = ids.length > 1 ? options.catalog?.batch(ids) : undefined;
                     const checked: WaveCandidate[] = [];
                     let publishedFirst = false;
                     await Promise.all(
                         cached.map(async (item) => {
+                            if (!hasFreshCatalog(item)) await metadataBatch;
+                            if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible)
+                                return;
                             const candidate = await enrichCandidate(item);
                             if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible)
                                 return;
@@ -518,9 +553,7 @@ export function createWaveController(options: {
                         if (round && waveControls.discovery !== 'favorites') await waveRecommender.refresh();
                         const ranked = available().slice(0, 12);
                         for (let i = 0; i < ranked.length && playable.length < targetCount; i += 4) {
-                            const batch = await Promise.all(
-                                ranked.slice(i, i + 4).map((track) => enrichCandidate(track)),
-                            );
+                            const batch = await enrichCandidates(ranked.slice(i, i + 4));
                             if (generation !== waveGeneration || settingsEpoch !== waveQueueEpoch || !waveVisible)
                                 return [];
                             waveRecommender.addCandidates(batch);
@@ -1107,7 +1140,6 @@ export function createWaveController(options: {
             if (contents && !contents.isDestroyed()) contents.close({ waitForBeforeUnload: false });
         }
     };
-    let windowWorkStopped = false;
     const stop = () => {
         if (windowWorkStopped) return;
         windowWorkStopped = true;

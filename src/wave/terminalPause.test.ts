@@ -65,6 +65,19 @@ function fixture() {
     return { page, media, completions, advance, manual, handlers, mediaSession };
 }
 describe('SoundCloud terminal pause without ended', () => {
+    it('preserves a taskbar SDK pause even at the terminal boundary', async () => {
+        const f = fixture();
+        await f.media.play();
+        f.advance(179.99);
+        f.page.dispatchEvent(new Event('__soundcloudWaveManualPause'));
+        f.media.pause();
+        f.advance(180);
+        f.media.ended = true;
+        f.media.dispatchEvent(new Event('ended'));
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(f.completions).toEqual([]);
+        expect(f.page.__waveMediaEndSnapshot().media[0].terminal).toBe(false);
+    });
     it('does not interpret blur or visibility changes as a pause command', async () => {
         const f = fixture();
         await f.media.play();

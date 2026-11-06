@@ -22,7 +22,7 @@ export interface Track {
     sourceRank?: number;
     queryHint?: string;
     relatedTo?: string[];
-    source?: 'related' | 'personal' | 'collection' | 'home' | 'following';
+    source?: 'related' | 'personal' | 'collection' | 'home' | 'following' | 'artist';
 }
 export type FeedbackKind = 'like' | 'unlike' | 'dislike' | 'play' | 'skip' | 'complete';
 export interface Feedback {

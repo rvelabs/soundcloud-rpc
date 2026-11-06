@@ -188,4 +188,87 @@ describe('bounded API radio sources', () => {
         expect(session.profile().heardIds.size).toBe(0);
         expect(session.profile().positiveSeeds).toHaveLength(0);
     });
+    it('samples old likes and private collections in bounded batches without calling them all liked', async () => {
+        let now = 0;
+        const { catalog, request } = setup(
+            (url) => {
+                if (url.pathname === '/me') return { id: 7, username: 'Owner' };
+                if (url.pathname === '/me/track_likes/ids')
+                    return { collection: Array.from({ length: 200 }, (_, i) => i + 1) };
+                if (url.pathname.includes('mutings')) return { collection: [] };
+                if (url.pathname === '/users/7/playlists') return { collection: [{ id: 900, kind: 'playlist' }] };
+                if (url.pathname === '/me/playlist_likes/ids') return { collection: [901] };
+                if (url.pathname === '/playlists/900') return { tracks: [{ id: 300 }, { id: 301 }] };
+                if (url.pathname === '/playlists/901') return { tracks: [{ id: 301 }, { id: 302 }] };
+                if (url.pathname === '/me/play-history/tracks')
+                    return { collection: [track(400)], next_href: origin + '/me/play-history/tracks?cursor=older' };
+                if (url.pathname === '/tracks')
+                    return url.searchParams
+                        .get('ids')!
+                        .split(',')
+                        .map((id) => track(Number(id)));
+                throw Error('Unexpected route ' + url.pathname);
+            },
+            () => now,
+        );
+        await catalog.librarySignals();
+        const first = await catalog.libraryCandidates();
+        expect(first?.likes.some((track) => track.id > 120)).toBe(true);
+        expect(first?.likes.length).toBeLessThanOrEqual(12);
+        expect(first?.playlists.map((track) => track.id)).toEqual([300, 301, 302]);
+        expect(first?.recent.map((track) => track.id)).toEqual([400]);
+        const reads = request.mock.calls.length;
+        expect(await catalog.libraryCandidates()).toBeNull();
+        expect(request).toHaveBeenCalledTimes(reads);
+        now = 300001;
+        const second = await catalog.libraryCandidates();
+        expect(second?.likes.map((track) => track.id)).not.toEqual(first?.likes.map((track) => track.id));
+        expect(request.mock.calls.some(([url]) => new URL(String(url)).searchParams.get('cursor') === 'older')).toBe(
+            true,
+        );
+    });
+    it('rejects a foreign history cursor without sending credentials to another host', async () => {
+        let now = 0;
+        const { catalog, request } = setup(
+            (url) => {
+                if (url.pathname === '/me') return { id: 7, username: 'Owner' };
+                if (url.pathname === '/me/play-history/tracks')
+                    return { collection: [track(1)], next_href: 'https://foreign.invalid/data' };
+                return { collection: [] };
+            },
+            () => now,
+        );
+        await catalog.libraryCandidates();
+        now = 300001;
+        await catalog.libraryCandidates();
+        expect(
+            request.mock.calls.filter(([url]) => new URL(String(url)).pathname === '/me/play-history/tracks'),
+        ).toHaveLength(1);
+        expect(request.mock.calls.every(([url]) => new URL(String(url)).origin === origin)).toBe(true);
+    });
+    it('caps artist contributions even when the server ignores limit and caches an unavailable source', async () => {
+        const { catalog, request } = setup((url) => {
+            if (url.pathname === '/resolve') return track(1);
+            if (url.pathname.endsWith('/toptracks'))
+                return { collection: Array.from({ length: 26 }, (_, i) => track(i + 2)) };
+            if (url.pathname === '/tracks')
+                return url.searchParams
+                    .get('ids')!
+                    .split(',')
+                    .map((id) => track(Number(id)));
+            throw Error('Unexpected route');
+        });
+        const list = await catalog.artistCandidates(track(1).permalink_url);
+        expect(list?.length).toBe(4);
+        expect(list?.every((track) => track.radioSource === 'artist')).toBe(true);
+        const count = request.mock.calls.length;
+        await catalog.artistCandidates(track(1).permalink_url);
+        expect(request).toHaveBeenCalledTimes(count);
+        const failed = setup((url) => (url.pathname === '/resolve' ? track(1) : new Response('{}', { status: 404 })));
+        expect(await failed.catalog.artistCandidates(track(1).permalink_url)).toBeNull();
+        await failed.catalog.artistCandidates(track(1).permalink_url);
+        expect(
+            failed.request.mock.calls.filter(([url]) => new URL(String(url)).pathname.endsWith('/toptracks')),
+        ).toHaveLength(1);
+    });
 });

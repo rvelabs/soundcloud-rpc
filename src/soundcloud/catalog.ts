@@ -57,9 +57,9 @@ export class SoundCloudCatalog {
         private now = Date.now,
     ) {
         this.radio = new RadioSources(
-            (path, params, decode, signal, auth = false) =>
-                this.load(path, params, decode, 'prefetch', signal, { auth, optional: true }),
-            (ids) => this.batch(ids),
+            (path, params, decode, signal, auth = false, background = false) =>
+                this.load(path, params, decode, background ? 'catalog' : 'prefetch', signal, { auth, optional: true }),
+            (ids, background = false) => this.batch(ids, background ? 'catalog' : 'prefetch'),
             () => this.generation,
             this.now,
         );
@@ -301,6 +301,14 @@ export class SoundCloudCatalog {
         const me = await this.profile(signal);
         return me ? this.radio.signals(me.id, signal) : null;
     }
+    async libraryCandidates(signal?: AbortSignal) {
+        const me = await this.profile(signal);
+        return me ? this.radio.personal(me.id, signal) : null;
+    }
+    async artistCandidates(url: string): Promise<ApiTrack[] | null> {
+        const seed = await this.resolve(url);
+        return seed?.user?.id ? this.radio.artist(seed.user.id) : null;
+    }
     observeLike(owner: number, id: number, desired: boolean): void {
         if (this.account?.value.id !== owner || this.account.value.revision !== this.generation) return;
         this.radio.liked(id, desired);
@@ -317,9 +325,10 @@ export class SoundCloudCatalog {
         signal?.throwIfAborted();
         if (!this.ready()) return null;
         const unique = [...new Set(ids.filter(apiId))].slice(0, 500);
+        const requested = new Set(unique);
         const found = new Map<number, ApiTrack>();
         for (const { until, track } of this.tracks.values())
-            if (until > this.now() && unique.includes(track.id)) found.set(track.id, track);
+            if (until > this.now() && requested.has(track.id)) found.set(track.id, track);
         const missing = unique.filter((id) => !found.has(id));
         for (let index = 0; index < missing.length; index += 20) {
             const tracks = await this.load(
@@ -333,7 +342,7 @@ export class SoundCloudCatalog {
                 signal,
             );
             if (tracks === null) return found.size ? [...found.values()] : null;
-            for (const track of tracks) if (unique.includes(track.id)) found.set(track.id, track);
+            for (const track of tracks) if (requested.has(track.id)) found.set(track.id, track);
         }
         return unique.flatMap((id) => (found.has(id) ? [structuredClone(found.get(id)!)] : []));
     }

@@ -10,6 +10,8 @@ const checks = scripts.length
     ? scripts
     : [
           'check-native-queue.cjs',
+          'check-native-player.cjs',
+          'check-wave-metadata-cancel.cjs',
           'check-wave-native-api.cjs',
           'check-wave-native-api-recovery.cjs',
           'check-wave-playback.cjs',

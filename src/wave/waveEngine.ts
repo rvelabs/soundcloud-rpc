@@ -17,7 +17,7 @@ export interface WaveCandidate {
     liked?: boolean;
     sourceQuery?: string;
     relatedTo?: string[];
-    source?: 'related' | 'personal' | 'collection' | 'home' | 'following';
+    source?: 'related' | 'personal' | 'collection' | 'home' | 'following' | 'artist';
     metadataChecked?: boolean;
     catalogCheckedAt?: number;
     playability?: 'available' | 'blocked' | 'preview' | 'protected' | 'unknown';

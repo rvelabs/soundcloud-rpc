@@ -37,7 +37,14 @@ describe('native player monitor lifecycle', () => {
                       : undefined,
         };
         Object.assign(window, { soundcloudAPI: { sendTrackUpdate: (track: unknown) => updates.push(track) } });
-        runInNewContext(audioMonitorScript, { window, document, MutationObserver: Observer, setTimeout, clearTimeout });
+        runInNewContext(audioMonitorScript, {
+            window,
+            document,
+            MutationObserver: Observer,
+            setTimeout,
+            clearTimeout,
+            URL,
+        });
         await vi.advanceTimersByTimeAsync(150);
         const mutate = async () => {
             for (const observer of observers) if (observer.active) observer.callback();
@@ -55,6 +62,30 @@ describe('native player monitor lifecycle', () => {
         title.href = 'https://soundcloud.com/artist/three';
         await mutate();
         expect(updates[updates.length - 1]).toMatchObject({ url: title.href });
+        await vi.advanceTimersByTimeAsync(10000);
+        const model = {
+            get: (key: string) => ({ permalink_url: title.href, title: 'SDK', user: { username: 'Artist' } })[key],
+            on() {},
+            off() {},
+            currentTime: () => 2000,
+            getMediaDuration: () => 180000,
+            isPlaying: () => true,
+            isAd: () => false,
+        };
+        Object.assign(window, {
+            __scRpcModules: [
+                {
+                    c: {
+                        player: { exports: { getCurrentSound: () => model, getQueue: () => ({}), on() {}, off() {} } },
+                    },
+                    m: {},
+                },
+            ],
+        });
+        title.href = 'https://soundcloud.com/artist/four';
+        await mutate();
+        expect(updates[updates.length - 1]).toMatchObject({ title: 'SDK', url: title.href });
+        expect(observers.every((observer) => !observer.active)).toBe(true);
         window.dispatchEvent(Object.assign(new Event('pagehide'), { persisted: false }));
         const count = updates.length;
         playing = false;

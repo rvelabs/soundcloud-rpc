@@ -5,7 +5,7 @@ export interface ApiTrack extends CatalogTrack {
     id: number;
     title: string;
     permalink_url: string;
-    radioSource?: 'collection' | 'home' | 'following';
+    radioSource?: 'collection' | 'home' | 'following' | 'artist';
 }
 const object = (value: unknown): Record<string, unknown> | undefined =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
