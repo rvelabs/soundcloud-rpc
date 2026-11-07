@@ -1,0 +1,28 @@
+{
+    "identifier": "settings",
+    "description": "Private local connection panel",
+    "local": true,
+    "permissions": [
+        "allow-connection-load",
+        "allow-connection-save",
+        "allow-restart-native",
+        "allow-presence-options",
+        "allow-interface-language",
+        "allow-listening-options",
+        "allow-listening-save",
+        "allow-lastfm-action",
+        "allow-extensions-options",
+        "allow-extensions-action",
+        "allow-updates-options",
+        "allow-updates-action",
+        "allow-worker-setup-action",
+        "allow-client-options",
+        "allow-accounts-options",
+        "allow-accounts-action",
+        "allow-settings-test-result",
+        "allow-close-settings"
+    ],
+    "webviews": [
+        "settings"
+    ]
+}

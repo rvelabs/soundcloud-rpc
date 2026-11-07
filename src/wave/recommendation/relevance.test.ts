@@ -19,6 +19,38 @@ const favorites = Array.from({ length: 4 }, (_, i) =>
 );
 
 describe('relevance before novelty and artist diversity', () => {
+    it('retains the strength of repeated interests instead of clipping all positive tags to the same weight', () => {
+        const events = [
+            like(track('rare', 'country')),
+            ...Array.from({ length: 25 }, (_, i) => like(track('regular-' + i, 'breakcore'))),
+        ];
+        const result = recommend([track('main', 'breakcore'), track('occasional', 'country')], events, controls, {
+            now,
+        });
+        const main = result.find((item) => item.track.id === 'main')!;
+        const occasional = result.find((item) => item.track.id === 'occasional')!;
+        expect(main.score).toBeGreaterThan(occasional.score + 1.5);
+    });
+    it('does not use unlabelled homepage or artist uploads as evidence of personal relevance', () => {
+        const unknown = track('unknown', '', { source: 'home' });
+        expect(recommend([unknown], favorites.map(like), controls, { now })).toEqual([]);
+        expect(
+            recommend(
+                [{ ...unknown, source: 'related', relatedTo: [favorites[0].id] }],
+                favorites.map(like),
+                controls,
+                { now },
+            ),
+        ).toHaveLength(1);
+    });
+    it('prepares a coherent continuation before opening an unrelated liked direction', () => {
+        const a = track('a', 'breakcore'),
+            b = track('b', 'breakcore'),
+            c = track('c', 'country');
+        const seeds = discoverySeeds(buildProfile([like(c), like(b), like(a)], now), controls, 0, a);
+        expect(seeds.slice(0, 2).map((item) => item.genre)).toEqual(['breakcore', 'breakcore']);
+        expect(new Set(seeds.map((item) => item.artist)).size).toBe(3);
+    });
     it('does not replace a relevant artist with an unrelated one merely to avoid repeating the artist', () => {
         const seed = track('seed', 'shoegaze', { artist: 'A' });
         const good = track('good', 'shoegaze', { artist: 'A' });

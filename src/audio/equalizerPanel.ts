@@ -24,7 +24,8 @@ export function installEqualizerPanel(model: EqualizerModel): void {
     host.style.cssText =
         'display:inline-flex;align-items:center;flex:0 0 36px;align-self:center;margin-left:8px;height:48px;z-index:20';
     const shadow = host.attachShadow({ mode: 'open' });
-    shadow.innerHTML = `<style>
+    const stylesheet = new CSSStyleSheet();
+    stylesheet.replaceSync(`
       :host{color-scheme:dark;font:12px/1.4 Arial,Helvetica,sans-serif;color:#eee}
       *{box-sizing:border-box}button,select,input{font:inherit}button{cursor:pointer}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #ff773d;outline-offset:4px}
       .toggle{display:grid;place-items:center;width:32px;height:32px;padding:6px;background:none;border:0;border-radius:5px;color:#eee}.toggle:hover,.toggle[aria-expanded=true]{background:#ffffff15}.toggle[data-enabled=true]{color:#f50}
@@ -39,7 +40,9 @@ export function installEqualizerPanel(model: EqualizerModel): void {
       .preamp{display:grid;grid-template-columns:auto 1fr 48px;gap:12px;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid #ffffff16;color:#bbb}.preamp input{min-width:0;width:100%;accent-color:#f50;margin:0}.preamp output{text-align:right;font-variant-numeric:tabular-nums;color:#eee}
       .hint{font-size:11px;color:#999;min-height:30px;margin:14px 0 0}.hint[data-error=true]{color:#ffc09f}.foot{margin:4px 0 0;color:#777;font-size:11px}
       @keyframes enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){.panel{animation:none}.power:after{transition:none}}@media(max-width:480px){.panel{padding:14px}.presets{gap:7px}.presets label{display:block}.presets select{margin-top:5px}.preamp{gap:6px}.band output,.band span{font-size:10px}}
-    </style>
+    `);
+    shadow.adoptedStyleSheets = [stylesheet];
+    shadow.innerHTML = `
     <button type="button" class="toggle" aria-expanded="false" aria-controls="eq-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v5m0 6v7M12 3v10m0 6v2M19 3v2m0 6v10"/><path d="M2 8h6v6H2zM9 13h6v6H9zM16 5h6v6h-6z"/></svg></button>
     <section id="eq-panel" class="panel" role="dialog" aria-modal="false" aria-labelledby="eq-heading" hidden>
       <div class="head"><h2 id="eq-heading"></h2><button type="button" class="power" role="switch"></button><button type="button" class="close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>

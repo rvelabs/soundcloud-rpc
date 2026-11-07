@@ -1,4 +1,5 @@
 import { DeliveryOutbox } from './deliveryOutbox';
+import { ListeningEvidence } from '../wave/listeningEvidence';
 import type { DataStore } from '../storage/asyncDataStore';
 import { WebContentsView } from 'electron';
 import type ElectronStore from 'electron-store';
@@ -17,6 +18,7 @@ export interface ScrobbleState {
     pausedTime: number;
     lastElapsedSeconds: number;
     pauseStartedAt?: number;
+    playedSeconds?: number;
 }
 function timeStringToSeconds(timeStr: string | undefined): number {
     if (!timeStr || typeof timeStr !== 'string') return 0;
@@ -33,8 +35,7 @@ function timeStringToSeconds(timeStr: string | undefined): number {
     }
 }
 function shouldScrobble(state: ScrobbleState): boolean {
-    const until = state.isPaused ? (state.pauseStartedAt ?? Date.now()) : Date.now();
-    const totalPlayed = (until - state.startTime) / 1000 - state.pausedTime;
+    const totalPlayed = state.playedSeconds || 0;
     return (
         state.duration > 30 &&
         !state.scrobbled &&
@@ -56,7 +57,7 @@ export class LastFmService {
     private readonly store: ElectronStore;
     private currentScrobbleState: ScrobbleState | null = null;
     private pauseStartTime: number = 0;
-    private loopWatchdog: NodeJS.Timeout | null = null;
+    private listening = new ListeningEvidence();
     private cancelAuthentication?: () => void;
     private authenticationGeneration = 0;
     private outbox: DeliveryOutbox<{ artist: string; track: string; timestamp: number; scope: string }>;
@@ -227,7 +228,6 @@ export class LastFmService {
             this.currentScrobbleState.title !== parsed.track ||
             isDomLoop
         ) {
-            if (this.loopWatchdog) clearInterval(this.loopWatchdog);
             if (
                 this.currentScrobbleState &&
                 !this.currentScrobbleState.scrobbled &&
@@ -241,6 +241,7 @@ export class LastFmService {
                 );
             }
             const trackDuration = timeStringToSeconds(trackInfo.duration);
+            this.listening.reset();
             this.currentScrobbleState = {
                 artist: parsed.artist,
                 title: parsed.track,
@@ -260,15 +261,15 @@ export class LastFmService {
         }
         if (this.currentScrobbleState) {
             this.currentScrobbleState.lastElapsedSeconds = elapsedSeconds;
+            this.listening.observe('current', elapsedSeconds, isPlaying);
+            this.currentScrobbleState.playedSeconds = this.listening.played('current');
         }
-        this.scheduleScrobble();
+        this.checkScrobble();
         if (isPlaying && shouldPingPresence) {
             await this.updateNowPlaying(parsed.artist, parsed.track);
         }
     }
-    private scheduleScrobble(): void {
-        if (this.loopWatchdog) clearTimeout(this.loopWatchdog);
-        this.loopWatchdog = null;
+    private checkScrobble(): void {
         const state = this.currentScrobbleState;
         if (
             !state ||
@@ -279,19 +280,10 @@ export class LastFmService {
             !this.store.get('lastFmEnabled')
         )
             return;
-        const played = (Date.now() - state.startTime) / 1000 - state.pausedTime;
-        const remaining = Math.max(0, Math.min(state.duration / 2, 240) - played);
-        this.loopWatchdog = setTimeout(
-            () => {
-                this.loopWatchdog = null;
-                if (this.currentScrobbleState !== state || !this.store.get('lastFmEnabled') || state.isPaused) return;
-                if (shouldScrobble(state)) {
-                    state.deliveryQueued = true;
-                    void this.scrobbleTrack(state.artist, state.title, Math.floor(state.startTime / 1000));
-                } else this.scheduleScrobble();
-            },
-            Math.max(10, remaining * 1000),
-        );
+        if (shouldScrobble(state)) {
+            state.deliveryQueued = true;
+            void this.scrobbleTrack(state.artist, state.title, Math.floor(state.startTime / 1000));
+        }
     }
     public disconnect(): void {
         this.outbox.clear();
@@ -304,9 +296,8 @@ export class LastFmService {
     }
     public dispose(): void {
         this.outbox.stop();
-        if (this.loopWatchdog) clearInterval(this.loopWatchdog);
-        this.loopWatchdog = null;
         this.currentScrobbleState = null;
+        this.listening.reset();
         this.cancelAuthentication?.();
     }
 }

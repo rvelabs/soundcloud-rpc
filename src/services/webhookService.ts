@@ -1,4 +1,5 @@
 import { DeliveryOutbox } from './deliveryOutbox';
+import { ListeningEvidence } from '../wave/listeningEvidence';
 import { createHash } from 'node:crypto';
 import type { DataStore } from '../storage/asyncDataStore';
 import type ElectronStore from 'electron-store';
@@ -26,6 +27,7 @@ export interface WebhookState {
     isPaused: boolean;
     pausedTime: number;
     lastElapsedSeconds: number;
+    playedSeconds?: number;
 }
 function timeStringToSeconds(timeStr: string | undefined): number {
     if (!timeStr || typeof timeStr !== 'string') return 0;
@@ -37,23 +39,22 @@ function timeStringToSeconds(timeStr: string | undefined): number {
         for (const part of parts) {
             seconds = seconds * 60 + (isNaN(part) ? 0 : part);
         }
-        return Math.max(1, Math.abs(seconds));
+        return Number.isFinite(seconds) ? Math.max(0, Math.abs(seconds)) : 0;
     } catch (error) {
         console.error('Error parsing time string:', error);
         return 0;
     }
 }
 function shouldSendWebhook(state: WebhookState, triggerPercentage: number): boolean {
-    const totalElapsed = (Date.now() - state.startTime) / 1000;
-    const playedTime = totalElapsed - state.pausedTime;
+    const playedTime = state.playedSeconds || 0;
     const targetTime = (state.duration * triggerPercentage) / 100;
     return state.duration > 0 && !state.webhookSent && !state.deliveryQueued && playedTime >= targetTime;
 }
 export class WebhookService {
     private store: ElectronStore;
     private currentWebhookState: WebhookState | null = null;
-    private webhookTimeout: NodeJS.Timeout | null = null;
     private pauseStartTime: number = 0;
+    private listening = new ListeningEvidence();
     private outbox: DeliveryOutbox<{ track: WebhookTrackData; timestamp: string; scope: string; id: string }>;
     private deliveryScope(): string {
         return createHash('sha256')
@@ -90,11 +91,7 @@ export class WebhookService {
             () => this.store.get('webhookEnabled') === true,
         );
     }
-    private scheduleWebhook(): void {
-        if (this.webhookTimeout) {
-            clearTimeout(this.webhookTimeout);
-            this.webhookTimeout = null;
-        }
+    private checkWebhook(): void {
         if (
             !this.currentWebhookState ||
             this.currentWebhookState.webhookSent ||
@@ -107,20 +104,9 @@ export class WebhookService {
         const webhookEnabled = this.store.get('webhookEnabled') as boolean;
         if (!webhookEnabled) return;
         const triggerPercentage = this.store.get('webhookTriggerPercentage', 50) as number;
-        const targetTime = (this.currentWebhookState.duration * triggerPercentage) / 100;
-        const totalElapsed = (Date.now() - this.currentWebhookState.startTime) / 1000;
-        const playedTime = totalElapsed - this.currentWebhookState.pausedTime;
-        const remainingTime = Math.max(0, targetTime - playedTime);
-        if (remainingTime <= 0) {
-            this.sendScheduledWebhook();
-        } else {
-            this.webhookTimeout = setTimeout(() => {
-                this.sendScheduledWebhook();
-            }, remainingTime * 1000);
-        }
+        if (shouldSendWebhook(this.currentWebhookState, triggerPercentage)) void this.queueWebhook();
     }
-    private async sendScheduledWebhook(): Promise<void> {
-        this.webhookTimeout = null;
+    private async queueWebhook(): Promise<void> {
         const state = this.currentWebhookState;
         if (
             !state ||
@@ -170,15 +156,11 @@ export class WebhookService {
             if (!isPlaying && !this.currentWebhookState.isPaused) {
                 this.currentWebhookState.isPaused = true;
                 this.pauseStartTime = Date.now();
-                if (this.webhookTimeout) {
-                    clearTimeout(this.webhookTimeout);
-                    this.webhookTimeout = null;
-                }
             } else if (isPlaying && this.currentWebhookState.isPaused) {
                 this.currentWebhookState.isPaused = false;
                 this.currentWebhookState.pausedTime += (Date.now() - this.pauseStartTime) / 1000;
                 this.pauseStartTime = 0;
-                this.scheduleWebhook();
+                this.checkWebhook();
             }
         }
         const elapsedSeconds = timeStringToSeconds(trackInfo.elapsed);
@@ -222,16 +204,20 @@ export class WebhookService {
                 pausedTime: 0,
                 lastElapsedSeconds: elapsedSeconds,
             };
+            this.listening.reset();
             if (!isPlaying) {
                 this.pauseStartTime = Date.now();
             } else {
-                this.scheduleWebhook();
+                this.checkWebhook();
             }
         } else if (this.currentWebhookState.duration <= 0) {
             this.currentWebhookState.duration = timeStringToSeconds(trackInfo.duration);
-            this.scheduleWebhook();
+            this.checkWebhook();
         }
         this.currentWebhookState.lastElapsedSeconds = elapsedSeconds;
+        this.listening.observe('current', elapsedSeconds, isPlaying);
+        this.currentWebhookState.playedSeconds = this.listening.played('current');
+        this.checkWebhook();
     }
     public setTriggerPercentage(percentage: number): void {
         let validPercentage = Math.max(0, Math.min(100, percentage));
@@ -239,7 +225,7 @@ export class WebhookService {
             validPercentage = 50;
         }
         this.store.set('webhookTriggerPercentage', validPercentage);
-        this.scheduleWebhook();
+        this.checkWebhook();
     }
     public setWebhookUrl(url: string): void {
         this.store.set('webhookUrl', url);
@@ -257,11 +243,8 @@ export class WebhookService {
     }
     public dispose(): void {
         this.outbox.stop();
-        if (this.webhookTimeout) {
-            clearTimeout(this.webhookTimeout);
-            this.webhookTimeout = null;
-        }
         this.currentWebhookState = null;
         this.pauseStartTime = 0;
+        this.listening.reset();
     }
 }

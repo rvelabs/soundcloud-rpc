@@ -1,0 +1,21 @@
+{
+    "identifier": "smoke",
+    "description": "Local integration fixture; no remote origins",
+    "local": true,
+    "permissions": [
+        "allow-smoke-result",
+        "allow-profile-load",
+        "allow-profile-save",
+        "allow-profile-flush",
+        "allow-monitor-ready",
+        "allow-native-diagnostics",
+        "allow-wave-active",
+        "allow-client-options",
+        "allow-smoke-settings",
+        "allow-taskbar-update",
+        "allow-taskbar-exercise"
+    ],
+    "webviews": [
+        "smoke"
+    ]
+}

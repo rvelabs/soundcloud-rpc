@@ -2,12 +2,26 @@ export function installAudioFeatureCapture(): void {
     const page = window as typeof window & {
         __waveAudioInstalled?: boolean;
         __waveMediaEndState?: { active: boolean; currentPath?: string; analysisReadyPath?: string };
-        soundcloudAPI?: { sendAudioFeatures: (features: unknown) => void };
+        soundcloudAPI?: {
+            sendAudioFeatures: (features: unknown) => void;
+            sendAudioAnalysisStatus?: (status: unknown) => void;
+        };
+        __soundcloudEqualizer?: {
+            analysisTap?: (media: HTMLMediaElement) => { analyser: AnalyserNode; release: () => void } | undefined;
+        };
     };
     if (page.__waveAudioInstalled) return;
     page.__waveAudioInstalled = true;
     const seen: WeakRef<HTMLMediaElement>[] = [];
     let timer: ReturnType<typeof setInterval> | undefined;
+    let lastStatus = '';
+    const status = (phase: string, reason = '', seconds = 0) => {
+        const path = page.__waveMediaEndState?.currentPath || '';
+        const next = JSON.stringify([phase, reason, path, Math.floor(seconds)]);
+        if (next === lastStatus) return;
+        lastStatus = next;
+        page.soundcloudAPI?.sendAudioAnalysisStatus?.({ phase, reason, path, sampleSeconds: seconds });
+    };
     const cached = () =>
         Boolean(
             page.__waveMediaEndState?.currentPath &&
@@ -37,8 +51,8 @@ export function installAudioFeatureCapture(): void {
     const connected = new WeakMap<
         HTMLMediaElement,
         {
-            source: MediaStreamAudioSourceNode;
-            stream: MediaStream;
+            stream?: MediaStream;
+            release: () => void;
             url: string;
             analyser: AnalyserNode;
             bytes: Float32Array<ArrayBuffer>;
@@ -48,8 +62,7 @@ export function installAudioFeatureCapture(): void {
     const release = (media: HTMLMediaElement) => {
         const nodes = connected.get(media);
         if (!nodes) return;
-        nodes.source.disconnect();
-        for (const track of nodes.stream.getTracks()) track.stop();
+        nodes.release();
         connected.delete(media);
     };
     let context: AudioContext | undefined;
@@ -67,19 +80,23 @@ export function installAudioFeatureCapture(): void {
                 release(media);
         }
         if (!page.__waveMediaEndState?.active || cached()) {
+            status(cached() ? 'cached' : 'idle');
             stop();
             if (context?.state === 'running') void context.suspend().catch(() => {});
             return;
         }
         if (connecting) return;
-        const media = [
-            ...seen.map((reference) => reference.deref()),
-            ...Array.from(document.querySelectorAll('audio,video')),
-        ].find(
-            (item): item is HTMLMediaElement =>
-                item instanceof HTMLMediaElement && !item.paused && item.readyState >= 3 && !item.mediaKeys,
-        );
+        const eligible = (item: unknown): item is HTMLMediaElement =>
+            item instanceof HTMLMediaElement && !item.paused && item.readyState >= 3 && !item.mediaKeys;
+        const media =
+            seen.map((reference) => reference.deref()).find(eligible) ||
+            Array.from(document.querySelectorAll('audio,video')).find(eligible);
         if (!media) {
+            const protectedAudio = seen.some((reference) => {
+                const media = reference.deref();
+                return media && !media.paused && media.mediaKeys;
+            });
+            status(protectedAudio ? 'unavailable' : 'waiting', protectedAudio ? 'protected' : '');
             stop();
             if (context?.state === 'running') void context.suspend().catch(() => {});
             return;
@@ -90,13 +107,28 @@ export function installAudioFeatureCapture(): void {
             media.addEventListener('playing', wake);
         }
         const badge = document.querySelector<HTMLAnchorElement>('.playbackSoundBadge__titleLink');
-        if (!badge) return;
         let currentPath: string;
         try {
-            currentPath = new URL(badge.href).pathname;
+            const verified = page.__waveMediaEndState?.currentPath;
+            currentPath =
+                verified && /^\/[\w.~-]+\/[\w.~-]+\/?$/.test(verified)
+                    ? verified
+                    : badge
+                      ? new URL(badge.href).pathname
+                      : '';
+            if (!currentPath) {
+                status('waiting', 'track');
+                return;
+            }
             const source = new URL(media.currentSrc || media.src, location.href);
-            if (source.origin !== location.origin && media.crossOrigin !== 'anonymous') return;
-            if (!['https:', 'blob:'].includes(source.protocol)) return;
+            if (source.origin !== location.origin && media.crossOrigin !== 'anonymous') {
+                status('unavailable', 'cors');
+                return;
+            }
+            if (!['https:', 'blob:'].includes(source.protocol)) {
+                status('unavailable', 'source');
+                return;
+            }
         } catch {
             return;
         }
@@ -115,14 +147,30 @@ export function installAudioFeatureCapture(): void {
         if (
             nodes &&
             (nodes.url !== media.currentSrc ||
-                nodes.stream.getAudioTracks().every((track) => track.readyState === 'ended'))
+                nodes.stream?.getAudioTracks().every((track) => track.readyState === 'ended'))
         ) {
             release(media);
             nodes = undefined;
         }
         if (!nodes) {
+            const tap = page.__soundcloudEqualizer?.analysisTap?.(media);
+            if (tap) {
+                nodes = {
+                    url: media.currentSrc,
+                    analyser: tap.analyser,
+                    release: tap.release,
+                    bytes: new Float32Array(tap.analyser.fftSize),
+                    spectrum: new Float32Array(tap.analyser.frequencyBinCount),
+                };
+                connected.set(media, nodes);
+            }
+        }
+        if (!nodes) {
             const capture = (media as HTMLMediaElement & { captureStream?: () => MediaStream }).captureStream;
-            if (!capture) return;
+            if (!capture) {
+                status('unavailable', 'capture');
+                return;
+            }
             connecting = true;
             try {
                 context ??= new AudioContext();
@@ -141,6 +189,7 @@ export function installAudioFeatureCapture(): void {
                 const stream = capture.call(media);
                 if (!stream.getAudioTracks().length) {
                     for (const track of stream.getTracks()) track.stop();
+                    status('unavailable', 'stream');
                     return;
                 }
                 let source: MediaStreamAudioSourceNode;
@@ -152,8 +201,12 @@ export function installAudioFeatureCapture(): void {
                 }
                 source.connect(analyser);
                 nodes = {
-                    source,
                     stream,
+                    release: () => {
+                        source.disconnect();
+                        analyser.disconnect();
+                        for (const track of stream.getTracks()) track.stop();
+                    },
                     url: media.currentSrc,
                     analyser,
                     bytes: new Float32Array(analyser.fftSize),
@@ -161,6 +214,7 @@ export function installAudioFeatureCapture(): void {
                 };
                 connected.set(media, nodes);
             } catch {
+                status('unavailable', 'capture');
                 return;
             } finally {
                 connecting = false;
@@ -186,7 +240,11 @@ export function installAudioFeatureCapture(): void {
             else treble += power;
         }
         const total = bass + mid + treble;
-        if (!total || !Number.isFinite(total)) return;
+        if (!total || !Number.isFinite(total)) {
+            status('silent', '', sampledSeconds);
+            return;
+        }
+        status('analysing', '', sampledSeconds);
         page.soundcloudAPI?.sendAudioFeatures({
             path,
             energy: Math.min(1, Math.sqrt(squares / nodes.bytes.length)),

@@ -45,6 +45,19 @@ const scrobbles = () =>
     request.mock.calls.filter(
         ([, init]) => init?.body instanceof URLSearchParams && init.body.get('method') === 'track.scrobble',
     );
+const position = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+async function listen(
+    service: { updateTrackInfo: (data: ReturnType<typeof track>, playing?: boolean) => Promise<void> },
+    title: string,
+    from: number,
+    seconds: number,
+) {
+    for (let elapsed = from + 5; elapsed <= from + seconds; elapsed += 5) {
+        await vi.advanceTimersByTimeAsync(5000);
+        await service.updateTrackInfo(track(title, position(elapsed)));
+    }
+    await vi.advanceTimersByTimeAsync(0);
+}
 describe('listening integrations under overlapping events', () => {
     const disposables: {
         dispose(): void;
@@ -71,11 +84,11 @@ describe('listening integrations under overlapping events', () => {
                 }),
         );
         await service.updateTrackInfo(track('A'));
-        await vi.advanceTimersByTimeAsync(120000);
+        await listen(service, 'A', 0, 120);
         await service.updateTrackInfo(track('B'));
         finish({ ok: true });
         await Promise.resolve();
-        await vi.advanceTimersByTimeAsync(120000);
+        await listen(service, 'B', 0, 120);
         expect(messages().map((item) => item.track)).toEqual(['A', 'B']);
     });
     it('does not reset a webhook on early likes, send while paused, or fire after disabling', async () => {
@@ -85,12 +98,13 @@ describe('listening integrations under overlapping events', () => {
         await service.updateTrackInfo(track());
         await vi.advanceTimersByTimeAsync(1000);
         await service.updateTrackInfo(track('A', '0:01'));
-        await vi.advanceTimersByTimeAsync(59000);
+        await listen(service, 'A', 1, 55);
+        await vi.advanceTimersByTimeAsync(4000);
         await service.updateTrackInfo(track('A', '1:00'), false);
         await vi.advanceTimersByTimeAsync(3600000);
         expect(request).not.toHaveBeenCalled();
         await service.updateTrackInfo(track('A', '1:00'), true);
-        await vi.advanceTimersByTimeAsync(60000);
+        await listen(service, 'A', 60, 60);
         expect(messages()).toHaveLength(1);
         await service.updateTrackInfo(track('B'));
         service.setEnabled(false);
@@ -115,12 +129,12 @@ describe('listening integrations under overlapping events', () => {
         await service.updateTrackInfo(track('A', '0:00', ''));
         await vi.advanceTimersByTimeAsync(1000);
         await service.updateTrackInfo(track('A', '0:01'));
-        await vi.advanceTimersByTimeAsync(120000);
+        await listen(service, 'A', 1, 120);
         expect(scrobbles()).toHaveLength(1);
         await vi.advanceTimersByTimeAsync(15 * 60000);
         expect(scrobbles()).toHaveLength(1);
         await service.updateTrackInfo(track('B', '0:00', '0:20'));
-        await vi.advanceTimersByTimeAsync(60000);
+        await listen(service, 'A', 0, 60);
         expect(scrobbles()).toHaveLength(1);
     });
     it('does not scrobble a long pause, or let an old HTTP response claim the next track', async () => {
@@ -140,11 +154,11 @@ describe('listening integrations under overlapping events', () => {
                     finish = resolve;
                 }),
         );
-        vi.advanceTimersByTime(120000);
+        await listen(service, 'B', 0, 120);
         await service.updateTrackInfo(track('C'));
         finish({ ok: true, json: async () => ({}) });
         await Promise.resolve();
-        await vi.advanceTimersByTimeAsync(120000);
+        await listen(service, 'C', 0, 120);
         expect(scrobbles()).toHaveLength(2);
     });
     it('subscribes to the Last.fm callback before starting navigation and cleans up', async () => {
@@ -166,5 +180,32 @@ describe('listening integrations under overlapping events', () => {
         await Promise.resolve();
         expect(values.get('lastFmSessionKey')).toBe('new-session');
         expect(contents.listenerCount('will-redirect')).toBe(0);
+    });
+    it('does not count a clock jump, a stalled stream or a seek as listening', async () => {
+        const { store } = memory();
+        const webhook = new WebhookService(store),
+            lastfm = new LastFmService({ webContents: {} } as WebContentsView, store);
+        disposables.push(webhook, lastfm);
+        for (const service of [webhook, lastfm]) await service.updateTrackInfo(track());
+        vi.setSystemTime(Date.now() + 3600000);
+        for (const service of [webhook, lastfm]) await service.updateTrackInfo(track('A', '0:01'), false);
+        await vi.advanceTimersByTimeAsync(1000);
+        for (const service of [webhook, lastfm]) await service.updateTrackInfo(track('A', '0:01'), true);
+        await vi.advanceTimersByTimeAsync(1000);
+        for (const service of [webhook, lastfm]) await service.updateTrackInfo(track('A', '3:00'));
+        await vi.advanceTimersByTimeAsync(1000);
+        for (const service of [webhook, lastfm]) await service.updateTrackInfo(track('A', '3:00'));
+        expect(messages()).toHaveLength(0);
+        expect(scrobbles()).toHaveLength(0);
+    });
+    it('treats 0:00 duration as unknown even when a webhook threshold would otherwise pass', async () => {
+        const { store } = memory();
+        const service = new WebhookService(store);
+        disposables.push(service);
+        await service.updateTrackInfo(track('A', '0:00', '0:00'));
+        await vi.advanceTimersByTimeAsync(150000);
+        expect(messages()).toHaveLength(0);
+        await service.updateTrackInfo(track('A', '2:30', '0:00'));
+        expect(messages()).toHaveLength(0);
     });
 });

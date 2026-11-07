@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>SoundCloud · Settings</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                font:
+                    14px/1.5 system-ui,
+                    sans-serif;
+                background: #111;
+                color: #eee;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                padding: 24px;
+                border-left: 1px solid #ffffff20;
+                min-height: 100vh;
+            }
+            header {
+                position: relative;
+                padding-right: 32px;
+            }
+            #settings-close {
+                position: absolute;
+                right: 0;
+                top: 0;
+                width: 30px;
+                height: 30px;
+                padding: 0;
+                border: 0;
+                border-radius: 6px;
+                background: transparent;
+                color: #aaa;
+                font-size: 24px;
+                line-height: 1;
+            }
+            #settings-close:hover {
+                color: #fff;
+                background: #ffffff12;
+            }
+            h1 {
+                font-size: 26px;
+                letter-spacing: -0.6px;
+                margin: 0 0 8px;
+            }
+            .muted {
+                color: #999;
+                font-size: 12px;
+                margin: 0 0 24px;
+            }
+            label {
+                display: block;
+                margin: 18px 0 6px;
+                color: #bdbdbd;
+                font-size: 12px;
+            }
+            input,
+            select {
+                width: 100%;
+                padding: 11px 12px;
+                border: 1px solid #444;
+                border-radius: 6px;
+                background: #1c1c1c;
+                color: #eee;
+                font: inherit;
+            }
+            button {
+                font: inherit;
+                cursor: pointer;
+                border: 0;
+                border-radius: 6px;
+                background: #f50;
+                color: white;
+                padding: 12px 16px;
+                font-weight: 600;
+            }
+            button:disabled {
+                opacity: 0.5;
+                cursor: wait;
+            }
+            button.secondary {
+                background: #292929;
+                color: #ddd;
+            }
+            input:focus-visible,
+            select:focus-visible,
+            button:focus-visible {
+                outline: 2px solid #ff9966;
+                outline-offset: 3px;
+            }
+            .buttons {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 24px;
+            }
+            #status {
+                min-height: 42px;
+                margin: 20px 0 0;
+                font-size: 12px;
+                color: #bbb;
+            }
+            small {
+                display: block;
+                margin-top: 12px;
+                font-size: 11px;
+                color: #888;
+            }
+            header {
+                padding-bottom: 20px;
+                border-bottom: 1px solid #ffffff15;
+            }
+            button[hidden] {
+                display: none;
+            }
+            #discord-settings {
+                padding: 20px 0;
+                border-bottom: 1px solid #ffffff15;
+            }
+            .settings-section {
+                padding: 24px 0;
+                border-bottom: 1px solid #ffffff15;
+            }
+            [hidden] {
+                display: none !important;
+            }
+            .settings-nav {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                margin: 20px 0;
+            }
+            .settings-nav button {
+                padding: 8px 12px;
+                background: #292929;
+                font-size: 12px;
+            }
+            .settings-nav button[aria-pressed='true'] {
+                background: #f50;
+            }
+            pre {
+                max-width: 100%;
+                overflow-wrap: anywhere;
+                white-space: pre-wrap;
+                font-size: 11px;
+            }
+            h2 {
+                font-size: 18px;
+                margin: 0 0 16px;
+            }
+            .check {
+                display: flex;
+                gap: 9px;
+                align-items: center;
+                font-size: 13px;
+                margin: 12px 0;
+            }
+            .check input {
+                width: 16px;
+                height: 16px;
+                accent-color: #f50;
+            }
+            #discord-status {
+                margin-bottom: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <button type="button" id="settings-close" aria-label="Close settings" title="Close settings (Esc)">
+                ×
+            </button>
+            <h1 id="heading">Settings</h1>
+        </header>
+        <nav class="settings-nav" aria-label="Settings sections">
+            <button type="button" data-pane-target="client">General</button
+            ><button type="button" data-pane-target="integrations">Integrations</button
+            ><button type="button" data-pane-target="extensions">Extensions</button
+            ><button type="button" data-pane-target="connection">Connection</button>
+        </nav>
+        <p id="settings-error" role="status"></p>
+        <section id="discord-settings" data-pane="client" hidden>
+            <h2 id="discord-heading">Discord status</h2>
+            <label class="check"
+                ><input id="discord-enabled" type="checkbox" />
+                <span id="discord-enabled-label">Show the music I am listening to</span></label
+            ><label class="check"
+                ><input id="discord-button" type="checkbox" />
+                <span id="discord-button-label">Show Listen on SoundCloud button</span></label
+            >
+            <p id="discord-status" class="muted"></p>
+        </section>
+        <form id="connection-form" data-pane="connection" hidden>
+            <label for="mode" id="mode-label">Connection mode</label
+            ><select id="mode">
+                <option value="off">Direct</option>
+                <option value="auto">Automatic fallback</option>
+                <option value="on">Always through Worker</option></select
+            ><label for="endpoint" id="endpoint-label">Cloudflare Worker HTTPS URL</label
+            ><input
+                id="endpoint"
+                type="url"
+                placeholder="https://your-worker.workers.dev"
+                maxlength="500"
+                autocomplete="off"
+            /><label for="key" id="key-label">Worker key</label
+            ><input id="key" type="password" maxlength="256" autocomplete="off" /><small id="privacy"
+                >The key is encrypted by Windows and is never sent to the SoundCloud page.</small
+            >
+            <div class="buttons">
+                <button id="save" type="submit">Save</button
+                ><button id="restart" type="button" class="secondary" hidden>Restart client</button>
+            </div>
+            <p id="status" role="status" aria-live="polite"></p>
+        </form>
+        <script src="settings.js"></script>
+    </body>
+</html>

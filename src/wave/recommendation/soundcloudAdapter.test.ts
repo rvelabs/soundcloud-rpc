@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type ElectronStore from 'electron-store';
 import { SoundCloudRecommender, toTrack } from './soundcloudAdapter';
 import type { WaveCandidate } from '../waveEngine';
-import type { Track } from './types';
+import type { Feedback, Track } from './types';
 const item = (url: string, artist: string, genre: string, bpm?: number): WaveCandidate => ({
     url,
     title: url,
@@ -26,6 +26,45 @@ const memoryStore = (initial: Record<string, unknown> = {}) => {
     };
 };
 describe('SoundCloud recommendation adapter', () => {
+    it('restores catalog identity from feedback even without a candidate cache', async () => {
+        const favorite = { ...item('https://soundcloud.com/a/favorite', 'A', 'jungle'), apiId: 42, uploaderId: 8 };
+        const { store } = memoryStore({
+            waveFeedbackV1_restore: [{ track: toTrack(favorite), kind: 'like', at: Date.now() }],
+        });
+        const model = new SoundCloudRecommender(store, 'restore', async () => []);
+        model.setControls({ ...defaultWaveControls, discovery: 'favorites' });
+        expect(model.rank()[0]).toMatchObject({ apiId: 42, uploaderId: 8 });
+    });
+    it('repairs migrated history without inventing listens, reactions or recommendation provenance', async () => {
+        const favorite = item('https://soundcloud.com/a/favorite', 'A', '');
+        const event = {
+            track: { ...toTrack(favorite), source: undefined },
+            kind: 'like',
+            at: Date.now() - 100000,
+            origin: 'library',
+        };
+        const { store, values } = memoryStore({ waveFeedbackV1_repair: [event] });
+        const model = new SoundCloudRecommender(store, 'repair', async () => []);
+        const stats = model.stats();
+        model.addCandidates([{ ...favorite, apiId: 42, genre: 'jungle', metadataChecked: true, source: 'home' }]);
+        const saved = values.get('waveFeedbackV1_repair') as Feedback[];
+        expect(saved).toHaveLength(1);
+        expect(saved[0]).toMatchObject({
+            kind: 'like',
+            at: event.at,
+            origin: 'library',
+            track: { apiId: 42, genre: 'jungle' },
+        });
+        expect(saved[0].track.source).toBeUndefined();
+        expect(model.stats()).toEqual(stats);
+        let seeds: Track[] = [];
+        const restarted = new SoundCloudRecommender(store, 'repair', async (items) => {
+            seeds = items;
+            return [];
+        });
+        await restarted.refresh();
+        expect(seeds[0]).toMatchObject({ apiId: 42, genre: 'jungle' });
+    });
     it('keeps independent related-track evidence across catalog refreshes', () => {
         const { store } = memoryStore();
         const model = new SoundCloudRecommender(store, 'sources', async () => []);

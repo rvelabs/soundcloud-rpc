@@ -24,39 +24,49 @@ export class RelatedDiscovery {
     constructor(
         private load: (url: string, advance?: boolean) => Promise<WaveCandidate[]>,
         private now = Date.now,
+        private parallel = false,
     ) {}
+    private async loadSeed(seed: Track, isActive: () => boolean): Promise<WaveCandidate[]> {
+        if (!isActive() || !trackPath(seed.id)) return [];
+        const cached = this.cache.get(seed.id);
+        let tracks =
+            cached && this.now() >= cached.at && this.now() - cached.at < (cached.tracks.length ? 60000 : 15000)
+                ? cached.tracks
+                : undefined;
+        if (tracks) {
+            this.hits++;
+            return tracks;
+        }
+        let task = this.pending.get(seed.id);
+        if (!task) {
+            this.loads++;
+            task = this.load(seed.id, Boolean(cached?.tracks.length));
+            this.pending.set(seed.id, task);
+        }
+        try {
+            tracks = (await task).slice(0, 24);
+        } catch {
+            this.failures++;
+            tracks = [];
+        } finally {
+            if (this.pending.get(seed.id) === task) this.pending.delete(seed.id);
+        }
+        if (isActive()) this.cache.set(seed.id, { at: this.now(), tracks });
+        if (this.cache.size > 80) this.cache.delete(this.cache.keys().next().value!);
+        return tracks;
+    }
     async discover(seeds: Track[], isActive = () => true): Promise<WaveCandidate[]> {
         const merged = new Map<string, WaveCandidate>();
         const started = this.now();
         this.lastSeeds = seeds.slice(0, 3).map((seed) => seed.id);
         const seedIds = new Set(seeds.map((seed) => seed.id));
-        for (const seed of seeds.slice(0, 3)) {
+        const selected = seeds.slice(0, 3);
+        const parallel = this.parallel
+            ? await Promise.all(selected.map((seed) => this.loadSeed(seed, isActive)))
+            : undefined;
+        for (const [index, seed] of selected.entries()) {
             if (!isActive()) return [];
-            if (!trackPath(seed.id)) continue;
-            const cached = this.cache.get(seed.id);
-            let tracks =
-                cached && this.now() >= cached.at && this.now() - cached.at < (cached.tracks.length ? 60000 : 15000)
-                    ? cached.tracks
-                    : undefined;
-            if (!tracks) {
-                let task = this.pending.get(seed.id);
-                if (!task) {
-                    this.loads++;
-                    task = this.load(seed.id, Boolean(cached?.tracks.length));
-                    this.pending.set(seed.id, task);
-                }
-                try {
-                    tracks = (await task).slice(0, 24);
-                    if (isActive()) this.cache.set(seed.id, { at: this.now(), tracks });
-                } catch {
-                    this.failures++;
-                    tracks = [];
-                    if (isActive()) this.cache.set(seed.id, { at: this.now(), tracks });
-                } finally {
-                    if (this.pending.get(seed.id) === task) this.pending.delete(seed.id);
-                }
-                if (this.cache.size > 80) this.cache.delete(this.cache.keys().next().value!);
-            } else this.hits++;
+            const tracks = parallel ? parallel[index] : await this.loadSeed(seed, isActive);
             if (!isActive()) return [];
             for (const track of tracks) {
                 if (!trackPath(track.url) || seedIds.has(track.url)) continue;

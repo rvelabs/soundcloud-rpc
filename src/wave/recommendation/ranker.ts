@@ -18,7 +18,14 @@ import {
     words,
 } from './preferences';
 import type { Context, Controls, Feedback, Recommendation, Track } from './types';
-import { artistIdentity, recentPreference, recentReactions, sessionWeight, transitionAffinity } from './sessionSignals';
+import {
+    artistIdentity,
+    measuredSoundSimilarity,
+    recentPreference,
+    recentReactions,
+    sessionWeight,
+    transitionAffinity,
+} from './sessionSignals';
 import { preferenceEvidence } from './evidence';
 import { catalogSimilarity } from './similarity';
 const toneHints = {
@@ -105,15 +112,18 @@ function scoreTrack(
         referenceIds: Set<string>;
         established: boolean;
         negative: Feedback[];
+        tokenScale: number;
     },
 ): Recommendation | null {
     const tags = tokensOf(track);
     const reasons: string[] = [];
     const tokenAffinity =
-        tags.reduce(
-            (sum, token) => sum + Math.max(-5, Math.min(5, profile.tokens.get(token) || 0)) * tasteTokenWeight(token),
-            0,
-        ) / Math.sqrt(Math.max(1, tags.length));
+        tags.reduce((sum, token) => {
+            const weight = profile.tokens.get(token) || 0;
+            return (
+                sum + Math.sign(weight) * 5 * Math.sqrt(Math.abs(weight) / intent.tokenScale) * tasteTokenWeight(token)
+            );
+        }, 0) / Math.sqrt(Math.max(1, tags.length));
     const affinity = Math.max(-3.5, Math.min(3.5, tokenAffinity));
     const seedSimilarity = Math.max(0, ...intent.references.map((seed) => compare(track, seed)));
     const usable = (track.relatedTo || []).filter((id) => !profile.dislikedIds.has(id) && !intent.rejected.has(id));
@@ -123,9 +133,9 @@ function scoreTrack(
         !controls.genre &&
         !profile.likedIds.has(track.id) &&
         !context.knownLikedApiIds?.has(track.apiId || 0) &&
-        hasMusicalMetadata(track) &&
         seedSimilarity < 0.12 &&
-        references.length < 2
+        references.length < 2 &&
+        (hasMusicalMetadata(track) || references.length === 0)
     )
         return null;
     const negativeSimilarity = Math.max(
@@ -172,15 +182,26 @@ function scoreTrack(
     const currentInterest = Math.max(0, ...intent.positive.map((event) => compare(track, event.track) * event.weight));
     score += Math.min(controls.discovery === 'new' ? 0.4 : 0.7, currentInterest);
     if (currentInterest > 0.3) reasons.push('продолжение удачного направления текущей сессии');
-    const recentNegative = intent.negative.map((event) => ({
-        similarity: compare(track, event.track),
-        weight: Math.abs(sessionWeight(event)),
-        explicit: event.kind === 'dislike',
-    }));
+    const recentNegative = intent.negative
+        .filter((event) => event.kind !== 'skip' || context.now - event.at < 10 * 60000)
+        .map((event) => {
+            const sound = event.kind === 'skip' ? measuredSoundSimilarity(track, event.track) : undefined;
+            return {
+                similarity: sound === undefined ? compare(track, event.track) : sound,
+                measured: sound !== undefined,
+                weight: Math.abs(sessionWeight(event)) * 2 ** (-(context.now - event.at) / (8 * 60000)),
+                explicit: event.kind === 'dislike',
+            };
+        });
     const negativeNeighbors = recentNegative.filter((event) => event.similarity >= 0.25);
     if (negativeNeighbors.length) {
-        const strength =
-            negativeNeighbors.some((event) => event.explicit) || negativeNeighbors.length >= 2 ? 2.5 : 0.45;
+        const strength = negativeNeighbors.some((event) => event.explicit)
+            ? 2.5
+            : negativeNeighbors.filter((event) => event.measured && event.similarity >= 0.75).length >= 2
+              ? 1.3
+              : negativeNeighbors.length >= 3
+                ? 1.4
+                : 0;
         score -= Math.min(
             5,
             negativeNeighbors
@@ -278,7 +299,10 @@ export function recommend(
     const profile = suppliedProfile || buildProfile(events, context.now);
     const reactions = context.sessionReactions || recentReactions(events, context.now);
     const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
+    let tokenScale = 5;
+    for (const weight of profile.tokens.values()) tokenScale = Math.max(tokenScale, Math.abs(weight));
     const intent = {
+        tokenScale,
         rejected,
         references: profile.trustedSeeds.length ? profile.trustedSeeds : profile.positiveSeeds,
         referenceIds: new Set(

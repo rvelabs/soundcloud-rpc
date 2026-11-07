@@ -47,13 +47,41 @@ export function recentReactions(events: Feedback[], now: number): Feedback[] {
 }
 export function recentPreference(events: Feedback[], now: number): Map<string, number> {
     const signals = new Map<string, number>();
-    for (const event of recentReactions(events, now)) {
+    const reactions = recentReactions(events, now);
+    const skipCounts = new Map<string, number>();
+    for (const event of reactions)
+        if (
+            event.kind === 'skip' &&
+            now - event.at < 10 * 60000 &&
+            sessionWeight(event) < 0 &&
+            measuredSoundSimilarity(event.track, event.track) === undefined
+        )
+            for (const token of tokensOf(event.track)) skipCounts.set(token, (skipCounts.get(token) || 0) + 1);
+    for (const event of reactions) {
+        if (event.kind === 'skip' && measuredSoundSimilarity(event.track, event.track) !== undefined) continue;
         const weight = sessionWeight(event);
         const decay = 2 ** (-(now - event.at) / (20 * 60000));
-        for (const token of tokensOf(event.track))
+        for (const token of tokensOf(event.track)) {
+            if (event.kind === 'skip' && (now - event.at >= 10 * 60000 || (skipCounts.get(token) || 0) < 3)) continue;
             signals.set(token, Math.max(-2, Math.min(2, (signals.get(token) || 0) + weight * decay)));
+        }
     }
     return signals;
+}
+export function measuredSoundSimilarity(a: Track, b: Track): number | undefined {
+    const valid = (track: Track) =>
+        track.features?.source === 'media-element-v1' &&
+        (track.features.sampleSeconds || 0) >= 30 &&
+        ['bass', 'brightness'].every((key) => {
+            const value = track.features?.[key as 'bass' | 'brightness'];
+            return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+        });
+    if (!valid(a) || !valid(b)) return;
+    const distance =
+        (Math.abs(a.features!.bass! - b.features!.bass!) +
+            Math.abs(a.features!.brightness! - b.features!.brightness!)) /
+        2;
+    return Math.max(0, 1 - distance * 2.5);
 }
 export function transitionAffinity(track: Track, previous?: Track): number {
     if (!previous) return 0;

@@ -1075,3 +1075,5 @@ html:has(#codex-wave-inline .cw-settings-dialog[open], #codex-playlist-import .c
     width: 100%;
     align-self: stretch;
 }
+
+#codex-wave-inline .cw-analysis{margin:6px 20px 14px;color:#999;font:11px/1.4 Arial,sans-serif}

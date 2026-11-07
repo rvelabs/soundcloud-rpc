@@ -212,7 +212,7 @@ export function feedbackWeight(item: Feedback): number {
         case 'dislike':
             return -5;
         case 'skip':
-            return fraction < 0.2 ? -0.75 : fraction < 0.5 ? -0.3 : 0;
+            return 0;
         case 'complete':
             return item.origin === 'wave' ? 1 : 2;
         case 'play':

@@ -1,6 +1,7 @@
 import type { DataStore } from '../../storage/asyncDataStore';
 import type { WaveCandidate, WaveControls } from '../waveEngine';
 import { RecommendationSession } from './session';
+import { isDeepStrictEqual } from 'node:util';
 import { buildProfile, normalize } from './profile';
 import type { Controls, Feedback, FeedbackKind, SoundFeatures, Track } from './types';
 type Store = DataStore;
@@ -124,6 +125,8 @@ export class SoundCloudRecommender {
         this.addCandidates(
             buildProfile(this.feedbackEvents, this.now()).positiveSeeds.map((track) => ({
                 url: track.id,
+                apiId: track.apiId,
+                uploaderId: track.uploaderId,
                 title: track.title,
                 artist: track.artist,
                 genre: track.genre,
@@ -134,6 +137,7 @@ export class SoundCloudRecommender {
                 sourceRank: 0,
                 language: track.language,
                 playbackCount: track.playbackCount,
+                source: track.source,
             })),
             false,
         );
@@ -188,6 +192,39 @@ export class SoundCloudRecommender {
     }
     private save(): void {
         this.store.set(this.key, this.feedbackEvents.slice(-5000));
+    }
+    enrichHistory(catalog: WaveCandidate[]): void {
+        const metadata = new Map(catalog.filter((track) => track.metadataChecked).map((track) => [track.url, track]));
+        if (!metadata.size) return;
+        let changed = false;
+        this.feedbackEvents = this.feedbackEvents.map((event) => {
+            const candidate = metadata.get(event.track.id);
+            if (!candidate) return event;
+            const current = toTrack(candidate);
+            const track = { ...event.track };
+            for (const key of [
+                'apiId',
+                'uploaderId',
+                'title',
+                'artist',
+                'genre',
+                'tags',
+                'language',
+                'playbackCount',
+            ] as const) {
+                const value = current[key];
+                if (value !== undefined && value !== '' && (!Array.isArray(value) || value.length))
+                    Object.assign(track, { [key]: value });
+            }
+            if (isDeepStrictEqual(track, event.track)) return event;
+            changed = true;
+            return { ...event, track };
+        });
+        if (changed) {
+            this.session.loadFeedback(this.feedbackEvents);
+            this.feedbackRevision++;
+            this.save();
+        }
     }
     setControls(value: WaveControls): void {
         const controls: Controls = {
@@ -248,6 +285,7 @@ export class SoundCloudRecommender {
                 this.candidates.set(track.url, next);
                 return next;
             });
+        this.enrichHistory(musicTracks);
         this.session.addCandidates(merged.map((candidate) => toTrack(candidate)));
         if (this.candidates.size > 500) {
             const oldest = [...this.candidates.keys()].slice(0, this.candidates.size - 500);
@@ -369,6 +407,20 @@ export class SoundCloudRecommender {
     feedbackCount(): number {
         return this.feedbackEvents.length;
     }
+    applyAudioFeatures(candidate: WaveCandidate, features: SoundFeatures): void {
+        this.addCandidates([{ ...candidate, features }]);
+        let changed = false;
+        this.feedbackEvents = this.feedbackEvents.map((event) => {
+            if (event.track.id !== candidate.url) return event;
+            changed = true;
+            return { ...event, track: { ...event.track, features: { ...event.track.features, ...features } } };
+        });
+        if (changed) {
+            this.session.loadFeedback(this.feedbackEvents);
+            this.feedbackRevision++;
+            this.save();
+        }
+    }
     liked(url: string): boolean | undefined {
         for (let index = this.feedbackEvents.length - 1; index >= 0; index--) {
             const event = this.feedbackEvents[index];
@@ -389,6 +441,11 @@ export class SoundCloudRecommender {
     diagnostics(): object {
         return {
             candidates: this.candidates.size,
+            measuredCandidates: [...this.candidates.values()].filter(
+                (track) => track.features?.source === 'media-element-v1',
+            ).length,
+            measuredFeedback: this.feedbackEvents.filter((event) => event.track.features?.source === 'media-element-v1')
+                .length,
             similarity: this.session.similarityDiagnostics(),
             feedback: this.feedbackEvents.length,
             styles: [...this.session.profile().styles]

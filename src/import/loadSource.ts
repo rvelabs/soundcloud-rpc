@@ -15,6 +15,7 @@ export async function fetchPublic(
     signal?: AbortSignal,
     init?: SourceRequestInit,
     request: typeof fetch = net.fetch as typeof fetch,
+    timeoutMs = 6500,
 ): Promise<string> {
     let current = url;
     for (let redirect = 0; redirect < 3; redirect++) {
@@ -29,7 +30,7 @@ export async function fetchPublic(
             address.hash
         )
             throw new Error('Источник перенаправил запрос на неподдерживаемый адрес.');
-        const timeout = AbortSignal.timeout(6500);
+        const timeout = AbortSignal.timeout(timeoutMs);
         const response = await request(current, {
             method: init?.method || 'GET',
             body: init?.body,

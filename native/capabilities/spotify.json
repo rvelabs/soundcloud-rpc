@@ -1,0 +1,8 @@
+{
+    "identifier": "spotify",
+    "description": "Read-only playlist rows from the isolated Spotify import window",
+    "windows": ["spotify-import"],
+    "local": false,
+    "remote": { "urls": ["https://open.spotify.com/*"] },
+    "permissions": ["allow-spotify-page"]
+}

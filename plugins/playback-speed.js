@@ -401,9 +401,23 @@ module.exports = {
         adjustRate(event.deltaY < 0 ? 1 : -1);
     }
 
+    function setShadowHtml(root, html) {
+        var template = document.createElement('template');
+        template.innerHTML = html;
+        var sheets = [];
+        template.content.querySelectorAll('style').forEach(function(style) {
+            var sheet = new CSSStyleSheet();
+            sheet.replaceSync(style.textContent || '');
+            sheets.push(sheet);
+            style.remove();
+        });
+        root.replaceChildren(template.content);
+        root.adoptedStyleSheets = sheets;
+    }
+
     function createUi(host) {
         shadowRoot = host.attachShadow({ mode: 'open' });
-        shadowRoot.innerHTML = \`
+        setShadowHtml(shadowRoot, \`
             <style>
                 :host {
                     display: inline-flex;
@@ -455,7 +469,7 @@ module.exports = {
                 }
             </style>
             <button class="toggle" type="button" aria-haspopup="dialog" aria-expanded="false"></button>
-        \`;
+        \`);
 
         document.getElementById(PANEL_HOST_ID)?.remove();
         panelHost = document.createElement('div');
@@ -470,7 +484,7 @@ module.exports = {
             'z-index:2147483647!important;';
         document.body.appendChild(panelHost);
         panelShadowRoot = panelHost.attachShadow({ mode: 'open' });
-        panelShadowRoot.innerHTML = \`
+        setShadowHtml(panelShadowRoot, \`
             <style>
                 :host {
                     all: initial;
@@ -716,7 +730,7 @@ module.exports = {
                 </label>
                 <p class="hint"></p>
             </section>
-        \`;
+        \`);
 
         toggleButton = shadowRoot.querySelector('.toggle');
         panel = panelShadowRoot.querySelector('.panel');

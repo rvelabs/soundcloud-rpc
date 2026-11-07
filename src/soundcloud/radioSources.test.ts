@@ -25,6 +25,20 @@ const setup = (handler: (url: URL, init?: RequestInit) => unknown, clock = () =>
     return { catalog, request };
 };
 describe('bounded API radio sources', () => {
+    it('reads the real stream route and handles tracks and repost origins', async () => {
+        const { catalog, request } = setup((url) => {
+            if (url.pathname === '/me') return { id: 7, username: 'Owner' };
+            return {
+                collection: [
+                    { type: 'track', track: track(1) },
+                    { type: 'track-repost', origin: track(2) },
+                    { type: 'playlist', origin: { kind: 'playlist', id: 99 } },
+                ],
+            };
+        });
+        expect((await catalog.followingCandidates())?.map((item) => item.id)).toEqual([1, 2]);
+        expect(request.mock.calls.some(([url]) => new URL(String(url)).pathname === '/stream')).toBe(true);
+    });
     it('continues a related list with the validated cursor, then stops at a foreign continuation', async () => {
         let now = 0;
         const { catalog, request } = setup(
@@ -135,7 +149,7 @@ describe('bounded API radio sources', () => {
     it('does not disable catalog reads when an optional private source is forbidden', async () => {
         const { catalog } = setup((url) => {
             if (url.pathname === '/me') return { id: 7, username: 'Owner' };
-            if (url.pathname === '/stream/posts') return new Response('{}', { status: 403 });
+            if (url.pathname === '/stream') return new Response('{}', { status: 403 });
             return { collection: [track(2)] };
         });
         expect(await catalog.followingCandidates()).toBeNull();

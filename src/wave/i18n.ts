@@ -2,6 +2,14 @@ import { interfaceEnglish } from '../i18n/interfaceText';
 export type InterfaceLanguage = 'auto' | 'ru' | 'en';
 export const waveEnglish: Record<string, string> = {
     ...interfaceEnglish,
+    'Анализ звука включится вместе с волной': 'Audio analysis starts with My Wave',
+    'Ожидаем звук плеера': 'Waiting for player audio',
+    'Анализируем звук: {seconds} с': 'Analysing audio: {seconds} s',
+    'Звук учтён из локального кэша': 'Audio features reused from local cache',
+    'Звук проанализирован и учтён': 'Audio analysed and applied',
+    'Ожидаем слышимый сигнал': 'Waiting for an audible signal',
+    'Анализ этого потока недоступен': 'Audio analysis is unavailable for this stream',
+    'Измерено треков: {count}': 'Measured tracks: {count}',
     ' Получены первые 500 треков — это лимит плейлиста SoundCloud.':
         ' Read the first 500 tracks, the SoundCloud playlist limit.',
     ' Чтобы дочитать список, обновите Worker через F1. Найденную часть уже можно сохранить.':

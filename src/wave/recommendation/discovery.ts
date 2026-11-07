@@ -88,14 +88,19 @@ export function discoverySeeds(
             (track) => !selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)),
         );
         if (!available.length) break;
-        const independent = selected.length
-            ? available.find(
-                  (track) =>
-                      tokensOf(track).length &&
-                      selected.every((item) => tokensOf(item).length && compare(track, item) < 0.5),
-              )
+        const continuation = selected.length
+            ? available
+                  .map((track, order) => ({ track, score: compare(track, selected[0]) - order / 10000 }))
+                  .filter((item) => item.score >= 0.12)
+                  .sort((left, right) => right.score - left.score)[0]?.track
             : undefined;
-        add(independent || available[0]);
+        const alternative =
+            selected.length >= 2
+                ? available.find(
+                      (track) => hasMusicalMetadata(track) && selected.every((item) => compare(track, item) < 0.5),
+                  )
+                : undefined;
+        add(alternative || continuation || available[0]);
     }
     return selected;
 }

@@ -1,5 +1,5 @@
 import { apiId, apiObject, parsePage, parseTrackPage } from './accountTypes';
-import type { ApiTrack } from './trackTypes';
+import { parseApiTrack, type ApiTrack } from './trackTypes';
 export type RadioReader = <T>(
     path: string,
     params: Record<string, string>,
@@ -289,7 +289,17 @@ export class RadioSources {
         return structuredClone(result);
     }
     async following(id: number): Promise<ApiTrack[] | null> {
-        const page = await this.read('/stream/posts', { limit: '20' }, parseTrackPage, undefined, true);
+        const page = await this.read(
+            '/stream',
+            { limit: '20' },
+            (value) =>
+                parsePage(value, (item) => {
+                    const entry = apiObject(item);
+                    return parseApiTrack(entry?.origin || entry?.track || entry?.sound || item);
+                }),
+            undefined,
+            true,
+        );
         const tracks = page?.items;
         return tracks
             ? tracks

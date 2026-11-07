@@ -70,7 +70,7 @@
           </div>
         </div>
       </div>
-      <p class="cw-status" role="status">Рекомендации SoundCloud + ваш локальный вкус</p>
+      <p class="cw-status" role="status">Рекомендации SoundCloud + ваш локальный вкус</p><p class="cw-analysis" role="status" hidden></p>
       <div class="cw-insight" hidden><details><summary>Почему этот трек</summary><p class="cw-reasons"></p><span class="cw-evidence"></span></details><button type="button" data-command="dislike" title="Меньше похожих рекомендаций">Не подходит</button><button type="button" data-command="exclude-artist" title="Исключить этого исполнителя из Моей волны">Не предлагать исполнителя</button></div>
       <dialog class="cw-import-dialog" aria-label="Импорт плейлиста">
         <div class="cw-import-head"><div><strong>Импорт плейлиста</strong><p>Плейлисты Яндекс Музыки, Spotify, YouTube Music и альбомы Spotify</p></div>
@@ -650,8 +650,8 @@
                     }
                     importMatches = (result.matches || []).map((item, index) => ({
                         ...item,
-                        selected: result.selectedIndexes
-                            ? result.selectedIndexes.includes(index)
+                        selected: (result.selected || result.selectedIndexes)
+                            ? (result.selected || result.selectedIndexes).includes(index)
                             : importMatches[index]?.selected,
                         imported:
                             result.writtenTitle === result.title && result.savedUrls?.includes(item.soundcloud?.url),
@@ -944,10 +944,17 @@
                   ? String(t(message || t('Следующий трек готовится заранее')))
                   : String(t(message || 'Не удалось запустить волну'));
     });
+    let audioStatus;
+    const renderAnalysis = (value) => {
+        if(!value)return;audioStatus=value;
+        const label=$('.cw-analysis');label.hidden=!(value.analysed>0);
+        const text=t('Измерено треков: {count}',{count:value.analysed||0});
+        if(label.textContent!==text)label.textContent=text;
+    };
+    api.on('analysis',renderAnalysis);
     api.on('stats', (stats) => {
         heardCount = stats?.heard || 0;
-        if (stats?.heard)
-            $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: stats.heard });
+        $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: heardCount });
     });
     api.on('scroll', () => {
         schedule();
@@ -960,13 +967,13 @@
         uiLanguage.querySelector('select').value = interfaceLanguage;
         translatedMarkup.forEach((render) => render());
         renderControls();
+        renderAnalysis(audioStatus);
         renderExplanation(candidate);
         renderExclusions(excludedArtists);
         renderImport();
         if (lastImportProgress)
             updateImportProgress(lastImportProgress.phase, lastImportProgress.completed, lastImportProgress.total);
-        if (heardCount)
-            $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: heardCount });
+        $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: heardCount });
         $('.cw-start span').textContent = t(waveError ? 'Повторить подбор' : active ? 'Волна включена' : 'Слушать');
         $('.cw-status').textContent = t(
             active ? 'Следующий трек готовится заранее' : 'Рекомендации SoundCloud + ваш локальный вкус',
@@ -985,6 +992,7 @@
     void api.ready().then((state) => {
         if (!state) return;
         heardCount = state.stats?.heard || 0;
+        renderAnalysis(state.analysis);
         applyInterfaceLanguage(state.interfaceLanguage || interfaceLanguage);
         renderExclusions(state.excludedArtists || []);
         controls = { ...controls, ...state.controls };

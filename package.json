@@ -25,7 +25,17 @@
         "build-linux-appimage": "tsc && npm run copy-header && electron-builder -l appimage",
         "compile": "tsc && node scripts/copy-assets.cjs",
         "test:runtime": "npm run compile && node scripts/check-runtime.cjs",
-        "test:assets": "node scripts/check-assets.cjs"
+        "test:assets": "node scripts/check-assets.cjs",
+        "native:assets": "node scripts/build-native.cjs",
+        "native:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 check",
+        "native:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 test",
+        "native:test:frontend": "vitest run --config native/vitest.config.ts",
+        "native:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 build",
+        "native:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 bundle",
+        "native:run": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 run",
+        "native:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 smoke",
+        "native:probe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 probe",
+        "native:verify:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/native.ps1 verify"
     },
     "main": "./tsc/main.js",
     "repository": "https://github.com/rvelabs/soundcloud-rpc",
@@ -117,6 +127,7 @@
     "devDependencies": {
         "@eslint/eslintrc": "^3.3.1",
         "@eslint/js": "^9.37.0",
+        "@tauri-apps/cli": "2.12.4",
         "@types/node": "^24.2.1",
         "@typescript-eslint/eslint-plugin": "^8.54.0",
         "@typescript-eslint/parser": "^8.54.0",

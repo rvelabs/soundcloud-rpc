@@ -2,7 +2,11 @@ import type { EqualizerSettings } from './equalizerSettings';
 
 export function installEqualizerEngine(): void {
     const page = window as typeof window & {
-        __soundcloudEqualizer?: { set: (value: EqualizerSettings) => void; snapshot: () => object };
+        __soundcloudEqualizer?: {
+            set: (value: EqualizerSettings) => void;
+            snapshot: () => object;
+            analysisTap: (media: HTMLMediaElement) => { analyser: AnalyserNode; release: () => void } | undefined;
+        };
     };
     if (page.__soundcloudEqualizer) return;
     const shieldKeys = (event: KeyboardEvent) => {
@@ -459,6 +463,26 @@ export function installEqualizerEngine(): void {
             notify();
         },
         snapshot,
+        analysisTap(media) {
+            const node = nativeMedia.get(media)?.node || sources.get(media)?.node;
+            if (!node || media.mediaKeys) return;
+            const analyser = node.context.createAnalyser();
+            analyser.fftSize = 1024;
+            analyser.smoothingTimeConstant = 0.6;
+            wire(node, analyser);
+            let released = false;
+            return {
+                analyser,
+                release: () => {
+                    if (released) return;
+                    released = true;
+                    try {
+                        disconnectNode.call(node, analyser);
+                    } catch {}
+                    analyser.disconnect();
+                },
+            };
+        },
     };
     page.addEventListener('pageshow', () => {
         frozen = false;

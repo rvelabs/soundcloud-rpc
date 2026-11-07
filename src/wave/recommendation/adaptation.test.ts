@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RecommendationSession } from './session';
 import { recommend } from './ranker';
-import { artistIdentity, recentPreference, transitionAffinity } from './sessionSignals';
+import { artistIdentity, recentPreference, recentReactions, transitionAffinity } from './sessionSignals';
 import { preferenceEvidence } from './evidence';
 import { discoverySeeds } from './discovery';
 import { buildProfile } from './profile';
@@ -62,7 +62,10 @@ describe('session adaptation and queue diversity', () => {
         for (let index = 0; index < 15; index++)
             events.push({ track: track('other-' + index), kind: 'like', at: now - 20 * 60000 + index });
         events.push({ track: old, kind: 'skip', listenedFraction: 0.05, at: now });
-        expect(recentPreference(events, now).get('oldstyle')).toBeLessThan(0);
+        expect(recentReactions(events, now).some((event) => event.track.id === old.id && event.kind === 'skip')).toBe(
+            true,
+        );
+        expect(recentPreference(events, now).has('oldstyle')).toBe(false);
     });
     it('recognizes punctuation variants of an artist when preparing a batch', () => {
         const pool = Array.from({ length: 30 }, (_, index) =>
@@ -132,7 +135,7 @@ describe('session adaptation and queue diversity', () => {
     it('responds to a pattern of skips without treating one skip as a permanent genre dislike', () => {
         const likes: Feedback[] = [{ track: track('liked', 'Seed'), kind: 'like', at: now - 86400000 }];
         const skip = (id: string): Feedback => ({ track: track(id), kind: 'skip', listenedFraction: 0.05, at: now });
-        const one = recentPreference([skip('one')], now).get('ambient')!;
+        const one = recentPreference([skip('one')], now).get('ambient') || 0;
         const many = recentPreference([skip('one'), skip('two'), skip('three')], now).get('ambient')!;
         expect(many).toBeLessThan(one);
         expect(recentPreference([skip('one')], now + 46 * 60000).size).toBe(0);

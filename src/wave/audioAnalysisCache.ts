@@ -59,6 +59,9 @@ export class AudioAnalysisCache {
         const features = this.get(track);
         return features ? { ...track, features: { ...track.features, ...features } } : track;
     }
+    size(): number {
+        return [...this.entries.values()].filter((entry) => this.valid(entry)).length;
+    }
     remember(track: WaveCandidate, features: SoundFeatures): void {
         const id = this.identity(track);
         const entry: Entry = {

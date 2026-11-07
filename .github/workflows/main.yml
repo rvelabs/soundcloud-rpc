@@ -2,7 +2,9 @@ name: Verify
 on:
     push:
         branches: [main]
+        paths-ignore: ['docs/**', '**/*.md']
     pull_request:
+        paths-ignore: ['docs/**', '**/*.md']
     workflow_dispatch:
 permissions:
     contents: read
@@ -44,3 +46,27 @@ jobs:
                       build/*.blockmap
                       build/latest.yml
                   if-no-files-found: error
+    native:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: rustfmt, clippy
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: native
+            - run: npm ci
+            - run: npm run native:test
+            - run: cargo fmt --manifest-path native/Cargo.toml -- --check
+            - run:
+                  cargo --config native/.cargo/config.toml clippy --locked --manifest-path native/Cargo.toml
+                  --all-targets -- -D warnings
+            - run: cargo --config native/.cargo/config.toml build --locked --manifest-path native/Cargo.toml
+            - run: npm run native:smoke
+              env:
+                  SOUNDCLOUD_NATIVE_TEST_DEBUG: '1'

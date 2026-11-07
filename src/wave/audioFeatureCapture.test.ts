@@ -3,6 +3,70 @@ import { runInNewContext } from 'node:vm';
 import { installAudioFeatureCapture } from './audioFeatureCapture';
 afterEach(() => vi.useRealTimers());
 describe('audio analysis lifecycle', () => {
+    it('reads the existing player graph without a DOM badge or a second capture stream, and releases only its tap', async () => {
+        vi.useFakeTimers();
+        class Media extends EventTarget {
+            paused = false;
+            ended = false;
+            mediaKeys = null;
+            readyState = 4;
+            currentTime = 0;
+            currentSrc = 'blob:https://soundcloud.com/test-audio';
+            src = this.currentSrc;
+            crossOrigin = 'anonymous';
+            play() {
+                return Promise.resolve();
+            }
+        }
+        const media = new Media(),
+            release = vi.fn(),
+            send = vi.fn();
+        const analyser = {
+            fftSize: 1024,
+            frequencyBinCount: 512,
+            context: { sampleRate: 48000 },
+            getFloatTimeDomainData: (data: Float32Array) => data.fill(0.25),
+            getFloatFrequencyData: (data: Float32Array) => {
+                data.fill(-Infinity);
+                data[1] = 0;
+            },
+        };
+        const tap = vi.fn(() => ({ analyser, release }));
+        const page = Object.assign(new EventTarget(), {
+            __waveMediaEndState: { active: true, currentPath: '/test/tone', analysisReadyPath: '' },
+            __soundcloudEqualizer: { analysisTap: tap },
+            soundcloudAPI: { sendAudioFeatures: send },
+        });
+        runInNewContext(`(${installAudioFeatureCapture.toString()})()`, {
+            window: page,
+            Event,
+            HTMLMediaElement: Media,
+            setInterval,
+            clearInterval,
+            URL,
+            location: { origin: 'https://soundcloud.com', href: 'https://soundcloud.com/' },
+            document: { querySelector: () => null, querySelectorAll: () => [media] },
+        });
+        await media.play();
+        for (let second = 1; second <= 32; second++) {
+            media.currentTime = second;
+            await vi.advanceTimersByTimeAsync(1000);
+        }
+        expect(tap).toHaveBeenCalledTimes(1);
+        expect(send).toHaveBeenCalled();
+        expect(send.mock.calls[send.mock.calls.length - 1][0]).toMatchObject({
+            path: '/test/tone',
+            source: 'media-element-v1',
+            energy: 0.25,
+            bass: 1,
+            treble: 0,
+        });
+        page.__waveMediaEndState.analysisReadyPath = '/test/tone';
+        page.dispatchEvent(new Event('__soundcloudWaveMediaState'));
+        await Promise.resolve();
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+    });
     it('does not sample cached tracks and wakes for an uncached recording', async () => {
         vi.useFakeTimers();
         class Media extends EventTarget {

@@ -317,7 +317,8 @@ export class RecommendationSession {
         const epoch = this.candidateEpoch;
         this.refreshedAt = this.now();
         this.refreshedDirection = this.direction();
-        const mood = effectiveMood(this.controls, this.context());
+        const context = this.context();
+        const mood = effectiveMood(this.controls, context);
         const controls = { ...this.controls, mood, activity: this.activity };
         const rotation = this.rotation++;
         this.invalidateRanking();
@@ -330,9 +331,9 @@ export class RecommendationSession {
                 },
                 controls,
                 rotation,
-                this.anchor && this.allowed(this.anchor) ? this.anchor : undefined,
+                context.anchor && this.allowed(context.anchor) ? context.anchor : undefined,
                 {
-                    ...this.context(),
+                    ...context,
                     sessionReactions: recentReactions(this.events, this.now()).filter((event) =>
                         this.allowed(event.track),
                     ),

@@ -5,6 +5,24 @@ import type { Track } from './types';
 afterEach(() => vi.restoreAllMocks());
 const track = (id: string): Track => ({ id, artist: id, title: id, genre: 'ambient' });
 describe('recommendation session caching and sequential balance', () => {
+    it('discovers from the accepted continuation rather than a stale initial anchor', async () => {
+        const initial = track('initial'),
+            next = track('next');
+        let received: Track[] = [];
+        const session = new RecommendationSession({
+            related: async (seeds) => {
+                received = seeds;
+                return [];
+            },
+        });
+        session.loadFeedback([{ track: initial, kind: 'like', at: Date.now() - 86400000 }]);
+        session.addCandidates([initial, next]);
+        session.setAnchor(initial);
+        session.reserve(next.id);
+        session.accept(next.id);
+        await session.refresh();
+        expect(received[0].id).toBe(next.id);
+    });
     it('reuses tag statistics across sound updates and settings while protecting owned candidates', () => {
         const session = new RecommendationSession({ related: async () => [] });
         const tracks = [

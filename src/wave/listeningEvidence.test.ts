@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { ListeningEvidence } from './listeningEvidence';
 describe('listening evidence', () => {
+    it('counts confirmed source progress at the declared playback speed without learning large seeks', () => {
+        let time = 0;
+        const tracker = new ListeningEvidence(() => time);
+        tracker.observe('fast', 0, true, 2);
+        time = 5000;
+        tracker.observe('fast', 10, true, 2);
+        time = 10000;
+        tracker.observe('fast', 20, true, 2);
+        expect(tracker.fraction('fast', 100)).toBe(0.2);
+        time = 11000;
+        tracker.observe('fast', 95, true, 2);
+        expect(tracker.fraction('fast', 100)).toBe(0.2);
+        tracker.reset();
+        time = 0;
+        tracker.observe('slow', 0, true, 0.5);
+        time = 10000;
+        tracker.observe('slow', 5, true, 0.5);
+        expect(tracker.fraction('slow', 100)).toBe(0.05);
+    });
     it('does not learn a seek to the end as a completed listen', () => {
         let time = 0;
         const tracker = new ListeningEvidence(() => time);
