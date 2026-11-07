@@ -8,6 +8,25 @@ const profile = path.join(out, 'profile-' + Date.now());
 fs.mkdirSync(profile, { recursive: true });
 app.setPath('userData', profile);
 const balanced = process.env.WAVE_TEST_BALANCED === '1';
+const mixRanks = [];
+if (balanced) {
+    const ranker = require(path.join(root, 'tsc/wave/recommendation/ranker.js'));
+    const recommend = ranker.recommend;
+    ranker.recommend = (...args) => {
+        const result = recommend(...args);
+        mixRanks.push({
+            at: Date.now(),
+            sequence: args[3].sequenceOffset,
+            roots: args[3].discoverySeeds?.map((t) => t.id),
+            recent: args[3].recentTrackIds,
+            reserved: args[3].reservedTrackIds,
+            candidates: args[0].map((t) => ({ id: t.id, genre: t.genre, relatedTo: t.relatedTo })),
+            ranked: result.map((r) => ({ id: r.track.id, score: r.score, evidence: r.selection })),
+        });
+        if (mixRanks.length > 40) mixRanks.shift();
+        return result;
+    };
+}
 const healthy = process.env.WAVE_TEST_HEALTHY_HANDOFF === '1';
 const nativeApi = process.env.WAVE_TEST_NATIVE_API === '1';
 const manual = process.env.WAVE_TEST_MANUAL_HANDOFF === '1';
@@ -304,12 +323,20 @@ app.whenReady().then(async () => {
         );
         assert.equal(new Set(state.played.map((item) => item.id)).size, state.played.length);
         if (!modalSearch) assert(state.nativeAutoplay >= 1, 'native queue initially owns the ended event');
-        if (balanced)
+        if (balanced) {
+            const diagnostics = await contents.executeJavaScript(
+                '(async()=> (await waveInline.ready()).diagnostics)()',
+            );
+            fs.writeFileSync(
+                path.join(out, 'wave-mix-debug.json'),
+                JSON.stringify({ state, diagnostics, mixRanks }, null, 2),
+            );
             assert.deepEqual(
                 state.played.slice(0, 7).map((item) => ['three', 'six'].includes(item.id)),
                 [false, false, true, false, false, true, false],
                 'balanced pattern survives prebuffering and fallback',
             );
+        }
         const gaps = state.played.slice(1).map((item, index) => {
             const end = state.endedAt.find((entry) => entry.id === state.played[index].id);
             return end ? item.at - end.at : null;

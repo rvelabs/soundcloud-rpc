@@ -159,7 +159,7 @@ function scoreTrack(
         controls.discovery === 'new' ? 0.9 : ['familiar', 'favorites'].includes(controls.discovery) ? 1.15 : 1;
     let score = affinity * affinityFactor + seedSimilarity * familiarFactor - negativeSimilarity * 2.2;
     if (focused) {
-        score += directionSimilarity * 1.2 + Math.min(2, activeLinks.length) * 2;
+        score += directionSimilarity * 1.2 + (activeLinks.length ? 2 : 0);
         if (activeLinks.length) reasons.push('связь с опорными записями этой волны');
     }
     if (track.source === 'related' && track.relatedTo?.length) {

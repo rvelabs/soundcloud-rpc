@@ -6,6 +6,12 @@ on:
     pull_request:
         paths-ignore: ['docs/**', '**/*.md']
     workflow_dispatch:
+        inputs:
+            runtime_scope:
+                description: Runtime checks to repeat after the full suite
+                type: choice
+                default: full
+                options: [full, recommendations]
 permissions:
     contents: read
 jobs:
@@ -23,7 +29,12 @@ jobs:
             - run: npm test
             - run: npm run test:worker
             - run: npm run test:import
-            - run: npm run test:runtime
+            - if: inputs.runtime_scope != 'recommendations'
+              run: npm run test:runtime
+            - if: inputs.runtime_scope == 'recommendations'
+              run:
+                  npm run test:runtime -- check-wave-mix.cjs check-wave-handoff.cjs check-wave-user-next.cjs
+                  check-wave-native-api.cjs check-wave-native-api-recovery.cjs check-wave-cold-buffer.cjs
             - run: npm run test:assets
     package:
         if: github.event_name == 'workflow_dispatch'

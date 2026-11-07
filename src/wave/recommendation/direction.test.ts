@@ -99,3 +99,21 @@ it('does not mistake reuploads by different accounts for different favourite art
     });
     expect(next[0].track.id).toBe('alternative');
 });
+
+it('keeps a relevant familiar recording eligible when new neighbours link to multiple roots', () => {
+    const first = track('first-root', 'ambient');
+    const familiar = track('familiar', 'ambient', { source: 'related', relatedTo: [first.id] });
+    const events: Feedback[] = [
+        like(first),
+        { track: familiar, kind: 'complete', listenedFraction: 1, at: now - 8 * 86400000 },
+    ];
+    const fresh = Array.from({ length: 4 }, (_, i) =>
+        track('fresh-' + i, 'ambient', { source: 'related', relatedTo: [first.id, familiar.id] }),
+    );
+    const ranked = recommend([familiar, ...fresh], events, controls, {
+        now,
+        discoverySeeds: [first, familiar],
+        sequenceOffset: 5,
+    });
+    expect(ranked[0].track.id).toBe(familiar.id);
+});
