@@ -2,7 +2,7 @@
 
 **Your SoundCloud library, a personal radio, and playlists from other services — in one Windows app.**
 
-The current Windows release is **0.2.7**, built with **Rust + WebView2**. It keeps the SoundCloud player and adds
+The current Windows release is **0.2.9**, built with **Rust + WebView2**. It keeps the SoundCloud player and adds
 personal radio, playlist import, an equalizer and desktop integrations. The previous Electron build remains available in
 [release 0.32.2](https://github.com/rvelabs/soundcloud-rpc/releases/tag/v0.32.2).
 

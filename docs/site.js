@@ -11,7 +11,7 @@
         download: 'Download for Windows',
         seeApp: 'Take a look',
         heroNote: 'Free. Open source. Windows 10 / 11, x64.',
-        releaseNote: 'New in 0.2.7: Rust + WebView2 and restored listening feedback ↗',
+        releaseNote: 'New in 0.2.9: better My Wave relevance and import recovery ↗',
         sleeveLabel: 'THE NEVER-ENDING SIDE A',
         baseline: 'A FAMILIAR PLAYER. A DIFFERENT NEXT TRACK.',
         learnMore: 'Learn more',
@@ -84,7 +84,7 @@
         downloadKicker: 'THE NEXT TRACK COULD BE YOUR FAVORITE',
         downloadTitle: 'Your music.<br>To be continued.',
         sourceCode: 'Source code',
-        downloadNote: '0.2.7 · Windows x64 · Rust + WebView2 · Free',
+        downloadNote: '0.2.9 · Windows x64 · Rust + WebView2 · Free',
         footerNote:
             'An independent project. Made for listening.<br>SoundCloud and other names belong to their respective owners.',
         feedback: 'Feedback',
