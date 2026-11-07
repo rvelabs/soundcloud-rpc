@@ -3472,7 +3472,7 @@ dependencies = [
 
 [[package]]
 name = "soundcloud-native"
-version = "0.2.7"
+version = "0.2.9"
 dependencies = [
  "base64 0.22.1",
  "futures-util",

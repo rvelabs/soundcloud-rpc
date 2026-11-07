@@ -12,6 +12,7 @@ import { Wave } from './wave';
 import { requestSignIn } from './spotify';
 import speedPlugin from 'soundcloud-builtin-plugin';
 import { checkAudio } from './audioCheck';
+import { PlaylistRequestError } from './playlistErrors';
 
 const assert = (value: unknown, message: string) => {
     if (!value) throw new Error(message);
@@ -334,11 +335,67 @@ async function test() {
         on: (channel: string, listener: (...args: unknown[]) => void) => wave.events.on(channel, listener),
         controls: () => {},
     };
-    (window as any).playlistImporter = { onProgress: () => {}, draft: async () => null };
+    let importProgress: ((state: object) => void) | undefined;
+    let importDraft: object | undefined;
+    let importWrites = 0;
+    const importMatch = {
+        source: { title: 'Source recording', artist: 'Original artist' },
+        soundcloud: { apiId: 7, title: 'Found recording', artist: 'Uploader', score: 1 },
+    };
+    (window as any).playlistImporter = {
+        onProgress: (callback: (state: object) => void) => {
+            importProgress = callback;
+        },
+        draft: async () => importDraft,
+        scan: async () => {
+            importProgress?.({
+                phase: 'matching',
+                completed: 1,
+                total: 2,
+                tracks: [importMatch.source],
+                index: 0,
+                match: importMatch,
+            });
+            return (importDraft = { title: 'Partial import', matches: [importMatch], selected: [0], savedUrls: [] });
+        },
+        commit: async () => {
+            importWrites++;
+            importProgress?.({ phase: 'creating', completed: 0, total: 1 });
+            throw new PlaylistRequestError('create', 403, 'browser', 'CAPTCHA required');
+        },
+        selection: () => {},
+    };
     installWaveUI();
     await wait(300);
     const layout = nativeLayout();
     assert(layout.success, 'wave styles and SVG geometry: ' + JSON.stringify(layout));
+    const importRoot = document.getElementById('codex-playlist-import')!;
+    (importRoot.querySelector('.cw-import-open') as HTMLButtonElement).click();
+    (importRoot.querySelector('.cw-import-source input') as HTMLInputElement).value =
+        'https://music.yandex.ru/playlists/fixture';
+    (importRoot.querySelector('[data-command="import-scan"]') as HTMLButtonElement).click();
+    await wait(50);
+    (importRoot.querySelector('.cw-import-commit') as HTMLButtonElement).click();
+    await wait(50);
+    assert(
+        ['Не удалось сохранить плейлист', 'Could not save the playlist'].includes(
+            importRoot.querySelector('.cw-import-caption')!.textContent || '',
+        ),
+        'write failure is not presented as a source error',
+    );
+    assert(
+        importRoot.querySelectorAll('.cw-import-row').length === 1 && importWrites === 1,
+        'CAPTCHA preserves matches without automatic write retries',
+    );
+    const verifyButton = importRoot.querySelector('.cw-import-verify') as HTMLButtonElement;
+    assert(!verifyButton.hidden, 'verification handoff is visible');
+    verifyButton.click();
+    assert(
+        !(importRoot.querySelector('.cw-import-dialog') as HTMLDialogElement).open,
+        'import dialog releases the official page for human verification',
+    );
+    checks.push('import-captcha-preserves-matches');
+    checks.push('import-write-stage-and-manual-verification');
     assert(layout.waveHeight < 600 && layout.importHeight < 250, 'cards fit the viewport');
     assert(
         getComputedStyle(document.querySelector('.cw-start svg:nth-child(2)')!).display === 'none',

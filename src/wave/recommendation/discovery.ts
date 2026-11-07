@@ -29,11 +29,22 @@ export function discoverySeeds(
         );
     };
     const recentPositive = reactions
-        .filter((event) => sessionWeight(event) > 0)
+        .filter(
+            (event) =>
+                sessionWeight(event) > 0 &&
+                (!profile.trustedSeeds.length || event.origin !== 'wave' || profile.likedIds.has(event.track.id)),
+        )
         .slice()
         .reverse();
+    const confirmed = new Set([
+        ...profile.likedIds,
+        ...profile.trustedSeeds.map((track) => track.id),
+        ...recentPositive.map((event) => event.track.id),
+    ]);
+    const currentAnchor =
+        anchor && (!context || !profile.trustedSeeds.length || confirmed.has(anchor.id)) ? anchor : undefined;
     const unique = new Map<string, Track>();
-    for (const track of [anchor, ...recentPositive.map((event) => event.track), ...references].filter(
+    for (const track of [currentAnchor, ...recentPositive.map((event) => event.track), ...references].filter(
         (item): item is Track => Boolean(item),
     )) {
         if (
@@ -48,11 +59,21 @@ export function discoverySeeds(
     }
     const preferred = [...unique.values()].filter((track) => sessionAffinity(track) >= -0.8);
     const sources = preferred.length ? preferred : [...unique.values()];
+    let scale = 1;
+    for (const weight of profile.tokens.values()) scale = Math.max(scale, Math.abs(weight));
+    const support = (track: Track) => {
+        const tokens = tokensOf(track);
+        return (
+            tokens.reduce((sum, token) => sum + Math.max(0, profile.tokens.get(token) || 0), 0) /
+            (scale * Math.max(1, tokens.length))
+        );
+    };
     const sorted = sources
         .map((track, order) => ({
             track,
             score:
                 (profile.likedIds.has(track.id) ? 2 : 0) +
+                support(track) * 1.5 +
                 moodEvidence(track, controls.mood).score +
                 Math.max(-1, Math.min(1.5, sessionAffinity(track))) -
                 order / 1000,
@@ -65,12 +86,23 @@ export function discoverySeeds(
         group.push(track);
         artists.set(key, group);
     }
-    const distinct = [...artists.values()].map((group) => group[Math.max(0, Math.floor(rotation)) % group.length]);
+    const strongest = sorted[0]?.score ?? 0;
+    const primaryIds = new Set(sorted.filter((item) => item.score >= strongest - 0.6).map((item) => item.track.id));
+    const distinct = [...artists.values()].map((group) => {
+        const preferred = group.filter((track) => primaryIds.has(track.id));
+        const pool = preferred.length ? preferred : group;
+        return pool[Math.max(0, Math.floor(rotation)) % pool.length];
+    });
     if (!distinct.length) return [];
-    const start = (Math.max(0, rotation) * 2) % distinct.length;
-    const rotated = [...distinct.slice(start), ...distinct.slice(0, start)];
+    const primary = distinct.filter((track) => primaryIds.has(track.id));
+    const start = (Math.max(0, rotation) * 2) % Math.max(1, primary.length);
+    const rotated = [
+        ...primary.slice(start),
+        ...primary.slice(0, start),
+        ...distinct.filter((track) => !primaryIds.has(track.id)),
+    ];
     const eligible = new Map(sources.map((track) => [track.id, track]));
-    const current = anchor && eligible.get(anchor.id);
+    const current = currentAnchor && eligible.get(currentAnchor.id);
     const selected: Track[] = current ? [current] : [];
     const add = (track: Track) => {
         if (!selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)))
@@ -95,7 +127,7 @@ export function discoverySeeds(
                   .sort((left, right) => right.score - left.score)[0]?.track
             : undefined;
         const alternative =
-            selected.length >= 2
+            controls.discovery === 'new' && selected.length >= 2
                 ? available.find(
                       (track) => hasMusicalMetadata(track) && selected.every((item) => compare(track, item) < 0.5),
                   )

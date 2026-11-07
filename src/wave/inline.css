@@ -418,7 +418,7 @@ html.codex-wave-active .playbackSoundBadge__avatar .codex-wave-no-art::after {
     margin: 14px 0 !important;
     color: #bbb;
 }
-:is(#codex-wave-inline, #codex-playlist-import) .cw-import-file {
+:is(#codex-wave-inline, #codex-playlist-import) :is(.cw-import-file, .cw-import-verify, .cw-import-use-created) {
     padding: 7px 10px;
     margin: 10px 0;
     border: 1px solid #555;
@@ -1076,4 +1076,10 @@ html:has(#codex-wave-inline .cw-settings-dialog[open], #codex-playlist-import .c
     align-self: stretch;
 }
 
-#codex-wave-inline .cw-analysis{margin:6px 20px 14px;color:#999;font:11px/1.4 Arial,sans-serif}
+#codex-wave-inline .cw-analysis {
+    margin: 6px 20px 14px;
+    color: #999;
+    font:
+        11px/1.4 Arial,
+        sans-serif;
+}

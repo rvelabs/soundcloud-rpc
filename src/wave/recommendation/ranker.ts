@@ -28,6 +28,7 @@ import {
 } from './sessionSignals';
 import { preferenceEvidence } from './evidence';
 import { catalogSimilarity } from './similarity';
+import { parseSoundCloudTitle } from '../../utils/trackParser';
 const toneHints = {
     bass: new Set(['bass', '808', 'sub', 'phonk', 'trap', 'dubstep', 'drill']),
     bright: new Set(['bright', 'synth', 'pop', 'trance', 'hyperpop', 'vocal', 'sparkle']),
@@ -113,6 +114,8 @@ function scoreTrack(
         established: boolean;
         negative: Feedback[];
         tokenScale: number;
+        activeReferences: Track[];
+        activeIds: Set<string>;
     },
 ): Recommendation | null {
     const tags = tokensOf(track);
@@ -128,6 +131,10 @@ function scoreTrack(
     const seedSimilarity = Math.max(0, ...intent.references.map((seed) => compare(track, seed)));
     const usable = (track.relatedTo || []).filter((id) => !profile.dislikedIds.has(id) && !intent.rejected.has(id));
     const references = usable.filter((id) => intent.referenceIds.has(id));
+    const activeLinks = usable.filter((id) => intent.activeIds.has(id));
+    const directionSimilarity = Math.max(0, ...intent.activeReferences.map((seed) => compare(track, seed)));
+    const focused = intent.activeReferences.length > 0 && !['favorites', 'familiar'].includes(controls.discovery);
+    if (focused && !activeLinks.length && directionSimilarity < 0.22) return null;
     if (
         intent.established &&
         !controls.genre &&
@@ -135,6 +142,7 @@ function scoreTrack(
         !context.knownLikedApiIds?.has(track.apiId || 0) &&
         seedSimilarity < 0.12 &&
         references.length < 2 &&
+        !activeLinks.length &&
         (hasMusicalMetadata(track) || references.length === 0)
     )
         return null;
@@ -150,14 +158,18 @@ function scoreTrack(
     const affinityFactor =
         controls.discovery === 'new' ? 0.9 : ['familiar', 'favorites'].includes(controls.discovery) ? 1.15 : 1;
     let score = affinity * affinityFactor + seedSimilarity * familiarFactor - negativeSimilarity * 2.2;
+    if (focused) {
+        score += directionSimilarity * 1.2 + Math.min(2, activeLinks.length) * 2;
+        if (activeLinks.length) reasons.push('связь с опорными записями этой волны');
+    }
     if (track.source === 'related' && track.relatedTo?.length) {
-        if (usable.length) {
+        if (focused ? activeLinks.length : usable.length) {
             score +=
                 (intent.references.length ? (hasMusicalMetadata(track) ? 0.35 : 0.9) : 2.2) +
                 seedSimilarity * 1.5 +
                 Math.min(2, references.length) * 0.35;
             reasons.push(
-                references.length ? 'похожие треки к понравившимся записям' : 'похожие треки к музыке текущей сессии',
+                references.length ? 'похожие треки к понравившимся записям' : 'похожие треки к опорным записям',
             );
             if (references.length > 1) reasons.push('рекомендуется к нескольким вашим трекам');
         } else {
@@ -279,6 +291,12 @@ function scoreTrack(
     score += hash(track.id, context.seed || 1) * 0.12;
     if (!reasons.length) reasons.push('новый трек из каталога');
     return {
+        selection: {
+            profileSimilarity: seedSimilarity,
+            directionSimilarity,
+            activeLinks: activeLinks.length,
+            staleLinks: usable.length - activeLinks.length,
+        },
         track,
         score,
         quality,
@@ -302,6 +320,8 @@ export function recommend(
     let tokenScale = 5;
     for (const weight of profile.tokens.values()) tokenScale = Math.max(tokenScale, Math.abs(weight));
     const intent = {
+        activeReferences: context.discoverySeeds || [],
+        activeIds: new Set((context.discoverySeeds || []).map((track) => track.id)),
         tokenScale,
         rejected,
         references: profile.trustedSeeds.length ? profile.trustedSeeds : profile.positiveSeeds,
@@ -384,16 +404,24 @@ export function recommend(
         ...reactions.map((event) => event.track),
         ...(context.recentTracks || []),
     ]);
+    const trustedArtists = new Set(intent.references.map((track) => artistIdentity(track.artist)));
     const artistCache = new Map<string, string>();
     const artistOf = (track: Track): string => {
-        let value = artistCache.get(track.artist);
+        const key = JSON.stringify([track.artist, track.title]);
+        let value = artistCache.get(key);
         if (value === undefined) {
-            value = artistIdentity(track.artist);
-            artistCache.set(track.artist, value);
+            const parsed = parseSoundCloudTitle(track.title).artist;
+            const credited = parsed && artistIdentity(parsed);
+            value = credited && trustedArtists.has(credited) ? credited : artistIdentity(track.artist);
+            artistCache.set(key, value);
         }
         return value;
     };
-    const recent = (context.recentArtists || []).map(artistIdentity);
+    const recent = (context.recentArtists || []).map((name, index) => {
+        const item = context.recentTracks?.[index];
+        const track = item?.artist === name ? item : context.recentTracks?.find((track) => track.artist === name);
+        return track ? artistOf(track) : artistIdentity(name);
+    });
     const recentIndexes = new Map<string, number>();
     recent.forEach((name, index) => {
         if (!recentIndexes.has(name)) recentIndexes.set(name, index);

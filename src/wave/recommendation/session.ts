@@ -78,6 +78,10 @@ export class RecommendationSession {
     private refreshedDirection = '';
     private candidateEpoch = 0;
     private anchor?: Track;
+    private activeSeeds: Track[] = [];
+    discoveryRoots(): Track[] {
+        return this.activeSeeds.map((track) => ({ ...track }));
+    }
     setAnchor(track?: Track): void {
         this.anchor = track;
         this.invalidateRanking();
@@ -117,6 +121,7 @@ export class RecommendationSession {
             .map((item) => item.track.artist);
     }
     clearCandidates(): void {
+        this.activeSeeds = [];
         this.corpusRevision++;
         this.similarity.clear();
         for (const item of [...this.selectionTrail]) if (!this.recentIds.includes(item.id)) this.release(item.id);
@@ -208,6 +213,7 @@ export class RecommendationSession {
         }
         return {
             now,
+            discoverySeeds: this.activeSeeds,
             activity: this.activity,
             recentTrackIds: this.recentIds,
             knownLikedApiIds: this.knownApiIds,
@@ -246,6 +252,7 @@ export class RecommendationSession {
     private copyRecommendations(items: Recommendation[]): Recommendation[] {
         return items.map((item) => ({
             ...item,
+            ...(item.selection ? { selection: { ...item.selection } } : {}),
             reasons: [...item.reasons],
             track: {
                 ...item.track,
@@ -322,24 +329,23 @@ export class RecommendationSession {
         const controls = { ...this.controls, mood, activity: this.activity };
         const rotation = this.rotation++;
         this.invalidateRanking();
-        const found = await this.provider.related(
-            discoverySeeds(
-                {
-                    ...this.profile(),
-                    positiveSeeds: this.profile().positiveSeeds.filter((track) => this.allowed(track)),
-                    trustedSeeds: this.profile().trustedSeeds.filter((track) => this.allowed(track)),
-                },
-                controls,
-                rotation,
-                context.anchor && this.allowed(context.anchor) ? context.anchor : undefined,
-                {
-                    ...context,
-                    sessionReactions: recentReactions(this.events, this.now()).filter((event) =>
-                        this.allowed(event.track),
-                    ),
-                },
-            ),
+        const seeds = discoverySeeds(
+            {
+                ...this.profile(),
+                positiveSeeds: this.profile().positiveSeeds.filter((track) => this.allowed(track)),
+                trustedSeeds: this.profile().trustedSeeds.filter((track) => this.allowed(track)),
+            },
+            controls,
+            rotation,
+            this.anchor && this.allowed(this.anchor) ? this.anchor : undefined,
+            {
+                ...context,
+                sessionReactions: recentReactions(this.events, this.now()).filter((event) => this.allowed(event.track)),
+            },
         );
+        this.activeSeeds = seeds;
+        this.invalidateRanking();
+        const found = await this.provider.related(seeds);
         if (epoch !== this.candidateEpoch) return [];
         this.addCandidates(found);
         return this.rank();

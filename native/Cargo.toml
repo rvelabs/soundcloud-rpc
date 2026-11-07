@@ -1,6 +1,6 @@
 [package]
 name = "soundcloud-native"
-version = "0.2.7"
+version = "0.2.9"
 edition = "2024"
 rust-version = "1.88"
 description = "SoundCloud desktop host for Windows WebView2"

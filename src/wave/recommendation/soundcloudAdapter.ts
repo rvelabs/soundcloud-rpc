@@ -61,6 +61,9 @@ export class SoundCloudRecommender {
     preparationRevision(): number {
         return this.feedbackRevision;
     }
+    discoveryRoots(): Track[] {
+        return this.session.discoveryRoots();
+    }
     getExcludedArtists(): string[] {
         return [...this.excludedArtists];
     }
@@ -251,7 +254,12 @@ export class SoundCloudRecommender {
         return this.session.accepts(toTrack(candidate));
     }
     setAnchor(candidate?: WaveCandidate): void {
-        this.session.setAnchor(candidate ? toTrack(candidate) : undefined);
+        const previous = candidate && this.candidates.get(candidate.url);
+        this.session.setAnchor(
+            candidate
+                ? toTrack({ ...previous, ...candidate, relatedTo: candidate.relatedTo || previous?.relatedTo })
+                : undefined,
+        );
     }
     addCandidates(tracks: WaveCandidate[], persist = true): void {
         if (persist) this.seedLikes(tracks.filter((track) => track.liked === true));
@@ -360,10 +368,16 @@ export class SoundCloudRecommender {
     rank(limit = 10): WaveCandidate[] {
         return this.session
             .rank(limit)
-            .map(({ track, reasons, evidence }): WaveCandidate | undefined => {
+            .map(({ track, score, reasons, evidence, selection }): WaveCandidate | undefined => {
                 const candidate = this.candidates.get(track.id);
                 return candidate
-                    ? { ...candidate, recommendationReasons: reasons, recommendationEvidence: evidence }
+                    ? {
+                          ...candidate,
+                          recommendationReasons: reasons,
+                          recommendationEvidence: evidence,
+                          selectionEvidence: selection,
+                          recommendationScore: score,
+                      }
                     : undefined;
             })
             .filter((candidate): candidate is WaveCandidate => Boolean(candidate));
@@ -440,6 +454,9 @@ export class SoundCloudRecommender {
     }
     diagnostics(): object {
         return {
+            activeRoots: this.session
+                .discoveryRoots()
+                .map(({ id, title, artist, genre }) => ({ id, title, artist, genre })),
             candidates: this.candidates.size,
             measuredCandidates: [...this.candidates.values()].filter(
                 (track) => track.features?.source === 'media-element-v1',
@@ -456,6 +473,7 @@ export class SoundCloudRecommender {
                 url: item.track.id,
                 score: Math.round(item.score * 100) / 100,
                 reasons: item.reasons,
+                selection: item.selection,
                 bpm: item.track.features?.bpm,
                 tempoConfirmed: item.measuredTempoMatch,
             })),

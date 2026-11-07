@@ -82,6 +82,8 @@
         <label class="cw-import-title">Название в SoundCloud <input type="text" maxlength="100" aria-label="Название нового плейлиста" disabled></label>
         <div class="cw-import-progress" hidden><div class="cw-import-progress-head"><span class="cw-import-orbit" aria-hidden="true"></span><strong class="cw-import-caption">Готовим импорт</strong><span class="cw-import-count"></span></div><div class="cw-import-meter" role="progressbar" aria-label="Прогресс импорта" aria-valuemin="0" aria-valuemax="100"><i></i></div></div>
         <p class="cw-import-message" role="status">Найденные совпадения можно проверить перед созданием плейлиста.</p>
+        <button class="cw-import-verify" type="button" data-command="import-verify" hidden>Вернуться в SoundCloud для проверки</button>
+        <button class="cw-import-use-created" type="button" data-command="import-use-created" hidden>Использовать плейлист, созданный вручную с этим названием</button>
         <div class="cw-import-results" aria-live="polite"></div>
         <div class="cw-import-footer"><span class="cw-import-summary"></span><div class="cw-import-footer-actions"><button class="cw-import-cancel" type="button" data-command="import-cancel" hidden>Отменить поиск</button><button class="cw-import-commit" type="button" data-command="import-commit" disabled>Создать в SoundCloud</button></div></div>
       </dialog>`;
@@ -195,12 +197,14 @@
         $('.cw-import-message').textContent = value;
     };
     const importError = (error) =>
-        t(
-            String(error?.message || 'Не удалось завершить импорт.')
-                .replace(/^Error invoking remote method '[^']+':\s*/i, '')
-                .replace(/^Error:\s*/i, ''),
-        );
+        String(error?.message || 'Не удалось завершить импорт.')
+            .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+            .replace(/^Error:\s*/i, '')
+            .split('\n')
+            .map((line) => t(line))
+            .join('\n');
     const updateImportProgress = (phase, completed = 0, total = 0) => {
+        const previousPhase = lastImportProgress?.phase;
         lastImportProgress = { phase, completed, total };
         const progress = $('.cw-import-progress'),
             meter = $('.cw-import-meter');
@@ -215,7 +219,11 @@
             creating: t('Создаём плейлист'),
             adding: t('Добавляем музыку'),
             done: t('Готово'),
-            error: total ? t('Проверка остановлена') : t('Не удалось прочитать источник'),
+            error: ['checking', 'creating', 'adding', 'write'].includes(previousPhase)
+                ? t('Не удалось сохранить плейлист')
+                : total
+                  ? t('Проверка остановлена')
+                  : t('Не удалось прочитать источник'),
         };
         $('.cw-import-caption').textContent = captions[phase] || t('Готовим импорт');
         $('.cw-import-count').textContent = total ? `${Math.min(completed, total)} / ${total}` : '';
@@ -607,6 +615,7 @@
                         $('.cw-import-title input').value = draft.title || draft.source.title;
                         $('.cw-import-title input').disabled = false;
                         $('.cw-import-resume').hidden = false;
+                        $('.cw-import-use-created').hidden = !draft.writeIntent || !importer.useCreatedPlaylist;
                         renderImport();
                         importMessage(t('Найденные треки сохранены — их можно добавить в плейлист.'));
                     })
@@ -650,9 +659,10 @@
                     }
                     importMatches = (result.matches || []).map((item, index) => ({
                         ...item,
-                        selected: (result.selected || result.selectedIndexes)
-                            ? (result.selected || result.selectedIndexes).includes(index)
-                            : importMatches[index]?.selected,
+                        selected:
+                            result.selected || result.selectedIndexes
+                                ? (result.selected || result.selectedIndexes).includes(index)
+                                : importMatches[index]?.selected,
                         imported:
                             result.writtenTitle === result.title && result.savedUrls?.includes(item.soundcloud?.url),
                     }));
@@ -722,6 +732,8 @@
                 return;
             }
             importBusy = true;
+            $('.cw-import-verify').hidden = true;
+            $('.cw-import-use-created').hidden = true;
             button.disabled = true;
             $('.cw-import-file').disabled = true;
             $('.cw-import-source button').disabled = true;
@@ -753,13 +765,67 @@
                     renderImport();
                     updateImportProgress('done', result.added + result.already, result.added + result.already);
                 })
-                .catch((error) => {
-                    importMessage(importError(error));
-                    updateImportProgress('error');
+                .catch(async (error) => {
+                    let savedCount = 0;
+                    try {
+                        const draft = await importer.draft?.();
+                        if (draft?.writtenPlaylistId) {
+                            const saved = new Set(draft.savedUrls || []);
+                            savedCount = saved.size;
+                            importMatches = importMatches.map((item) =>
+                                saved.has(item.soundcloud?.url) ? { ...item, imported: true } : item,
+                            );
+                        }
+                    } catch {}
+                    importMessage(
+                        importError(error) +
+                            (savedCount
+                                ? t(' Уже сохранено в плейлист: {count}. Повторное добавление продолжит импорт.', {
+                                      count: savedCount,
+                                  })
+                                : ''),
+                    );
+                    $('.cw-import-verify').hidden = !/HTTP 403\b/.test(String(error));
+                    $('.cw-import-use-created').hidden =
+                        !importer.useCreatedPlaylist ||
+                        !/HTTP 403\b|Previous playlist creation is not yet confirmed/.test(String(error));
+                    updateImportProgress(
+                        'error',
+                        lastImportProgress?.completed || 0,
+                        lastImportProgress?.total || indexes.length,
+                    );
                 })
                 .finally(() => {
                     importBusy = false;
                     $('.cw-import-source button').disabled = false;
+                    renderImport();
+                });
+            return;
+        }
+        if (command === 'import-verify') {
+            saveImportSelection();
+            $('.cw-import-dialog').close();
+            return;
+        }
+        if (command === 'import-use-created') {
+            if (importBusy || !importer.useCreatedPlaylist) return;
+            importBusy = true;
+            button.disabled = true;
+            void importer
+                .useCreatedPlaylist({ title: $('.cw-import-title input').value.trim() })
+                .then((draft) => {
+                    const saved = new Set(draft.savedUrls || []);
+                    importMatches = importMatches.map((item) => ({
+                        ...item,
+                        imported: saved.has(item.soundcloud?.url),
+                    }));
+                    importMessage(t('Плейлист выбран. Нажмите «Добавить выбранные в SoundCloud», чтобы продолжить.'));
+                    button.hidden = true;
+                })
+                .catch((error) => importMessage(importError(error)))
+                .finally(() => {
+                    importBusy = false;
+                    button.disabled = false;
                     renderImport();
                 });
             return;
@@ -946,12 +1012,14 @@
     });
     let audioStatus;
     const renderAnalysis = (value) => {
-        if(!value)return;audioStatus=value;
-        const label=$('.cw-analysis');label.hidden=!(value.analysed>0);
-        const text=t('Измерено треков: {count}',{count:value.analysed||0});
-        if(label.textContent!==text)label.textContent=text;
+        if (!value) return;
+        audioStatus = value;
+        const label = $('.cw-analysis');
+        label.hidden = !(value.analysed > 0);
+        const text = t('Измерено треков: {count}', { count: value.analysed || 0 });
+        if (label.textContent !== text) label.textContent = text;
     };
-    api.on('analysis',renderAnalysis);
+    api.on('analysis', renderAnalysis);
     api.on('stats', (stats) => {
         heardCount = stats?.heard || 0;
         $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: heardCount });

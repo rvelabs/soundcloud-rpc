@@ -19,6 +19,11 @@ async function boot() {
     if (window !== window.top || location.origin !== 'https://soundcloud.com') return;
     const page = window as any;
     if (page.__soundcloudNative) return;
+    if (page.__SC_NATIVE_TASTE_AUDIT) {
+        page.__soundcloudNative = { tick: async () => {} };
+        await import('./tasteAudit').then((module) => module.tasteAudit());
+        return;
+    }
     const errors: string[] = [];
     window.addEventListener('error', (event) => {
         errors.push(String(event.error?.stack || event.message).slice(0, 1200));
@@ -195,7 +200,11 @@ async function boot() {
             page.__soundcloudEqualizerPanel?.language(language);
         },
         copyDiagnostics: async () => {
-            const value = { ...(await invoke<object>('native_diagnostics')), wave: wave.diagnostics() };
+            const value = {
+                ...(await invoke<object>('native_diagnostics')),
+                wave: wave.diagnostics(),
+                importer: importer.diagnostics(),
+            };
             await navigator.clipboard.writeText(JSON.stringify(value, null, 2));
         },
     };

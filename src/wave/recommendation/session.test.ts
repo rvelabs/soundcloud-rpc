@@ -5,7 +5,7 @@ import type { Track } from './types';
 afterEach(() => vi.restoreAllMocks());
 const track = (id: string): Track => ({ id, artist: id, title: id, genre: 'ambient' });
 describe('recommendation session caching and sequential balance', () => {
-    it('discovers from the accepted continuation rather than a stale initial anchor', async () => {
+    it('keeps unplayed queue items out of discovery roots and follows an explicit endorsement', async () => {
         const initial = track('initial'),
             next = track('next');
         let received: Track[] = [];
@@ -20,6 +20,13 @@ describe('recommendation session caching and sequential balance', () => {
         session.setAnchor(initial);
         session.reserve(next.id);
         session.accept(next.id);
+        await session.refresh();
+        expect(received[0].id).toBe(initial.id);
+        session.setAnchor(next);
+        session.feedback({ track: next, kind: 'complete', origin: 'wave', listenedFraction: 1 });
+        await session.refresh();
+        expect(received[0].id).toBe(initial.id);
+        session.feedback({ track: next, kind: 'like' });
         await session.refresh();
         expect(received[0].id).toBe(next.id);
     });

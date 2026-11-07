@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-const host = vi.hoisted(() => ({ invoke: vi.fn(), player: vi.fn() }));
+const host = vi.hoisted(() => ({ invoke: vi.fn(), player: vi.fn(), playlistModels: [] as unknown[] }));
+vi.mock('../../src/soundcloud/nativeRuntime', () => ({ nativeRuntimeExports: () => host.playlistModels }));
 vi.mock('../../src/soundcloud/nativePlayerBridge', () => ({
     nativeAutoplay: () => null,
     installNativePlayerMonitor: () => null,
@@ -23,6 +24,7 @@ const turn = async () => {
 beforeEach(() => {
     host.invoke.mockReset();
     host.player.mockReset();
+    host.playlistModels = [];
     const page: any = new EventTarget();
     page.__TAURI_INTERNALS__ = { invoke: host.invoke };
     vi.stubGlobal('window', page);
@@ -169,6 +171,8 @@ function backend(saved: any = draft()) {
         failAfterCreate: false,
         failAfterUpdate: false,
         failFlush: false,
+        createFailure: undefined as Error | undefined,
+        updateFailure: undefined as Error | undefined,
         playlist: undefined as any,
         draft: structuredClone(saved),
     };
@@ -191,6 +195,7 @@ function backend(saved: any = draft()) {
         if (request.operation === 'playlist') return structuredClone(state.playlist);
         if (request.operation === 'createPlaylist') {
             expect(args.expectedOwner).toBe(state.owner);
+            if (state.createFailure) throw state.createFailure;
             state.created++;
             state.playlist = {
                 id: 99,
@@ -205,6 +210,7 @@ function backend(saved: any = draft()) {
         }
         if (request.operation === 'updatePlaylist') {
             expect(args.expectedOwner).toBe(state.owner);
+            if (state.updateFailure) throw state.updateFailure;
             state.updated++;
             state.playlist = { ...state.playlist, title: request.title, tracks: request.tracks.map(raw) };
             if (state.failAfterUpdate) {
@@ -318,14 +324,96 @@ it('continues a large partial import after a lost append response without duplic
     const selection = { indexes: job.matches.map((_, i) => i), title: 'Imported' };
     await expect(importer.commit(selection)).rejects.toThrow('response was lost');
     expect(state.draft.writtenPlaylistId).toBe(99);
-    expect(state.draft.savedUrls).toHaveLength(50);
+    expect(state.draft.savedUrls).toHaveLength(1);
     const restarted = new Importer();
     await restarted.draft();
     const result = await restarted.commit(selection);
     expect(state.created).toBe(1);
     expect(state.playlist.tracks).toHaveLength(121);
     expect(new Set(state.playlist.tracks.map((track: any) => track.id)).size).toBe(121);
-    expect(result.added).toBe(21);
-    expect(result.already).toBe(100);
+    expect(result.added).toBe(71);
+    expect(result.already).toBe(50);
     expect(state.draft.savedUrls).toHaveLength(121);
+});
+
+it('keeps all matches after browser CAPTCHA rejection and permits retry without a phantom pending creation', async () => {
+    const state = backend();
+    state.createFailure = Error('SoundCloud HTTP 403 (POST /playlists): challenge');
+    class Model {
+        async save() {
+            throw { status: 403, responseJSON: { message: 'CAPTCHA required' } };
+        }
+    }
+    Object.assign(Model.prototype, { resource_type: 'playlist' });
+    host.playlistModels = [Model];
+    const importer = new Importer();
+    await importer.draft();
+    await expect(importer.commit({ indexes: [0], title: 'Imported' })).rejects.toThrow('HTTP 403');
+    expect(state.created).toBe(0);
+    expect(state.draft.writeIntent).toBeUndefined();
+    expect(state.draft.matches[0].soundcloud.apiId).toBe(11);
+    expect(importer.diagnostics()).toMatchObject({
+        phase: 'creating',
+        pendingCreation: false,
+        failure: { status: 403, transport: 'browser' },
+    });
+    state.createFailure = undefined;
+    const result = await importer.commit({ indexes: [0], title: 'Imported' });
+    expect(result.playlistId).toBe(99);
+    expect(state.created).toBe(1);
+});
+
+it('creates a partial playlist from found matches and resumes after a later access rejection', async () => {
+    const job = draft();
+    job.matches = [
+        job.matches[0],
+        { source: { artist: 'Missing', title: 'Missing' } } as any,
+        { ...job.matches[0], soundcloud: { ...job.matches[0].soundcloud, apiId: 12, url: raw(12).permalink_url } },
+    ];
+    job.source.tracks = job.matches.map((match) => match.source);
+    const state = backend(job);
+    state.updateFailure = Error('SoundCloud HTTP 403 (PUT /playlists/99): challenge');
+    const importer = new Importer();
+    await importer.draft();
+    await expect(importer.commit({ indexes: [0, 1, 2], title: 'Imported' })).rejects.toThrow('HTTP 403');
+    expect(state.playlist.tracks.map((track: any) => track.id)).toEqual([11]);
+    expect(state.draft.writtenPlaylistId).toBe(99);
+    expect(state.draft.savedUrls).toEqual([raw(11).permalink_url]);
+    state.updateFailure = undefined;
+    const result = await importer.commit({ indexes: [0, 1, 2], title: 'Imported' });
+    expect(state.created).toBe(1);
+    expect(result).toMatchObject({ added: 1, already: 1, unmatched: 1 });
+    expect(state.playlist.tracks.map((track: any) => track.id)).toEqual([11, 12]);
+    expect(
+        host.invoke.mock.calls.find(
+            ([command, args]) => command === 'catalog_request' && args.request.operation === 'createPlaylist',
+        )?.[1].request.tracks,
+    ).toEqual([11]);
+});
+
+it('only on explicit selection adopts a manually created owned playlist and preserves its existing tracks', async () => {
+    const job = { ...draft(), writeIntent: { title: 'Imported', trackIds: [11], startedAt: Date.now() } };
+    const state = backend(job);
+    state.playlist = { id: 99, title: 'Imported', user: { id: 7 }, tracks: [raw(88)] };
+    const importer = new Importer();
+    await importer.draft();
+    await expect(importer.commit({ indexes: [0], title: 'Imported' })).rejects.toThrow('not yet confirmed');
+    expect(state.created).toBe(0);
+    await importer.useCreatedPlaylist({ title: 'Imported' });
+    expect(state.draft.writeIntent).toBeUndefined();
+    const result = await importer.commit({ indexes: [0], title: 'Imported' });
+    expect(result.added).toBe(1);
+    expect(state.created).toBe(0);
+    expect(state.playlist.tracks.map((track: any) => track.id)).toEqual([88, 11]);
+});
+
+it('does not adopt a namesake owned by another account', async () => {
+    const state = backend();
+    state.playlist = { id: 99, title: 'Imported', user: { id: 8 }, tracks: [] };
+    const importer = new Importer();
+    await importer.draft();
+    await expect(importer.useCreatedPlaylist({ title: 'Imported' })).rejects.toThrow('another SoundCloud account');
+    expect(state.draft.writtenPlaylistId).toBeUndefined();
+    expect(state.created).toBe(0);
+    expect(state.updated).toBe(0);
 });

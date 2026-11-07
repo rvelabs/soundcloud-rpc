@@ -1,5 +1,6 @@
 import { api } from './bridge';
 import { nativeRuntimeExports } from '../../src/soundcloud/nativeRuntime';
+import { playlistRequestError } from './playlistErrors';
 
 const browserCreated = new Map<number, () => Promise<void>>();
 export const createdPlaylistIds = () => [...browserCreated.keys()];
@@ -21,7 +22,12 @@ export async function createPlaylist(
     const Model = exports().find(
         (value: any) => value?.prototype?.resource_type === 'playlist' && typeof value.prototype.save === 'function',
     ) as any;
-    if (!Model) throw Error('SoundCloud playlist model is not available. Reopen the Library page and retry.');
+    if (!Model)
+        throw playlistRequestError(
+            Error('SoundCloud HTTP 403: playlist model is unavailable; open Library and retry'),
+            'create',
+            'browser',
+        );
     if ((await request('me')).id !== owner) throw Error('SoundCloud account changed');
     const model = new Model({ title: title.trim(), sharing: 'private', tracks: tracks.map((id) => ({ id })) });
     model.hold?.();
@@ -42,10 +48,8 @@ export async function createPlaylist(
         });
         while (browserCreated.size > 100) browserCreated.delete(browserCreated.keys().next().value!);
         return result;
-    } catch (error: any) {
-        throw Error(
-            error instanceof Error ? error.message : 'SoundCloud browser API HTTP ' + (error?.status || 'unknown'),
-        );
+    } catch (error) {
+        throw playlistRequestError(error, 'create', 'browser');
     } finally {
         model.release?.();
     }
@@ -60,8 +64,13 @@ export async function updatePlaylist(id: number, title: string, tracks: number[]
     const Model = nativeRuntimeExports().find(
         (value: any) => value?.prototype?.resource_type === 'playlist' && typeof value.prototype.save === 'function',
     ) as any;
-    if (!Model || (await api('me')).id !== expectedOwner)
-        throw Error('SoundCloud account changed or playlist model unavailable');
+    if (!Model)
+        throw playlistRequestError(
+            Error('SoundCloud HTTP 403: playlist model is unavailable; open Library and retry'),
+            'update',
+            'browser',
+        );
+    if ((await api('me')).id !== expectedOwner) throw Error('SoundCloud account changed');
     const current = await api('playlist', { id });
     if ((current.playlist || current).user?.id !== expectedOwner)
         throw Error('Playlist belongs to another SoundCloud account');
@@ -71,6 +80,8 @@ export async function updatePlaylist(id: number, title: string, tracks: number[]
         if ((await api('me')).id !== expectedOwner) throw Error('SoundCloud account changed');
         await Promise.resolve(model.save());
         return model.toJSON();
+    } catch (error) {
+        throw playlistRequestError(error, 'update', 'browser');
     } finally {
         model.release?.();
     }

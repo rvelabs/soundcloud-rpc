@@ -887,7 +887,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let smoke = args.iter().any(|arg| arg == "--smoke-test");
     let probe = args.iter().any(|arg| arg == "--probe");
-    let account_check = args.iter().any(|arg| arg == "--account-check");
+    let taste_audit = args.iter().any(|arg| arg == "--taste-audit");
+    let account_check = taste_audit || args.iter().any(|arg| arg == "--account-check");
     let account_quick = args.iter().any(|arg| arg == "--account-quick");
     let account_report = if account_check {
         Some(PathBuf::from(
@@ -953,7 +954,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ]);
     let app = builder.setup(move |app| {
         let profile = profile_override.clone().unwrap_or(app.path().app_local_data_dir()?);
-        if (smoke || probe) && profile_override.is_none() { return Err("Integration tests require an isolated --profile directory".into()); }
+        if (smoke || probe || taste_audit) && profile_override.is_none() { return Err("Integration tests require an isolated --profile directory".into()); }
         let root_store=Arc::new(Store::open(&profile)?);
         if profile_override.is_none() && !smoke && !probe && !account_check && let Ok(roaming)=std::env::var("APPDATA") && let Err(error)=migration::stage(&root_store,&PathBuf::from(roaming).join("soundcloud-rpc")) {eprintln!("Previous SoundCloud data migration deferred: {error}");}
         let accounts=accounts::Accounts::new(&profile,root_store.clone())?;
@@ -985,7 +986,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 url.scheme()=="https" || url.scheme()=="about" || url.host_str()==Some("tauri.localhost")
             }});
         if !smoke {
-            window_builder = window_builder.initialization_script(format!("window.__SC_NATIVE_PROBE={probe};window.__SC_NATIVE_ACCOUNT_CHECK={account_check};window.__SC_NATIVE_CHECK_QUICK={account_quick};{}", include_str!("../assets/inject.js")));
+            window_builder = window_builder.initialization_script(format!("window.__SC_NATIVE_PROBE={probe};window.__SC_NATIVE_ACCOUNT_CHECK={account_check};window.__SC_NATIVE_TASTE_AUDIT={taste_audit};window.__SC_NATIVE_CHECK_QUICK={account_quick};{}", include_str!("../assets/inject.js")));
         }
         if smoke {
             window_builder = window_builder.initialization_script(format!("window.__scSmokeErrors=[];addEventListener('error',e=>window.__scSmokeErrors.push(e.message||e.target?.src||'resource error'),true);const start=()=>{{ {} }};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{{once:true}});else start();", include_str!("../assets/smoke.js")));

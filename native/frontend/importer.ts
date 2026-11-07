@@ -8,6 +8,7 @@ import { Events, Profile, api } from './bridge';
 import { createPlaylist, updatePlaylist } from './playlists';
 import { net } from './platform';
 import { completeSpotify } from './spotify';
+import { PlaylistRequestError } from './playlistErrors';
 
 type Draft = Omit<ImportJob, 'matches' | 'title' | 'savedUrls'> & {
     matches: (ImportMatch & { pending?: boolean })[];
@@ -26,6 +27,25 @@ export class Importer {
     private profile?: Profile;
     private owner = 0;
     private committing?: Promise<unknown>;
+    private phase = 'idle';
+    private failure?: { phase: string; status: number; transport?: string; message: string };
+    diagnostics() {
+        return {
+            phase: this.phase,
+            running: this.running,
+            saving: Boolean(this.committing),
+            tracks: this.result?.matches.length || 0,
+            matches: this.result?.matches.filter((match) => match.soundcloud).length || 0,
+            saved: this.result?.savedUrls.length || 0,
+            playlistId: this.result?.writtenPlaylistId,
+            pendingCreation: Boolean(this.result?.writeIntent),
+            failure: this.failure,
+        };
+    }
+    private progress(state: { phase: string; [key: string]: unknown }): void {
+        this.phase = state.phase;
+        this.events.emit('progress', state);
+    }
     onProgress = (callback: (state: any) => void) => this.events.on('progress', callback);
     private async journal(checkAccount = false): Promise<Profile> {
         if (!this.profile || checkAccount) {
@@ -67,6 +87,64 @@ export class Importer {
         }
     };
     cancel = () => this.abort?.abort();
+    useCreatedPlaylist = async ({ title }: { title: string }) => {
+        if (this.running || this.committing) throw Error('Import already running');
+        await this.journal(true);
+        const result = this.result,
+            owner = this.owner;
+        if (!result) throw Error('Find tracks first');
+        const name = title.trim();
+        if (!name || [...name].length > 100) throw Error('Playlist title must contain 1–100 characters');
+        const path = `/users/${owner}/playlists`;
+        let params: Record<string, string> = { limit: '200', linked_partitioning: '1' };
+        const ids = new Set<number>(),
+            seen = new Set<string>();
+        for (let page = 0; ; page++) {
+            if (page >= 20) throw Error('Could not read the complete playlist list');
+            const value = await api('radio', { path, params }, true);
+            if (!Array.isArray(value.collection)) throw Error('Could not read your SoundCloud playlists');
+            for (const item of value.collection)
+                if (item.title === name && Number.isSafeInteger(item.id) && item.id > 0) ids.add(item.id);
+            if (!value.next_href) break;
+            const next = new URL(value.next_href);
+            if (
+                next.origin !== 'https://api-v2.soundcloud.com' ||
+                next.pathname !== path ||
+                next.username ||
+                next.password ||
+                seen.has(next.href)
+            )
+                throw Error('Could not read the complete playlist list');
+            seen.add(next.href);
+            params = Object.fromEntries(
+                [...next.searchParams].filter(([key]) =>
+                    ['limit', 'linked_partitioning', 'representation', 'offset', 'cursor'].includes(key),
+                ),
+            );
+            if (!params.offset && !params.cursor) throw Error('Could not read the complete playlist list');
+        }
+        if (ids.size !== 1)
+            throw Error(
+                ids.size
+                    ? 'В SoundCloud несколько плейлистов с таким названием. Уточните название перед импортом.'
+                    : 'Создайте плейлист в SoundCloud с указанным названием и повторите выбор.',
+            );
+        const id = [...ids][0],
+            playlist = await this.readTarget(id, owner);
+        await this.assertOwner(owner);
+        if (this.result !== result) throw Error('Import changed');
+        result.writtenPlaylistId = id;
+        result.writtenAccountId = owner;
+        result.writtenTitle = result.title = name;
+        result.writeIntent = undefined;
+        const have = new Set(playlist.tracks.map((track: any) => track.id));
+        result.savedUrls = result.matches.flatMap((match) =>
+            match.soundcloud && have.has(match.soundcloud.apiId) ? [match.soundcloud.url] : [],
+        );
+        await this.checkpoint(true);
+        this.failure = undefined;
+        return result;
+    };
     resume = async () => {
         if (this.running || this.committing) throw Error('Import already running');
         await this.journal(true);
@@ -98,14 +176,14 @@ export class Importer {
             let source = await loadSourcePlaylist(link, this.abort.signal, {
                 direct: (url, signal, init) => fetchPublic(url, signal, init, net.fetch as typeof fetch, 15000),
                 onPage: (page) =>
-                    this.events.emit('progress', {
+                    this.progress({
                         phase: 'source',
                         completed: page.tracks.length,
                         total: page.expectedTracks || 0,
                     }),
             });
             source = await completeSpotify(source, link, owner, this.abort.signal, (page) =>
-                this.events.emit('progress', {
+                this.progress({
                     phase: 'source',
                     completed: page.tracks.length,
                     total: page.expectedTracks || 0,
@@ -185,8 +263,8 @@ export class Importer {
             partialReason: source.partialReason,
             savedUrls: previous?.savedUrls || [],
         });
-        this.events.emit('progress', {
-            phase: 'search',
+        this.progress({
+            phase: 'matching',
             tracks: source.tracks,
             title: result.title,
             completed: 0,
@@ -212,8 +290,8 @@ export class Importer {
                         completed++;
                         if (this.result !== result) return;
                         if (completed % 10 === 0) await this.checkpoint();
-                        this.events.emit('progress', {
-                            phase: 'search',
+                        this.progress({
+                            phase: 'matching',
                             index,
                             match: matches[index],
                             completed,
@@ -241,10 +319,22 @@ export class Importer {
     commit = async (selection: { indexes: number[]; title: string }): Promise<any> => {
         if (this.committing) return this.committing;
         if (this.running) throw Error('Wait for track matching to finish');
+        this.failure = undefined;
         const task = this.commitOnce(selection);
         this.committing = task;
         try {
             return await task;
+        } catch (error) {
+            this.failure = {
+                phase: this.phase,
+                status:
+                    error instanceof PlaylistRequestError
+                        ? error.status
+                        : Number(String(error).match(/HTTP (\d{3})\b/)?.[1]) || 0,
+                transport: error instanceof PlaylistRequestError ? error.transport : undefined,
+                message: error instanceof Error ? error.message.slice(0, 600) : 'Playlist saving failed',
+            };
+            throw error;
         } finally {
             this.committing = undefined;
         }
@@ -286,6 +376,7 @@ export class Importer {
         if (!unique.length) throw new Error('Select at least one available track');
         const verified: any[] = [];
         const verifiedIds = new Set<number>();
+        this.progress({ phase: 'checking', completed: 0, total: unique.length });
         for (let offset = 0; offset < unique.length; offset += 50) {
             const data = await api<any[]>(
                 'tracks',
@@ -304,6 +395,7 @@ export class Importer {
                     verified.push(track);
                 }
             }
+            this.progress({ phase: 'checking', completed: Math.min(offset + 50, unique.length), total: unique.length });
         }
         if (!verified.length) throw new Error('SoundCloud cannot play any selected tracks');
         await this.assertOwner(owner);
@@ -340,45 +432,7 @@ export class Importer {
         }
         let playlist = result.writtenPlaylistId ? await this.readTarget(result.writtenPlaylistId, owner) : undefined;
         const initialIds = new Set<number>(playlist?.tracks.map((track: any) => track.id) || []);
-        for (let offset = 0; offset < verified.length; offset += 50) {
-            await this.assertOwner(owner);
-            const have = new Set<number>(playlist?.tracks.map((track: any) => track.id) || []);
-            const chunk = verified.slice(offset, offset + 50).filter((track) => !have.has(track.id));
-            if (chunk.length || playlist?.title !== targetTitle) {
-                if (!playlist) {
-                    result.writeIntent = {
-                        title: targetTitle,
-                        trackIds: chunk.map((track) => track.id),
-                        startedAt: Date.now(),
-                    };
-                    await this.checkpoint(true);
-                    let created;
-                    try {
-                        created = await createPlaylist(targetTitle, result.writeIntent.trackIds, api, undefined, owner);
-                    } catch (error) {
-                        if (/HTTP (400|401|403|404|422) \(POST \/playlists\)/.test(String(error))) {
-                            result.writeIntent = undefined;
-                            await this.checkpoint(true);
-                        }
-                        throw error;
-                    }
-                    result.writtenPlaylistId = (created.playlist || created).id;
-                    if (!Number.isSafeInteger(result.writtenPlaylistId) || result.writtenPlaylistId! <= 0)
-                        throw Error('SoundCloud did not confirm the playlist ID');
-                    result.writtenAccountId = owner;
-                    await this.checkpoint(true);
-                } else {
-                    const ids = [...have, ...chunk.map((track) => track.id)];
-                    if (ids.length > 500)
-                        throw Error('SoundCloud playlist limit is 500 tracks; the saved part was preserved');
-                    await updatePlaylist(playlist.id, targetTitle, ids, owner);
-                }
-                playlist = await this.readTarget(result.writtenPlaylistId!, owner);
-                if (!chunk.every((track) => playlist.tracks.some((saved: any) => saved.id === track.id)))
-                    throw Error(
-                        'SoundCloud has not confirmed every added track. The saved part was preserved; retry to continue.',
-                    );
-            }
+        const rememberSaved = async () => {
             result.writeIntent = undefined;
             result.title = targetTitle;
             result.writtenTitle = targetTitle;
@@ -390,12 +444,56 @@ export class Importer {
                 ]),
             ];
             await this.checkpoint(true);
-            this.events.emit('progress', {
-                phase: 'write',
-                completed: Math.min(offset + 50, verified.length),
+            this.progress({
+                phase: 'adding',
+                completed: verified.filter((track) => confirmed.has(track.id)).length,
                 total: verified.length,
                 title: targetTitle,
             });
+        };
+        if (!playlist) {
+            this.progress({ phase: 'creating', completed: 0, total: verified.length });
+            result.writeIntent = { title: targetTitle, trackIds: [verified[0].id], startedAt: Date.now() };
+            await this.checkpoint(true);
+            let created;
+            try {
+                created = await createPlaylist(targetTitle, result.writeIntent.trackIds, api, undefined, owner);
+            } catch (error) {
+                if (
+                    (error instanceof PlaylistRequestError && error.definite && error.action === 'create') ||
+                    /HTTP (400|401|403|404|409|422|429) \(POST \/playlists\)/.test(String(error))
+                ) {
+                    result.writeIntent = undefined;
+                    await this.checkpoint(true);
+                }
+                throw error;
+            }
+            result.writtenPlaylistId = (created.playlist || created).id;
+            if (!Number.isSafeInteger(result.writtenPlaylistId) || result.writtenPlaylistId! <= 0)
+                throw Error('SoundCloud did not confirm the playlist ID');
+            result.writtenAccountId = owner;
+            await this.checkpoint(true);
+            playlist = await this.readTarget(result.writtenPlaylistId!, owner);
+            if (!playlist.tracks.some((track: any) => track.id === verified[0].id))
+                throw Error('SoundCloud has not confirmed the first track. Retry to continue.');
+            await rememberSaved();
+        }
+        for (let offset = 0; offset < verified.length; offset += 50) {
+            await this.assertOwner(owner);
+            const have = new Set<number>(playlist?.tracks.map((track: any) => track.id) || []);
+            const chunk = verified.slice(offset, offset + 50).filter((track) => !have.has(track.id));
+            if (chunk.length || playlist?.title !== targetTitle) {
+                const ids = [...have, ...chunk.map((track) => track.id)];
+                if (ids.length > 500)
+                    throw Error('SoundCloud playlist limit is 500 tracks; the saved part was preserved');
+                await updatePlaylist(playlist.id, targetTitle, ids, owner);
+                playlist = await this.readTarget(result.writtenPlaylistId!, owner);
+                if (!chunk.every((track) => playlist.tracks.some((saved: any) => saved.id === track.id)))
+                    throw Error(
+                        'SoundCloud has not confirmed every added track. The saved part was preserved; retry to continue.',
+                    );
+            }
+            await rememberSaved();
         }
         const urls = verified.map((track) => track.permalink_url);
         return {

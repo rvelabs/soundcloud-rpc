@@ -45,6 +45,18 @@ export const waveEnglish: Record<string, string> = {
     'Ссылка на публичный плейлист или альбом Spotify': 'Public playlist or Spotify album link',
     'Ссылка на плейлист или альбом Spotify': 'Playlist or Spotify album link',
     'Не удалось прочитать источник': 'Could not read the source',
+    'Не удалось сохранить плейлист': 'Could not save the playlist',
+    'Вернуться в SoundCloud для проверки': 'Return to SoundCloud for verification',
+    'Использовать плейлист, созданный вручную с этим названием':
+        'Use the playlist you created manually with this title',
+    'Создайте плейлист в SoundCloud с указанным названием и повторите выбор.':
+        'Create a SoundCloud playlist with this title, then select it again.',
+    'Плейлист выбран. Нажмите «Добавить выбранные в SoundCloud», чтобы продолжить.':
+        'Playlist selected. Click “Add selected to SoundCloud” to continue.',
+    'SoundCloud отклонил сохранение (HTTP 403). Если появилась капча, пройдите её в SoundCloud и повторите добавление. Найденные треки сохранены.':
+        'SoundCloud rejected saving (HTTP 403). If a CAPTCHA appeared, complete it in SoundCloud, then retry adding. Your matches have been kept.',
+    ' Уже сохранено в плейлист: {count}. Повторное добавление продолжит импорт.':
+        ' Already saved to the playlist: {count}. Retry adding to continue the import.',
     'SoundCloud требует повторного входа (HTTP 401).': 'SoundCloud requires you to sign in again (HTTP 401).',
     'SoundCloud не подтвердил результат записи. Найденные треки сохранены — повторите добавление.':
         'SoundCloud did not confirm the write. Found matches are preserved; retry saving.',

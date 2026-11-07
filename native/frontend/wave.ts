@@ -75,6 +75,32 @@ export class Wave {
     private analysisStatus = { phase: 'idle', reason: '', path: '', sampleSeconds: 0, analysed: 0 };
     private autoplayPrevious?: boolean;
     private failures: Array<{ at: number; message: string }> = [];
+    private decisions: object[] = [];
+
+    private describeDecision(phase: 'start' | 'next', track: WaveCandidate): object {
+        return {
+            at: Date.now(),
+            phase,
+            selected: {
+                url: track.url,
+                title: track.title,
+                artist: track.artist,
+                genre: track.genre,
+                source: track.source,
+                relatedTo: track.relatedTo,
+                score: track.recommendationScore,
+                evidence: track.selectionEvidence,
+                reasons: track.recommendationReasons,
+            },
+            roots: this.recommender
+                ?.discoveryRoots()
+                .map(({ id, title, artist, genre }) => ({ id, title, artist, genre })),
+        };
+    }
+    private rememberDecision(decision: object): void {
+        this.decisions = [...this.decisions, decision].slice(-40);
+        this.profile?.set('waveDecisionTraceV1_' + this.owner, this.decisions);
+    }
 
     constructor() {
         window.addEventListener('__soundcloudWaveManualPause', () => {
@@ -175,6 +201,8 @@ export class Wave {
         this.lastEnrichment = -Infinity;
         this.profile = new Profile('wave-' + user.id);
         await this.profile.load();
+        const journal = this.profile.get('waveDecisionTraceV1_' + user.id);
+        this.decisions = Array.isArray(journal) ? journal.slice(-40) : [];
         this.analysis = new AudioAnalysisCache(this.profile, String(user.id));
         if (!this.controlsSelected)
             this.controls = { ...defaultControls, ...((this.profile.get('controls') as object) || {}) };
@@ -236,9 +264,12 @@ export class Wave {
         if (generation !== this.sessionGeneration) return;
         for (const track of this.recommender!.rank(8)) {
             if (this.manualPause || generation !== this.sessionGeneration) return;
+            this.candidates.set(track.url, track);
+            const decision = this.describeDecision('start', track);
             const result = await this.queue('play', [track.url], generation);
             if (this.manualPause || generation !== this.sessionGeneration) return;
             if (result.state === 'done') {
+                this.rememberDecision(decision);
                 this.recommender!.reserve(track, true);
                 this.events.emit('candidate', track);
                 this.enrich();
@@ -341,8 +372,10 @@ export class Wave {
             if (generation !== this.sessionGeneration || !this.active || this.queued.size >= 2) break;
             if (future.has(track.url) || track.url === this.current?.url) continue;
             this.candidates.set(track.url, track);
+            const decision = this.describeDecision('next', track);
             const result = await this.queue('add', [track.url], generation);
             if (result.state === 'done') {
+                this.rememberDecision(decision);
                 this.queued.add(track.url);
                 this.recommender.reserve(track, true);
             } else if (result.state === 'uncertain') {
@@ -438,6 +471,7 @@ export class Wave {
     }
 
     private forgetAccount(): void {
+        this.decisions = [];
         this.recommender = undefined;
         this.discovery?.dispose();
         this.discovery = undefined;
@@ -586,6 +620,7 @@ export class Wave {
     }
     diagnostics() {
         return {
+            decisions: this.decisions.slice(-12),
             learning: {
                 ready: Boolean(this.recommender),
                 initializing: Boolean(this.initializing),

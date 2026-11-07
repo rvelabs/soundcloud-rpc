@@ -52,12 +52,14 @@ export interface Recommendation {
     track: Track;
     score: number;
     quality?: number;
+    selection?: { profileSimilarity: number; directionSimilarity: number; activeLinks: number; staleLinks: number };
     reasons: string[];
     measuredTempoMatch: boolean;
     evidence?: import('./evidence').PreferenceEvidence[];
 }
 export interface Context {
     now: number;
+    discoverySeeds?: Track[];
     activity?: 'focus' | 'relax' | 'workout' | 'wake' | 'commute' | 'sleep';
     recentTrackIds?: string[];
     knownLikedApiIds?: ReadonlySet<number>;

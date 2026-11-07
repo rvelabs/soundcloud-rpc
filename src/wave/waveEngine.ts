@@ -23,6 +23,8 @@ export interface WaveCandidate {
     playability?: 'available' | 'blocked' | 'preview' | 'protected' | 'unknown';
     recommendationReasons?: string[];
     recommendationEvidence?: import('./recommendation/evidence').PreferenceEvidence[];
+    selectionEvidence?: import('./recommendation/types').Recommendation['selection'];
+    recommendationScore?: number;
     durationSeconds?: number;
     audioRevision?: string;
     features?: SoundFeatures;
