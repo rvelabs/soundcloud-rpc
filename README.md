@@ -2,6 +2,10 @@
 
 **Your SoundCloud library, a personal radio, and playlists from other services — in one Windows app.**
 
+The current Windows release is **0.2.7**, built with **Rust + WebView2**. It keeps the SoundCloud player and adds
+personal radio, playlist import, an equalizer and desktop integrations. The previous Electron build remains available in
+[release 0.32.2](https://github.com/rvelabs/soundcloud-rpc/releases/tag/v0.32.2).
+
 [Download for Windows](https://github.com/rvelabs/soundcloud-rpc/releases/latest) ·
 [Website](https://rvelabs.github.io/soundcloud-rpc/) ·
 [Report a bug](https://github.com/rvelabs/soundcloud-rpc/issues/new/choose)
@@ -29,15 +33,16 @@
    My Wave.
 4. Open the **equalizer** beside the native player's queue button to choose a preset or tune the sound.
 
-Upgrading preserves your profile. The installer is currently unsigned, so Windows may show a publisher warning. SHA-256
-checksums are included with releases.
+The Windows installer replaces the previous Electron installation and imports its supported listening history,
+preferences and audio-analysis cache. WebView2 uses its own sign-in session, so sign in again after migration. Existing
+Native profiles are preserved. The installer has no trusted publisher signature yet; updater packages are signed
+separately and SHA-256 checksums are included with releases.
 
 ## Updates
 
-From 0.28.3, patch releases such as 0.28.3 → 0.28.4 download in the background and install when you quit normally.
-Larger releases show a notification and wait for your choice. Playback is never interrupted by an automatic restart. Use
-**F1 → SoundCloud updates** to check, restart and install, or choose notifications only. Older clients need one manual
-upgrade to enable this. A deployed Cloudflare Worker is updated separately.
+Use **F1 → SoundCloud updates** to check for updates or choose notifications only. Native uses a separate signed
+`native-v…` update channel; Electron does not install Native through its own updater. Install the Windows package once
+to migrate. Closing the main window fully quits the app. A deployed Cloudflare Worker is updated separately.
 
 ## What to expect
 
@@ -95,6 +100,22 @@ updating the desktop app alone does not change an already deployed Worker. Keep 
 updating.
 
 ## Development
+
+The separate `native/` Windows build uses **Rust + WebView2**, with no Electron or Node.js at runtime. Its Rust services
+handle API transport, request priority, bounded caches, encrypted credentials, profile isolation, Discord,
+Last.fm/webhooks, Worker setup and signed Native updates. F1 opens a right-hand panel inside the main window with client
+settings, integrations, plugins/themes, accounts and connection diagnostics. CommonJS plugin hooks run in limited
+QuickJS workers; browser content scripts and the tested recommendation/UI/Web Audio modules remain shared
+TypeScript/JavaScript.
+
+Native keeps its own WebView2 session and imports supported Electron library data. Spotify sign-in is optional when a
+public list is incomplete; Yandex imports try direct access on a confirmed Russian IP, with Worker fallback. The main
+SoundCloud player retains playback and queue control. Build with `npm run native:build`, validate with
+`npm run native:test` and `npm run native:smoke`. Windows x64, Rust MSVC, C++ Build Tools and WebView2 are required.
+`npm run native:installer` additionally needs the Native release signing key (`TAURI_SIGNING_PRIVATE_KEY`) or the
+existing local Windows-protected key. Never regenerate the official key when preparing an update. Native packages use a
+separate `native-v…` release/channel, with signed version binding; Electron updates cannot install them. A local build
+does not publish the update feed or install over Electron.
 
 Node.js 22 and npm:
 

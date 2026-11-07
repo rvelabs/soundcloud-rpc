@@ -60,15 +60,16 @@
                 "license": "https://github.com/rvelabs/soundcloud-rpc/blob/main/LICENSE",
                 "inLanguage": ["ru", "en"],
                 "isAccessibleForFree": true,
-                "downloadUrl": "https://github.com/rvelabs/soundcloud-rpc/releases/latest",
-                "softwareVersion": "0.32.2",
+                "downloadUrl": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.7/SoundCloud-0.2.7-x64-setup.exe",
+                "softwareVersion": "0.2.7",
+                "softwareRequirements": "Microsoft Edge WebView2 Runtime",
                 "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
                 "author": { "@type": "Person", "name": "rvelabs", "url": "https://github.com/rvelabs" },
                 "description": "Бесплатный клиент SoundCloud для Windows: Моя волна, 42 пресета эквалайзера, перенос плейлистов Spotify, Яндекс Музыки и YouTube Music. Открытый код."
             }
         </script>
-        <link rel="stylesheet" href="./styles.css?v=20261105-equalizer" />
-        <script src="./site.js?v=20261107-seo" defer></script>
+        <link rel="stylesheet" href="./styles.css?v=20261107-native-027" />
+        <script src="./site.js?v=20261107-native-027" defer></script>
     </head>
     <body>
         <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -131,7 +132,9 @@
                         Где-то есть твой следующий любимый трек. «Моя волна» поможет его найти — прямо в SoundCloud.
                     </p>
                     <div class="hero-actions">
-                        <a class="button button-dark" href="https://github.com/rvelabs/soundcloud-rpc/releases/latest"
+                        <a
+                            class="button button-dark"
+                            href="https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.7/SoundCloud-0.2.7-x64-setup.exe"
                             ><span data-i18n="download">Скачать для Windows</span
                             ><svg class="icon"><use href="#download" /></svg></a
                         ><a class="text-link" href="#wave"
@@ -139,6 +142,12 @@
                         ></a>
                     </div>
                     <p class="fineprint" data-i18n="heroNote">Бесплатно. Открытый код. Windows 10 / 11, x64.</p>
+                    <a
+                        class="release-note"
+                        href="https://github.com/rvelabs/soundcloud-rpc/releases/tag/native-v0.2.7"
+                        data-i18n="releaseNote"
+                        >Новое в 0.2.7: Rust + WebView2 и исправленный учёт прослушиваний ↗</a
+                    >
                 </div>
                 <div class="record-art" data-ambient aria-hidden="true">
                     <div class="sleeve">
@@ -425,9 +434,10 @@
                         </summary>
                         <div class="faq-answer">
                             <p data-i18n="faqRadioA">
-                                Клиент использует похожие треки SoundCloud, собственное ранжирование и ваши реакции. Это
-                                не закрытый алгоритм Яндекс Музыки. Для начала добавьте несколько лайков или включите
-                                любимый трек. Точность настроения и темпа зависит от доступных метаданных.
+                                Клиент использует похожие треки SoundCloud, собственное ранжирование и ваши реакции.
+                                Обычное прослушивание учитывается и при выключенной волне; звуковые признаки
+                                обрабатываются локально и сохраняются в кэше. Это не закрытый алгоритм Яндекс Музыки.
+                                Точность настроения и темпа зависит от доступных метаданных.
                             </p>
                         </div>
                     </details>
@@ -452,9 +462,8 @@
                             <p data-i18n="faqNetworkA">
                                 В F1 есть мастер личного Cloudflare Worker. Он может использоваться для резервного
                                 подключения SoundCloud и чтения публичных плейлистов. Нужен ваш аккаунт Cloudflare; сам
-                                Cloudflare должен быть доступен в сети. Для нового импорта через Worker обновите и
-                                клиент, и Worker до версии не ниже 0.28.6. Альтернатива для списка треков — импорт
-                                CSV/TXT/TSV.
+                                Cloudflare должен быть доступен в сети. Если Worker уже установлен, обновите его через
+                                мастер в F1. Альтернатива для списка треков — импорт CSV/TXT/TSV.
                             </p>
                         </div>
                     </details>
@@ -464,9 +473,10 @@
                         </summary>
                         <div class="faq-answer">
                             <p data-i18n="faqInstallA">
-                                Windows 10 или 11 (x64) и аккаунт SoundCloud. Скачайте установщик из GitHub Releases.
-                                Доверенной подписи издателя пока нет — Windows может показать предупреждение. Исходный
-                                код и контрольные суммы опубликованы вместе с релизом. Обновление сохраняет профиль.
+                                Windows 10 или 11 (x64), WebView2 и аккаунт SoundCloud. Текущая сборка работает на Rust
+                                + WebView2. Установщик заменяет Electron и переносит поддерживаемую историю и аудиокэш;
+                                в SoundCloud нужно войти заново. Профиль Native сохраняется при обновлении. Доверенной
+                                подписи издателя пока нет — Windows может показать предупреждение.
                             </p>
                         </div>
                     </details>
@@ -477,7 +487,9 @@
                     <p class="eyebrow" data-i18n="downloadKicker">СЛЕДУЮЩИЙ ТРЕК МОЖЕТ СТАТЬ ЛЮБИМЫМ</p>
                     <h2 id="download-title" data-i18n="downloadTitle">Дальше —<br />твоя музыка.</h2>
                     <div class="download-actions">
-                        <a class="button button-dark" href="https://github.com/rvelabs/soundcloud-rpc/releases/latest"
+                        <a
+                            class="button button-dark"
+                            href="https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.7/SoundCloud-0.2.7-x64-setup.exe"
                             ><span data-i18n="download">Скачать для Windows</span
                             ><svg class="icon"><use href="#download" /></svg></a
                         ><a class="text-link" href="https://github.com/rvelabs/soundcloud-rpc"
@@ -486,7 +498,7 @@
                         ></a>
                     </div>
                     <p class="download-note" data-i18n="downloadNote">
-                        Бесплатно · Windows x64 · Нужен аккаунт SoundCloud
+                        0.2.7 · Windows x64 · Rust + WebView2 · Бесплатно
                     </p>
                     <span class="giant-arrow" aria-hidden="true">↗</span>
                 </div>

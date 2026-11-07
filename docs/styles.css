@@ -2008,3 +2008,21 @@ h3 {
         animation: record-spin 24s linear infinite !important;
     }
 }
+
+.release-note {
+    display: block;
+    margin-top: 14px;
+    max-width: 390px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+.release-note:hover {
+    color: var(--orange);
+}
+.release-note:focus-visible {
+    outline: 2px solid var(--orange);
+    outline-offset: 4px;
+}

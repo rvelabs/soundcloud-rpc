@@ -1,0 +1,12 @@
+{
+  "version": "0.2.7",
+  "native": true,
+  "notes": "Исправлен учёт прослушиваний и аудиоанализ, восстановлено обновление направления Моей волны. / Restored listening feedback, audio analysis and My Wave discovery updates.",
+  "pub_date": "2026-11-07T17:58:29.044Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcjF1WW81SXRQKzRnem00YlQ1MnNYdVZmdWluazJvU3FMYk5kNE9wK3ljNzF6c0x5a00zSFk4dnZkai92YUp1ZEk4cmNobVIvN3BwSGlxaGowWU81WGxzMzhTTzJzR1FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDc0MzA4CWZpbGU6U291bmRDbG91ZF8wLjIuN194NjQtc2V0dXAuZXhlCXZlcnNpb246MC4yLjcKdURsYTZSNFAydG5SejhUbUQ5V0dTbE9PeTZ6MlRkd3JZbEdmb0lYRlpsUUZOSmdjWFhNYUJYcWJtdlZiV0ZoN21TaVE3bDRIbFJteTllNzR1UTlyQnc9PQo=",
+      "url": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.7/SoundCloud-0.2.7-x64-setup.exe"
+    }
+  }
+}

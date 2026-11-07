@@ -11,6 +11,7 @@
         download: 'Download for Windows',
         seeApp: 'Take a look',
         heroNote: 'Free. Open source. Windows 10 / 11, x64.',
+        releaseNote: 'New in 0.2.7: Rust + WebView2 and restored listening feedback ↗',
         sleeveLabel: 'THE NEVER-ENDING SIDE A',
         baseline: 'A FAMILIAR PLAYER. A DIFFERENT NEXT TRACK.',
         learnMore: 'Learn more',
@@ -70,20 +71,20 @@
             'No. This is a free, independent fork of soundcloud-rpc maintained by rvelabs. It is not affiliated with SoundCloud. You need your own SoundCloud account to listen.',
         faqRadioQ: 'How does My Wave work?',
         faqRadioA:
-            'It combines related SoundCloud tracks, independent ranking and your listening feedback. It is not Yandex Music’s proprietary algorithm. Start by liking a few tracks or playing a favorite. Mood and tempo accuracy depend on available metadata.',
+            'It combines related SoundCloud tracks, independent ranking and your reactions. Ordinary listening counts with My Wave off; sound features are processed locally and cached. It is not Yandex Music’s proprietary algorithm. Mood and tempo accuracy depend on available metadata.',
         faqImportQ: 'Will every track be transferred?',
         faqImportA:
             'Import finds existing SoundCloud versions; it does not copy audio files. Some tracks may be missing or unavailable. You can save the matched part separately. Sources may return incomplete lists; SoundCloud playlists are limited to 500 tracks.',
         faqNetworkQ: 'What if the service won’t open on my network?',
         faqNetworkA:
-            'F1 includes a setup wizard for a personal Cloudflare Worker. It can provide a fallback connection to SoundCloud and read public playlist metadata. You need your own Cloudflare account, and Cloudflare must be reachable. For the new Worker import, update both the app and Worker to 0.28.6 or later. CSV/TXT/TSV import is an alternative for track lists.',
+            'F1 includes a setup wizard for a personal Cloudflare Worker. It can provide a fallback connection to SoundCloud and read public playlist metadata. You need your own Cloudflare account, and Cloudflare must be reachable. If you already have a Worker, update it through the F1 setup wizard. CSV/TXT/TSV import is an alternative for track lists.',
         faqInstallQ: 'What do I need to install it?',
         faqInstallA:
-            'Windows 10 or 11 (x64) and a SoundCloud account. Download the installer from GitHub Releases. There is no trusted publisher signature yet, so Windows may show a warning. Source code and checksums are published with each release. Upgrading preserves your profile.',
+            'Windows 10 or 11 (x64), WebView2 and a SoundCloud account. The current build uses Rust + WebView2. The installer replaces Electron and imports supported history and audio cache; sign in again afterward. Existing Native profiles survive updates. There is no trusted publisher signature yet, so Windows may show a warning.',
         downloadKicker: 'THE NEXT TRACK COULD BE YOUR FAVORITE',
         downloadTitle: 'Your music.<br>To be continued.',
         sourceCode: 'Source code',
-        downloadNote: 'Free · Windows x64 · SoundCloud account required',
+        downloadNote: '0.2.7 · Windows x64 · Rust + WebView2 · Free',
         footerNote:
             'An independent project. Made for listening.<br>SoundCloud and other names belong to their respective owners.',
         feedback: 'Feedback',
