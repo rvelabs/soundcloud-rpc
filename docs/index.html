@@ -4,27 +4,46 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#f3f1eb" />
-        <title>SoundCloud Desktop — хватит слушать по кругу</title>
+        <title>SoundCloud для Windows — Моя волна и импорт плейлистов</title>
         <meta
             name="description"
-            content="Моя волна, эквалайзер с 42 пресетами и перенос плейлистов из Spotify, Яндекс Музыки и YouTube Music. Бесплатный открытый клиент SoundCloud для Windows от rvelabs."
+            content="Бесплатный клиент SoundCloud для Windows: Моя волна, 42 пресета эквалайзера, перенос плейлистов Spotify, Яндекс Музыки и YouTube Music. Открытый код."
         />
-        <meta name="robots" content="index,follow" />
+        <meta name="robots" content="index,follow,max-image-preview:large" />
         <link rel="canonical" href="https://rvelabs.github.io/soundcloud-rpc/" />
+        <link rel="sitemap" type="application/xml" href="https://rvelabs.github.io/soundcloud-rpc/sitemap.xml" />
         <link rel="icon" type="image/x-icon" href="./favicon.ico" />
         <link rel="preload" as="font" type="font/woff2" href="./fonts/golos-latin.woff2" crossorigin />
         <meta property="og:type" content="website" />
-        <meta property="og:title" content="SoundCloud Desktop — хватит слушать по кругу" />
+        <meta property="og:site_name" content="SoundCloud Desktop by rvelabs" />
+        <meta property="og:locale" content="ru_RU" />
+        <meta property="og:locale:alternate" content="en_US" />
+        <meta property="og:title" content="SoundCloud для Windows — Моя волна и импорт плейлистов" />
         <meta
             property="og:description"
-            content="Твой SoundCloud, с продолжением. Персональная волна и перенос плейлистов в бесплатном клиенте для Windows."
+            content="Бесплатный клиент SoundCloud для Windows: Моя волна, 42 пресета эквалайзера, перенос плейлистов Spotify, Яндекс Музыки и YouTube Music. Открытый код."
         />
         <meta property="og:url" content="https://rvelabs.github.io/soundcloud-rpc/" />
-        <meta property="og:image" content="https://rvelabs.github.io/soundcloud-rpc/images/social-cover.png" />
+        <meta property="og:image" content="https://rvelabs.github.io/soundcloud-rpc/og-banner.png" />
+        <meta property="og:image:type" content="image/png" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
+        <meta
+            property="og:image:alt"
+            content="SoundCloud Desktop от rvelabs: Моя волна, эквалайзер и перенос плейлистов для Windows"
+        />
         <meta name="twitter:card" content="summary_large_image" />
-        <script type="application/ld+json">
+        <meta name="twitter:title" content="SoundCloud для Windows — Моя волна и импорт плейлистов" />
+        <meta
+            name="twitter:description"
+            content="Бесплатный клиент SoundCloud для Windows: Моя волна, 42 пресета эквалайзера, перенос плейлистов Spotify, Яндекс Музыки и YouTube Music. Открытый код."
+        />
+        <meta name="twitter:image" content="https://rvelabs.github.io/soundcloud-rpc/og-banner.png" />
+        <meta
+            name="twitter:image:alt"
+            content="SoundCloud Desktop от rvelabs: Моя волна, эквалайзер и перенос плейлистов для Windows"
+        />
+        <script type="application/ld+json" id="software-schema">
             {
                 "@context": "https://schema.org",
                 "@type": "SoftwareApplication",
@@ -32,15 +51,24 @@
                 "operatingSystem": "Windows 10, Windows 11",
                 "applicationCategory": "MultimediaApplication",
                 "url": "https://rvelabs.github.io/soundcloud-rpc/",
+                "@id": "https://rvelabs.github.io/soundcloud-rpc/#software",
+                "image": "https://rvelabs.github.io/soundcloud-rpc/og-banner.png",
+                "screenshot": [
+                    "https://rvelabs.github.io/soundcloud-rpc/images/wave.webp",
+                    "https://rvelabs.github.io/soundcloud-rpc/images/settings.webp"
+                ],
+                "license": "https://github.com/rvelabs/soundcloud-rpc/blob/main/LICENSE",
+                "inLanguage": ["ru", "en"],
+                "isAccessibleForFree": true,
                 "downloadUrl": "https://github.com/rvelabs/soundcloud-rpc/releases/latest",
                 "softwareVersion": "0.32.2",
                 "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
                 "author": { "@type": "Person", "name": "rvelabs", "url": "https://github.com/rvelabs" },
-                "description": "Unofficial open-source SoundCloud desktop client with personalized radio, a 10-band equalizer with 42 presets, playlist import, Discord Rich Presence and Last.fm."
+                "description": "Бесплатный клиент SoundCloud для Windows: Моя волна, 42 пресета эквалайзера, перенос плейлистов Spotify, Яндекс Музыки и YouTube Music. Открытый код."
             }
         </script>
         <link rel="stylesheet" href="./styles.css?v=20261105-equalizer" />
-        <script src="./site.js?v=20261105-equalizer" defer></script>
+        <script src="./site.js?v=20261107-seo" defer></script>
     </head>
     <body>
         <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">

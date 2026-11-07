@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+    <rect width="1200" height="630" fill="#f3f1eb" />
+    <path d="M56 100H1144M56 556H1144" stroke="#d3d0c8" />
+    <g font-family="Segoe UI,Arial,sans-serif" fill="#1c1c19">
+        <text x="56" y="65" font-size="25" font-weight="700">soundcloud</text>
+        <text x="270" y="64" font-size="13" letter-spacing="2">DESKTOP / BY RVELABS</text>
+        <text x="56" y="162" font-size="13" letter-spacing="2" font-weight="600">
+            YOUR SOUNDCLOUD. TO BE CONTINUED.
+        </text>
+        <text x="50" y="289" font-size="108" font-weight="700" letter-spacing="-5">OFF</text>
+        <text x="50" y="399" font-size="108" font-weight="700" letter-spacing="-5">
+            REPEAT
+            <tspan fill="#ff5500">.</tspan>
+        </text>
+        <text x="56" y="464" font-size="20">My Wave / Equalizer / Playlist import</text>
+        <text x="56" y="501" font-size="18" fill="#64635b">Free. Open source. Windows 10 / 11.</text>
+        <text x="56" y="595" font-size="14">rvelabs.github.io/soundcloud-rpc</text>
+    </g>
+    <g transform="translate(880 326)">
+        <rect x="-216" y="-209" width="408" height="408" fill="#ff5500" transform="rotate(-10)" />
+        <circle cy="8" r="218" fill="#000" opacity=".12" />
+        <circle r="218" fill="#1c1c19" />
+        <g fill="none" stroke="#32312b" stroke-width="1.2">
+            <circle r="211" />
+            <circle r="204" />
+            <circle r="197" />
+            <circle r="190" />
+            <circle r="183" />
+            <circle r="176" />
+            <circle r="169" />
+            <circle r="162" />
+            <circle r="155" />
+            <circle r="148" />
+            <circle r="141" />
+            <circle r="134" />
+            <circle r="127" />
+            <circle r="120" />
+            <circle r="113" />
+            <circle r="106" />
+            <circle r="99" />
+            <circle r="92" />
+        </g>
+        <circle r="76" fill="#e9e5d9" />
+        <g text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" fill="#1c1c19" font-weight="700">
+            <text y="-21" font-size="23">MY WAVE</text>
+            <text y="30" font-size="10" letter-spacing="1">SOUNDCLOUD</text>
+            <text y="45" font-size="9">PERSONAL RADIO</text>
+        </g>
+        <circle r="7" fill="#1c1c19" />
+    </g>
+</svg>

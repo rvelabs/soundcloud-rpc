@@ -119,6 +119,24 @@
         },
     };
     const original = new Map();
+    const seo = {
+        ru: {
+            title: 'SoundCloud для Windows — Моя волна и импорт плейлистов',
+            description:
+                'Бесплатный клиент SoundCloud для Windows: Моя волна, 42 пресета эквалайзера, перенос плейлистов Spotify, Яндекс Музыки и YouTube Music. Открытый код.',
+            locale: 'ru_RU',
+            alternate: 'en_US',
+            imageAlt: 'SoundCloud Desktop от rvelabs: Моя волна, эквалайзер и перенос плейлистов для Windows',
+        },
+        en: {
+            title: 'SoundCloud for Windows — My Wave & Playlist Import',
+            description:
+                'Discover music with My Wave in a free SoundCloud client for Windows. 42 EQ presets, Spotify, Yandex and YouTube playlist import. Open source.',
+            locale: 'en_US',
+            alternate: 'ru_RU',
+            imageAlt: 'SoundCloud Desktop by rvelabs: My Wave, equalizer and playlist import for Windows',
+        },
+    };
     for (const element of document.querySelectorAll('[data-i18n]')) original.set(element, element.innerHTML);
     const attributes = new Map();
     for (const element of document.querySelectorAll('[data-label],[data-alt]'))
@@ -218,8 +236,26 @@
         }
         for (const button of document.querySelectorAll('[data-site-language]'))
             button.setAttribute('aria-pressed', String(button.dataset.siteLanguage === language));
-        document.title =
-            language === 'en' ? 'SoundCloud Desktop — get off repeat' : 'SoundCloud Desktop — хватит слушать по кругу';
+        const metadata = seo[language];
+        document.title = metadata.title;
+        for (const selector of [
+            'meta[name="description"]',
+            'meta[property="og:description"]',
+            'meta[name="twitter:description"]',
+        ])
+            document.querySelector(selector)?.setAttribute('content', metadata.description);
+        for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]'])
+            document.querySelector(selector)?.setAttribute('content', metadata.title);
+        for (const selector of ['meta[property="og:image:alt"]', 'meta[name="twitter:image:alt"]'])
+            document.querySelector(selector)?.setAttribute('content', metadata.imageAlt);
+        document.querySelector('meta[property="og:locale"]')?.setAttribute('content', metadata.locale);
+        document.querySelector('meta[property="og:locale:alternate"]')?.setAttribute('content', metadata.alternate);
+        const schema = document.getElementById('software-schema');
+        if (schema) {
+            const value = JSON.parse(schema.textContent);
+            value.description = metadata.description;
+            schema.textContent = JSON.stringify(value);
+        }
         updateSource();
         syncMotion();
     };
