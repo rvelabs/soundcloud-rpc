@@ -1,12 +1,12 @@
 {
-  "version": "0.2.9",
+  "version": "0.2.12",
   "native": true,
-  "notes": "Улучшен подбор Моей волны и восстановление импорта после 403/капчи. / Improved My Wave relevance and import recovery after HTTP 403/CAPTCHA.",
-  "pub_date": "2026-11-07T22:59:11.913Z",
+  "notes": "Улучшена Моя волна, восстановлена блокировка рекламы, добавлен сброс обучения в F1. / Better My Wave, restored ad blocking and learning reset in F1.",
+  "pub_date": "2026-11-08T12:04:15.68Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcjF1WW81SXRQKzkwYiszRmh2dS9wSVUrdnBBa25WTXo4L3lSWXBvU0RkazRENkxwd0dTcjdlajNoNW5sc1gxampYUGJwOGpFWjZMZ0JmS3lFWjRCUXBtK3F3Nkloanc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDkyMjYyCWZpbGU6U291bmRDbG91ZF8wLjIuOV94NjQtc2V0dXAuZXhlCXZlcnNpb246MC4yLjkKVnlaZ3BGcE0yZERhV1R6TWJNVHVwSkZoNC9mVFFsT3BKU3RIbnhiV0YxSUlkNmJqdkt2ZXFYK1lETHZ1QkxwL1E0TXl4SkxWWm9KWEwzbHlvV2s1Q2c9PQo=",
-      "url": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.9/SoundCloud-0.2.9-x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcjF1WW81SXRQKzQrWjBaWVhCWWxnNHkyVzBxaVUzdXJ6YkhSTHZxLzI4WVh6NzZkaWM4RjlNUkt1QjNCZFFEeUJsbmVwZUw0Q29uN01tOFg2bnBicDJoZDFTbkZCL1F3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MTM5NDU1CWZpbGU6U291bmRDbG91ZF8wLjIuMTJfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMi4xMgpYc2ozcndrYitHeDdhL2MyTDZtNjljKzkxT2JWNXJFVVg1anh5VmJMQTFPNUdRdEZ4akhSd2VHcWhvM0k4bVBTZ3FrSDV4dC9DRmZnRzl0dUZPWUJCUT09Cg==",
+      "url": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.12/SoundCloud-0.2.12-x64-setup.exe"
     }
   }
 }
