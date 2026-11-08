@@ -1,51 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-    <rect width="1200" height="630" fill="#f3f1eb" />
-    <path d="M56 100H1144M56 556H1144" stroke="#d3d0c8" />
-    <g font-family="Segoe UI,Arial,sans-serif" fill="#1c1c19">
-        <text x="56" y="65" font-size="25" font-weight="700">soundcloud</text>
-        <text x="270" y="64" font-size="13" letter-spacing="2">DESKTOP / BY RVELABS</text>
-        <text x="56" y="162" font-size="13" letter-spacing="2" font-weight="600">
-            YOUR SOUNDCLOUD. TO BE CONTINUED.
-        </text>
-        <text x="50" y="289" font-size="108" font-weight="700" letter-spacing="-5">OFF</text>
-        <text x="50" y="399" font-size="108" font-weight="700" letter-spacing="-5">
-            REPEAT
-            <tspan fill="#ff5500">.</tspan>
-        </text>
-        <text x="56" y="464" font-size="20">My Wave / Equalizer / Playlist import</text>
-        <text x="56" y="501" font-size="18" fill="#64635b">Free. Open source. Windows 10 / 11.</text>
-        <text x="56" y="595" font-size="14">rvelabs.github.io/soundcloud-rpc</text>
-    </g>
-    <g transform="translate(880 326)">
-        <rect x="-216" y="-209" width="408" height="408" fill="#ff5500" transform="rotate(-10)" />
-        <circle cy="8" r="218" fill="#000" opacity=".12" />
-        <circle r="218" fill="#1c1c19" />
-        <g fill="none" stroke="#32312b" stroke-width="1.2">
-            <circle r="211" />
-            <circle r="204" />
-            <circle r="197" />
-            <circle r="190" />
-            <circle r="183" />
-            <circle r="176" />
-            <circle r="169" />
-            <circle r="162" />
-            <circle r="155" />
-            <circle r="148" />
-            <circle r="141" />
-            <circle r="134" />
-            <circle r="127" />
-            <circle r="120" />
-            <circle r="113" />
-            <circle r="106" />
-            <circle r="99" />
-            <circle r="92" />
-        </g>
-        <circle r="76" fill="#e9e5d9" />
-        <g text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" fill="#1c1c19" font-weight="700">
-            <text y="-21" font-size="23">MY WAVE</text>
-            <text y="30" font-size="10" letter-spacing="1">SOUNDCLOUD</text>
-            <text y="45" font-size="9">PERSONAL RADIO</text>
-        </g>
-        <circle r="7" fill="#1c1c19" />
-    </g>
+<defs><radialGradient id="disc"><stop stop-color="#262b30"/><stop offset=".56" stop-color="#121517"/><stop offset="1" stop-color="#23272b"/></radialGradient><linearGradient id="sleeve" x2="1" y2="1"><stop stop-color="#ff7c27"/><stop offset="1" stop-color="#df4c06"/></linearGradient><linearGradient id="shine" x2="1" y2="1"><stop stop-color="#fff" stop-opacity=".14"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".7" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+<rect width="1200" height="630" fill="#0d0f11"/>
+<path d="M48 100h1104M48 566h1104" stroke="#30363b"/>
+<g transform="translate(52 43)" color="#ff640f"><g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M2 14v7m5-11v12m5-16v16m5-20v20m5-21v21m5-20v20"/></g><path d="M32 22V4c6-3 12 1 12 7 8-1 10 11 2 11Z" fill="currentColor"/></g>
+<text x="118" y="65" fill="#e6e4dd" font-family="Arial,sans-serif" font-size="25" font-weight="700" letter-spacing="-1">soundcloud</text>
+<text x="1152" y="61" text-anchor="end" fill="#9ba3a8" font-family="Arial,sans-serif" font-size="12" letter-spacing="2">DESKTOP / RVELABS</text>
+<g transform="translate(747 168) rotate(-9 141 163)"><rect width="282" height="326" rx="6" fill="url(#sleeve)"/><path d="M22 23h238v280H22Z" fill="none" stroke="#542608" stroke-opacity=".35"/><text x="32" y="70" fill="#301b0d" font-family="Arial,sans-serif" font-size="15" font-weight="700" letter-spacing="2">SIDE A / DISCOVERY</text><path d="M0 234 282 68M0 269 282 103M0 304 282 138" stroke="#ffb678" stroke-opacity=".28" stroke-width="21"/></g>
+<g transform="translate(1017 330)"><circle r="248" fill="url(#disc)" stroke="#3b4146" stroke-width="2"/><circle r="104" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="109.6" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="115.2" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="120.8" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="126.4" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="132" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="137.6" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="143.2" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="148.8" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="154.4" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="160" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="165.6" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="171.2" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="176.8" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="182.39999999999998" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="188" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="193.6" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="199.2" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="204.8" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="210.39999999999998" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="216" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="221.6" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="227.2" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="232.79999999999998" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="238.39999999999998" fill="none" stroke="#454b50" stroke-opacity=".65"/><circle r="244" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="249.6" fill="none" stroke="#30353a" stroke-opacity=".65"/><circle r="245" fill="url(#shine)"/><circle r="85" fill="#ff640f"/><circle r="74" fill="none" stroke="#4c280e" stroke-opacity=".35"/><text x="0" y="-31" text-anchor="middle" fill="#1b1813" font-family="Arial,sans-serif" font-size="10" font-weight="700" letter-spacing="3">MY WAVE</text><path d="M-43 17h86m-35-8v16M-24 0v32M-8-7v46M8 2v28M24-2v36M40 8v16" fill="none" stroke="#2c210f" stroke-width="3" stroke-linecap="round"/><circle r="8" fill="#0d0f11"/><text x="0" y="58" text-anchor="middle" fill="#1b1813" font-family="Arial,sans-serif" font-size="8" letter-spacing="2">KEEP EXPLORING</text></g>
+<text x="52" y="176" fill="#ff873d" font-family="Arial,sans-serif" font-size="13" letter-spacing="3">YOUR MUSIC. ANOTHER SIDE.</text>
+<text x="48" y="263" fill="#e6e4dd" font-family="Arial,sans-serif" font-size="77" font-weight="700" letter-spacing="-4">More music.</text>
+<text x="48" y="346" fill="#ff640f" font-family="Arial,sans-serif" font-size="77" font-weight="700" letter-spacing="-4">Fewer repeats.</text>
+<text x="52" y="401" fill="#a9afb2" font-family="Arial,sans-serif" font-size="21">A free SoundCloud client for Windows.</text>
+<g fill="#c7cbcb" font-family="Arial,sans-serif" font-size="13" letter-spacing=".5"><text x="52" y="480">MY WAVE</text><text x="177" y="480">PLAYLIST IMPORT</text><text x="363" y="480">10-BAND EQ</text></g>
+<path d="M157 468v16m185-16v16" stroke="#42494e"/>
+<text x="52" y="601" fill="#879298" font-family="Arial,sans-serif" font-size="12">FREE · OPEN SOURCE · INDEPENDENT PROJECT</text><text x="1152" y="601" text-anchor="end" fill="#c7cbcb" font-family="Arial,sans-serif" font-size="12">rvelabs.github.io/soundcloud-rpc</text>
 </svg>

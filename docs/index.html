@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <meta name="theme-color" content="#f3f1eb" />
+        <meta name="theme-color" content="#0d0f11" />
         <title>SoundCloud для Windows — Моя волна и импорт плейлистов</title>
         <meta
             name="description"
@@ -12,7 +12,9 @@
         <meta name="robots" content="index,follow,max-image-preview:large" />
         <link rel="canonical" href="https://rvelabs.github.io/soundcloud-rpc/" />
         <link rel="sitemap" type="application/xml" href="https://rvelabs.github.io/soundcloud-rpc/sitemap.xml" />
-        <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+        <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+        <link rel="alternate icon" href="./favicon.ico" />
+        <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
         <link rel="preload" as="font" type="font/woff2" href="./fonts/golos-latin.woff2" crossorigin />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="SoundCloud Desktop by rvelabs" />
@@ -54,8 +56,8 @@
                 "@id": "https://rvelabs.github.io/soundcloud-rpc/#software",
                 "image": "https://rvelabs.github.io/soundcloud-rpc/og-banner.png",
                 "screenshot": [
-                    "https://rvelabs.github.io/soundcloud-rpc/images/wave.webp",
-                    "https://rvelabs.github.io/soundcloud-rpc/images/settings.webp"
+                    "https://rvelabs.github.io/soundcloud-rpc/images/app-wave.webp",
+                    "https://rvelabs.github.io/soundcloud-rpc/images/app-settings.webp"
                 ],
                 "license": "https://github.com/rvelabs/soundcloud-rpc/blob/main/LICENSE",
                 "inLanguage": ["ru", "en"],
@@ -68,30 +70,43 @@
                 "description": "Бесплатный клиент SoundCloud для Windows: Моя волна, 42 пресета эквалайзера, перенос плейлистов Spotify, Яндекс Музыки и YouTube Music. Открытый код."
             }
         </script>
-        <link rel="stylesheet" href="./styles.css?v=20261107-native-027" />
-        <script src="./site.js?v=20261108-native-0212" defer></script>
+        <link rel="stylesheet" href="./styles.css?v=20261108-nocturne" />
+        <script src="./site.js?v=20261108-nocturne" defer></script>
     </head>
     <body>
-        <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+        <svg class="symbols" aria-hidden="true">
             <defs>
-                <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 5l7 7-7 7" /></symbol>
-                <symbol id="diagonal" viewBox="0 0 24 24"><path d="M5 19 19 5M5 5h14v14" /></symbol>
-                <symbol id="download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4" /></symbol>
-                <symbol id="cloud" viewBox="0 0 48 24">
+                <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4" /></symbol>
+                <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" /></symbol>
+                <symbol id="i-external" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10" /></symbol>
+                <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+                <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 10v4m4-8v12m5-15v18m5-15v12m4-8v4" /></symbol>
+                <symbol id="i-sliders" viewBox="0 0 24 24">
+                    <path d="M5 3v5m0 6v7M12 3v10m0 6v2M19 3v2m0 6v10M2 8h6v6H2zM9 13h6v6H9zM16 5h6v6h-6z" />
+                </symbol>
+                <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 5v15h16M8 3h12v13H8z" /></symbol>
+                <symbol id="i-heart" viewBox="0 0 24 24">
                     <path
-                        d="M2 15v5m4-9v11m4-15v15m4-17v17m4-19v19m4-20v20m4-19v19"
-                        stroke="currentColor"
-                        stroke-width="2.1"
-                        stroke-linecap="round"
+                        d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"
                     />
+                </symbol>
+                <symbol id="i-shield" viewBox="0 0 24 24">
+                    <path d="M12 3 3 7v6c0 4 9 8 9 8s9-4 9-8V7l-9-4Zm-4 9 3 3 5-6" />
+                </symbol>
+                <symbol id="i-headphones" viewBox="0 0 24 24">
+                    <path d="M3 14v-2a9 9 0 0 1 18 0v2M3 12h4v8H3zm14 0h4v8h-4z" />
+                </symbol>
+                <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></symbol>
+                <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></symbol>
+                <symbol id="i-github" viewBox="0 0 24 24">
+                    <path
+                        d="M9 20c-4 1-4-2-6-2m12 4v-4c0-1-.4-2-1-2.5 3-.3 6-1.5 6-6A5 5 0 0 0 18.7 6c.3-1 .3-2-.2-3-1.2-.1-2.8.8-3.5 1.3a12 12 0 0 0-6 0C7.8 3.8 6.2 2.9 5 3c-.5 1-.5 2-.2 3A5 5 0 0 0 3.5 9.5c0 4.5 3 5.7 6 6-.6.5-1 1.5-1 2.5v4"
+                    />
+                </symbol>
+                <symbol id="i-cloud" viewBox="0 0 48 24">
+                    <path d="M2 14v7m4-10v11m4-15v15m4-17v17m4-19v19m4-20v20m4-19v19" />
                     <path d="M29 22V4c6-3 12 1 12 7 8-1 10 11 2 11Z" fill="currentColor" stroke="none" />
                 </symbol>
-                <symbol id="github" viewBox="0 0 24 24">
-                    <path
-                        d="M9 19c-4 1-4-2-6-2m12 5v-4c0-1-.4-2-1-2.5 3-.3 6-1.5 6-6a5 5 0 0 0-1.3-3.5c.3-1 .3-2-.2-3-1.2-.1-2.8.8-3.5 1.3a12 12 0 0 0-6 0C8.3 3.8 6.7 2.9 5.5 3c-.5 1-.5 2-.2 3A5 5 0 0 0 4 9.5c0 4.5 3 5.7 6 6-.6.5-1 1.5-1 2.5v4"
-                    />
-                </symbol>
-                <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
             </defs>
         </svg>
         <a class="skip" href="#main" data-i18n="skip">К содержимому</a>
@@ -99,345 +114,392 @@
         <header class="header">
             <nav class="wrap navigation" aria-label="Основная навигация" data-label="navLabel">
                 <a class="brand" href="#" aria-label="SoundCloud Desktop"
-                    ><svg class="cloud-icon"><use href="#cloud" /></svg
-                    ><span>soundcloud<small>DESKTOP / BY RVELABS</small></span></a
+                    ><svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg
+                    ><span>soundcloud<small>DESKTOP · RVELABS</small></span></a
                 >
                 <div class="nav-links">
                     <a href="#wave" data-i18n="navWave">Моя волна</a
-                    ><a href="#collection" data-i18n="navImport">Перенос музыки</a><a href="#faq">FAQ</a>
+                    ><a href="#features" data-i18n="navFeatures">Возможности</a><a href="#faq">FAQ</a>
                 </div>
                 <div class="nav-tools">
                     <div class="languages" role="group" aria-label="Language">
                         <button type="button" data-site-language="ru" aria-pressed="true">RU</button
-                        ><span aria-hidden="true">/</span
                         ><button type="button" data-site-language="en" aria-pressed="false">EN</button>
                     </div>
-                    <a class="github-link" href="https://github.com/rvelabs/soundcloud-rpc" aria-label="GitHub"
-                        ><svg class="icon"><use href="#github" /></svg
+                    <a
+                        class="nav-download"
+                        aria-label="Скачать для Windows"
+                        data-label="download"
+                        href="https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.12/SoundCloud-0.2.12-x64-setup.exe"
+                        ><span data-i18n="navDownload">Скачать</span
+                        ><svg class="icon" aria-hidden="true"><use href="#i-download" /></svg
                     ></a>
                 </div>
             </nav>
         </header>
         <main id="main">
             <section class="hero wrap" aria-labelledby="hero-title">
-                <div class="hero-copy" data-reveal="stagger">
-                    <p class="eyebrow hero-eyebrow">
-                        <span class="status-dot"></span
-                        ><span data-i18n="heroKicker">ТВОЙ SOUNDCLOUD, С ПРОДОЛЖЕНИЕМ</span>
-                    </p>
-                    <h1 id="hero-title" data-i18n="heroTitle">
-                        <span>Хватит</span><span>по кругу<span class="orange">.</span></span>
-                    </h1>
+                <div class="hero-copy" data-reveal>
+                    <a class="release-note" href="https://github.com/rvelabs/soundcloud-rpc/releases/tag/native-v0.2.12"
+                        ><span class="status-dot"></span>0.2.12<span class="release-divider"></span
+                        ><span data-i18n="releaseNote">Новая глава Моей волны</span
+                        ><svg class="icon" aria-hidden="true"><use href="#i-external" /></svg
+                    ></a>
+                    <h1 id="hero-title" data-i18n="heroTitle">Больше музыки.<br /><em>Меньше повторов.</em></h1>
                     <p class="hero-description" data-i18n="heroDescription">
-                        Где-то есть твой следующий любимый трек. «Моя волна» поможет его найти — прямо в SoundCloud.
+                        Привычный SoundCloud — с персональной волной, переносом плейлистов и своим характером звука.
+                        Бесплатный клиент для Windows.
                     </p>
                     <div class="hero-actions">
                         <a
-                            class="button button-dark"
+                            class="button button-orange"
                             href="https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.12/SoundCloud-0.2.12-x64-setup.exe"
-                            ><span data-i18n="download">Скачать для Windows</span
-                            ><svg class="icon"><use href="#download" /></svg></a
-                        ><a class="text-link" href="#wave"
-                            ><span data-i18n="seeApp">Что внутри</span><svg class="icon"><use href="#arrow" /></svg
+                            ><svg class="icon" aria-hidden="true"><use href="#i-download" /></svg
+                            ><span data-i18n="download">Скачать для Windows</span></a
+                        ><a class="text-link" href="#app"
+                            ><span data-i18n="seeApp">Посмотреть внутри</span
+                            ><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg
                         ></a>
                     </div>
-                    <p class="fineprint" data-i18n="heroNote">Бесплатно. Открытый код. Windows 10 / 11, x64.</p>
-                    <a
-                        class="release-note"
-                        href="https://github.com/rvelabs/soundcloud-rpc/releases/tag/native-v0.2.12"
-                        data-i18n="releaseNote"
-                        >Новое в 0.2.12: улучшенная «Моя волна» и блокировка рекламы ↗</a
-                    >
+                    <p class="hero-note">
+                        <span>Windows 10 / 11 · x64</span><span data-i18n="heroNote">Бесплатно. Открытый код.</span>
+                    </p>
                 </div>
-                <div class="record-art" data-ambient aria-hidden="true">
-                    <div class="sleeve">
-                        <div class="sleeve-top"><span>SC—D / 001</span><span>STEREO</span></div>
-                        <div class="sleeve-lines" aria-hidden="true">
-                            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-                        </div>
-                        <p class="sleeve-type" aria-hidden="true">GOOD<br />TRACKS.<br />NO END.</p>
-                        <div class="sleeve-bottom">
-                            <span data-i18n="sleeveLabel">БЕСКОНЕЧНАЯ СТОРОНА А</span><span>∞ RPM</span>
-                        </div>
+                <div class="record-art" aria-hidden="true" data-motion>
+                    <div class="record-grid"></div>
+                    <div class="record-sleeve">
+                        <span>SC—D / 012</span>
+                        <div class="sleeve-bars"><i></i><i></i><i></i><i></i><i></i></div>
+                        <b>SOUND<br />WITHOUT<br />THE LOOP.</b><small>DESKTOP EDITION / 2026</small>
                     </div>
                     <div class="record-disc">
-                        <span class="vinyl" aria-hidden="true"
-                            ><span class="record-label"
-                                ><span>MY<br />WAVE</span><span class="record-hole"></span
-                                ><span class="label-small">SOUNDCLOUD<br />PERSONAL RADIO</span></span
-                            ></span
-                        >
+                        <div class="vinyl-rotor">
+                            <span class="vinyl-label"
+                                ><span>SOUNDCLOUD</span><b>side a</b><small>33⅓ · RVELABS</small></span
+                            >
+                        </div>
+                        <span class="spindle"></span>
                     </div>
-                </div>
-                <div class="hero-baseline">
-                    <span data-i18n="baseline">ЗНАКОМЫЙ КЛИЕНТ. ДРУГОЕ ПРОДОЛЖЕНИЕ.</span
-                    ><a href="#wave" aria-label="Узнать больше" data-label="learnMore"
-                        ><svg class="icon"><use href="#arrow" /></svg></a
-                    ><span>INDEPENDENT & OPEN SOURCE</span>
+                    <span class="record-coordinate">45° / 33⅓ RPM</span>
                 </div>
             </section>
-            <section class="wave-section" id="wave" aria-labelledby="wave-title">
-                <div class="wrap">
-                    <div class="section-heading" data-reveal>
+            <div class="signal-strip wrap" data-reveal>
+                <span
+                    ><svg class="icon" aria-hidden="true"><use href="#i-wave" /></svg
+                    ><b data-i18n="stripWave">Персональная волна</b></span
+                ><span
+                    ><svg class="icon" aria-hidden="true"><use href="#i-library" /></svg
+                    ><b data-i18n="stripImport">Плейлисты с тобой</b></span
+                ><span
+                    ><svg class="icon" aria-hidden="true"><use href="#i-sliders" /></svg
+                    ><b data-i18n="stripEq">42 пресета звука</b></span
+                ><a href="https://github.com/rvelabs/soundcloud-rpc"
+                    ><svg class="icon" aria-hidden="true"><use href="#i-github" /></svg><b>Rust + WebView2</b
+                    ><svg class="icon" aria-hidden="true"><use href="#i-external" /></svg
+                ></a>
+            </div>
+            <section class="showcase-section wrap" id="app" aria-labelledby="app-title">
+                <div class="section-heading" data-reveal>
+                    <div>
                         <p class="eyebrow">
-                            <span class="orange">01</span><span data-i18n="waveKicker">ЛИЧНЫЙ ПОТОК</span>
+                            <span>01 /</span><span data-i18n="appKicker">УЖЕ ЗНАКОМЫЙ. ТЕПЕРЬ ТВОЙ.</span>
                         </p>
-                        <h2 id="wave-title" data-i18n="waveTitle">Любимое —<br />точка отсчёта.</h2>
-                        <p class="section-intro" data-i18n="waveIntro">
-                            Не нужно каждый раз решать, что включить. Начни с того, что нравится, и дай музыке
-                            продолжиться.
-                        </p>
+                        <h2 id="app-title" data-i18n="appTitle">Всё там, где слушаешь.</h2>
                     </div>
-                    <div class="wave-layout">
-                        <div class="wave-explanation" data-reveal="stagger">
-                            <div class="feature-row">
-                                <span class="row-number">01</span>
-                                <div>
-                                    <h3 data-i18n="tasteTitle">От твоих треков — к новым</h3>
-                                    <p data-i18n="tasteBody">
-                                        Похожие записи SoundCloud и собственный подбор. Лайки и реакции помогают задать
-                                        направление.
-                                    </p>
-                                </div>
+                    <p data-i18n="appIntro">
+                        Дополняем интерфейс SoundCloud. Его плеер, очередь и твои лайки остаются на месте.
+                    </p>
+                </div>
+                <div class="showcase" data-reveal>
+                    <div class="gallery-tabs" role="tablist" aria-label="Интерфейс клиента" data-label="galleryLabel">
+                        <button
+                            id="tab-wave"
+                            role="tab"
+                            aria-controls="gallery-panel"
+                            aria-selected="true"
+                            data-gallery="wave"
+                        >
+                            <svg class="icon" aria-hidden="true"><use href="#i-wave" /></svg
+                            ><span data-i18n="tabWave">Моя волна</span></button
+                        ><button
+                            id="tab-settings"
+                            role="tab"
+                            aria-controls="gallery-panel"
+                            aria-selected="false"
+                            tabindex="-1"
+                            data-gallery="settings"
+                        >
+                            <svg class="icon" aria-hidden="true"><use href="#i-sliders" /></svg
+                            ><span data-i18n="tabSettings">Настройки</span></button
+                        ><button
+                            id="tab-import"
+                            role="tab"
+                            aria-controls="gallery-panel"
+                            aria-selected="false"
+                            tabindex="-1"
+                            data-gallery="import"
+                        >
+                            <svg class="icon" aria-hidden="true"><use href="#i-library" /></svg
+                            ><span data-i18n="tabImport">Перенос</span></button
+                        ><button
+                            id="tab-equalizer"
+                            role="tab"
+                            aria-controls="gallery-panel"
+                            aria-selected="false"
+                            tabindex="-1"
+                            data-gallery="equalizer"
+                        >
+                            <svg class="icon" aria-hidden="true"><use href="#i-headphones" /></svg
+                            ><span data-i18n="tabEq">Эквалайзер</span>
+                        </button>
+                    </div>
+                    <div class="gallery-panel" id="gallery-panel" role="tabpanel" aria-labelledby="tab-wave">
+                        <figure class="preview-media">
+                            <div class="preview-bar">
+                                <span class="window-mark"></span><span>SoundCloud</span><span>0.2.12</span>
                             </div>
-                            <div class="feature-row">
-                                <span class="row-number">02</span>
-                                <div>
-                                    <h3 data-i18n="moodTitle">Под текущий момент</h3>
-                                    <p data-i18n="moodBody">
-                                        Настроение, занятие, знакомство с музыкой и язык. Всё настраивается в одной
-                                        панели.
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="feature-row">
-                                <span class="row-number">03</span>
-                                <div>
-                                    <h3 data-i18n="queueTitle">Дальше уже есть что слушать</h3>
-                                    <p data-i18n="queueBody">
-                                        Следующие треки готовятся заранее. Музыка продолжает играть при смене страницы и
-                                        сворачивании окна.
-                                    </p>
-                                </div>
-                            </div>
-                            <a
-                                class="text-link light-link"
-                                href="https://github.com/rvelabs/soundcloud-rpc/tree/main/src/wave/recommendation"
-                                ><span data-i18n="algorithmLink">Посмотреть, как устроен подбор</span
-                                ><svg class="icon"><use href="#diagonal" /></svg
-                            ></a>
+                            <img
+                                id="product-image"
+                                src="./images/app-wave-ru.webp"
+                                width="1280"
+                                height="820"
+                                alt="Моя волна в интерфейсе SoundCloud, демонстрационные треки"
+                                decoding="async"
+                                fetchpriority="high"
+                            /><button
+                                type="button"
+                                class="zoom-button"
+                                data-zoom
+                                aria-label="Увеличить изображение"
+                                data-label="zoomLabel"
+                            >
+                                <svg class="icon" aria-hidden="true"><use href="#i-expand" /></svg>
+                            </button>
+                        </figure>
+                        <div class="preview-copy">
+                            <span class="preview-index" data-gallery-index>01 / 04</span>
+                            <h3 data-gallery-title>Нажми. И слушай.</h3>
+                            <p data-gallery-description>
+                                Лайки и прослушивания задают направление. Следующие треки готовятся, пока играет
+                                текущий.
+                            </p>
+                            <ul class="gallery-points" data-gallery-points>
+                                <li>Подбор по твоим интересам</li>
+                                <li>Привычная очередь SoundCloud</li>
+                                <li>Музыка продолжает играть в фоне</li>
+                            </ul>
+                            <p class="demo-note" data-i18n="demoNote">Демонстрация интерфейса · примеры треков</p>
                         </div>
-                        <div class="product-composition" data-reveal>
-                            <div class="window-frame">
-                                <div class="window-bar">
-                                    <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span
-                                    ><span>SoundCloud / My Wave</span><svg class="icon"><use href="#cloud" /></svg>
-                                </div>
-                                <div class="wave-shot">
-                                    <img
-                                        src="./images/wave.webp"
-                                        alt="Карточка Моей волны в клиенте SoundCloud"
-                                        data-alt="waveAlt"
-                                        width="1280"
-                                        height="900"
-                                        loading="lazy"
-                                        decoding="async"
-                                    />
-                                </div>
-                                <div class="window-foot">
-                                    <span class="status-dot"></span
-                                    ><span data-i18n="nativePlayer"
-                                        >А очередь, лайки и плеер — привычные SoundCloud.</span
-                                    >
-                                </div>
-                            </div>
-                            <div class="settings-preview">
-                                <div class="settings-shot">
-                                    <img
-                                        src="./images/settings.webp"
-                                        alt="Настройки Моей волны: настроение, занятие и язык"
-                                        data-alt="settingsAlt"
-                                        width="1280"
-                                        height="900"
-                                        loading="lazy"
-                                        decoding="async"
-                                    />
-                                </div>
-                            </div>
-                            <p class="composition-note">
-                                <span class="note-arrow" aria-hidden="true">↗</span
-                                ><span data-i18n="settingsNote">Твой день.<br />Твои настройки.</span>
+                    </div>
+                </div>
+            </section>
+            <section class="wave-section wrap" id="wave" aria-labelledby="wave-title">
+                <div class="wave-story" data-reveal>
+                    <p class="eyebrow"><span>02 /</span><span data-i18n="waveKicker">НЕ ПРОСТО SHUFFLE</span></p>
+                    <h2 id="wave-title" data-i18n="waveTitle">Твой вкус.<br />Несколько направлений.</h2>
+                    <p class="section-intro" data-i18n="waveIntro">
+                        От понравившихся записей — к тому, что ты ещё не слышал. Моя волна объединяет похожие треки
+                        SoundCloud и собственное ранжирование.
+                    </p>
+                    <div class="wave-explanation">
+                        <div>
+                            <span>01</span>
+                            <p data-i18n="tasteBody">
+                                Лайки и обычное прослушивание помогают собрать профиль вкуса. Звуковые признаки
+                                обрабатываются локально и сохраняются в кэше.
+                            </p>
+                        </div>
+                        <div>
+                            <span>02</span>
+                            <p data-i18n="moodBody">
+                                Выбери настроение, занятие, язык и баланс знакомой музыки с открытиями. Быстрый пропуск
+                                не превращается в запрет любимого жанра.
+                            </p>
+                        </div>
+                        <div>
+                            <span>03</span>
+                            <p data-i18n="queueBody">
+                                Следующие треки подбираются заранее. Можно менять страницы или сворачивать окно — музыка
+                                продолжается.
                             </p>
                         </div>
                     </div>
-                    <div class="wave-bottom" data-reveal>
-                        <span data-i18n="waveBottom">МЕНЬШЕ РУЧНОГО ПОИСКА. БОЛЬШЕ «О, ЧТО ЭТО ЗА ТРЕК?»</span
-                        ><span class="orange">↗</span>
-                    </div>
-                </div>
-            </section>
-            <section class="import-section wrap" id="collection" aria-labelledby="import-title">
-                <div class="import-copy" data-reveal>
-                    <p class="eyebrow">
-                        <span class="orange">02</span><span data-i18n="importKicker">КОЛЛЕКЦИЯ ПЕРЕЕЗЖАЕТ С ТОБОЙ</span>
-                    </p>
-                    <h2 id="import-title" data-i18n="importTitle">Плейлисты<br />не бросаем.</h2>
-                    <p class="section-intro" data-i18n="importIntro">
-                        Собирал годами? Забирай с собой. Клиент найдёт версии треков в SoundCloud и соберёт из них
-                        плейлист.
-                    </p>
-                    <p class="import-detail" data-i18n="importDetail">
-                        Не всё нашлось — сохрани найденное. Источник недоступен — загрузи список через Worker или выбери
-                        файл CSV/TXT/TSV.
-                    </p>
-                    <a class="text-link" href="https://github.com/rvelabs/soundcloud-rpc#what-to-expect"
-                        ><span data-i18n="importLimits">Подробнее о переносе</span
-                        ><svg class="icon"><use href="#diagonal" /></svg
+                    <a
+                        class="text-link muted-link"
+                        href="https://github.com/rvelabs/soundcloud-rpc/tree/main/src/wave/recommendation"
+                        ><span data-i18n="algorithmLink">Как устроен подбор</span
+                        ><svg class="icon" aria-hidden="true"><use href="#i-external" /></svg
                     ></a>
                 </div>
-                <div class="transfer" data-reveal>
-                    <div class="transfer-top">
-                        <span data-i18n="transferLabel">ОТКУДА ПЕРЕНОСИМ?</span><span aria-hidden="true">↙</span>
+                <div class="taste-illustration" data-reveal aria-hidden="true">
+                    <div class="taste-heading"><span>YOUR TASTE / ON AIR</span><span class="status-dot"></span></div>
+                    <div class="taste-sources">
+                        <div><i class="album-art album-one"></i><span>01 / LIKED</span></div>
+                        <div><i class="album-art album-two"></i><span>02 / LIKED</span></div>
+                        <div><i class="album-art album-three"></i><span>03 / LIKED</span></div>
                     </div>
-                    <div class="platforms" role="group" aria-label="Источник плейлиста" data-label="platformLabel">
-                        <button type="button" data-source="spotify" aria-pressed="true">Spotify</button
-                        ><button type="button" data-source="yandex" aria-pressed="false" data-i18n="yandex">
-                            Яндекс Музыка</button
-                        ><button type="button" data-source="youtube" aria-pressed="false">YouTube Music</button
-                        ><button type="button" data-source="file" aria-pressed="false">CSV / TXT</button>
+                    <svg class="taste-lines" viewBox="0 0 420 125" fill="none">
+                        <path
+                            d="M70 0v35q0 20 20 20h100q20 0 20 20v50M210 0v125M350 0v35q0 20-20 20H230q-20 0-20 20v50"
+                            stroke="currentColor"
+                        />
+                        <circle cx="210" cy="78" r="19" fill="#ff640f" />
+                        <path d="m204 78 4 4 8-9" stroke="#111" stroke-width="2.5" />
+                    </svg>
+                    <div class="taste-queue">
+                        <span
+                            ><svg class="icon" aria-hidden="true"><use href="#i-wave" /></svg
+                            ><b data-i18n="tasteQueue">Дальше — новое</b></span
+                        >
+                        <div>
+                            <i class="queue-dot"></i><span data-i18n="tasteQueueOne">Связь с твоими интересами</span
+                            ><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                        </div>
+                        <div>
+                            <i class="queue-dot soft"></i
+                            ><span data-i18n="tasteQueueTwo">Другое знакомое направление</span
+                            ><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                        </div>
+                        <div>
+                            <i class="queue-dot pale"></i><span data-i18n="tasteQueueThree">Место для открытия</span
+                            ><svg class="icon" aria-hidden="true"><use href="#i-check" /></svg>
+                        </div>
                     </div>
-                    <div class="transfer-route">
-                        <span class="source-name">Spotify</span
-                        ><span class="route-line"
-                            ><svg class="icon"><use href="#arrow" /></svg></span
-                        ><svg class="cloud-icon"><use href="#cloud" /></svg>
-                    </div>
-                    <div class="transfer-instructions" aria-live="polite">
-                        <span class="transfer-step">01 /</span>
-                        <p data-source-copy>
-                            Открой публичный плейлист Spotify, скопируй ссылку и вставь её в импорт внутри клиента.
-                        </p>
-                    </div>
-                    <div class="transfer-result">
-                        <svg class="icon"><use href="#check" /></svg
-                        ><span data-i18n="transferResult">Сохраняй совпадения, даже если нашлось не всё.</span>
-                    </div>
+                    <p data-i18n="tasteCaption">Один любимый стиль не должен закрывать остальные.</p>
                 </div>
             </section>
-            <section class="equalizer-section wrap" id="equalizer" aria-labelledby="equalizer-title">
-                <div class="equalizer-copy" data-reveal="stagger">
-                    <p class="eyebrow">
-                        <span class="orange">03</span><span data-i18n="eqKicker">ТВОЙ ХАРАКТЕР ЗВУКА</span>
-                    </p>
-                    <h2 id="equalizer-title" data-i18n="eqTitle">Больше баса.<br />Или больше деталей.</h2>
-                    <p class="section-intro" data-i18n="eqIntro">
-                        Десять полос, 42 пресета и твои собственные настройки — прямо в штатном плеере SoundCloud.
-                    </p>
-                    <p class="import-detail" data-i18n="eqDetail">
-                        От мягких высоких до упругого баса. Выбери жанр, выдели вокал или настрой каждую полосу.
-                        Настройки сохраняются автоматически.
-                    </p>
-                    <p class="eq-safety" data-i18n="eqSafety">
-                        Автоматический запас громкости помогает избежать перегрузки при усилении частот.
-                    </p>
-                </div>
-                <div class="equalizer-demo" data-reveal>
-                    <div class="eq-demo-heading">
-                        <span data-i18n="eqName">Эквалайзер</span><span class="eq-badge">10 BAND / 42 PRESETS</span>
-                    </div>
-                    <div class="eq-presets" role="group" aria-label="Пример пресета" data-label="eqPresetsLabel">
-                        <button type="button" data-eq="warm" aria-pressed="true" data-i18n="eqWarm">Тёплое</button>
-                        <button type="button" data-eq="punch" aria-pressed="false" data-i18n="eqPunch">
-                            Упругий бас
-                        </button>
-                        <button type="button" data-eq="vocal" aria-pressed="false" data-i18n="eqVocal">Вокал</button>
-                    </div>
-                    <div class="eq-bands" aria-hidden="true">
-                        <div style="--gain: 2"><span>+2</span><i></i><small>31</small></div>
-                        <div style="--gain: 3"><span>+3</span><i></i><small>63</small></div>
-                        <div style="--gain: 3"><span>+3</span><i></i><small>125</small></div>
-                        <div style="--gain: 2"><span>+2</span><i></i><small>250</small></div>
-                        <div style="--gain: 1"><span>+1</span><i></i><small>500</small></div>
-                        <div style="--gain: 0"><span>0</span><i></i><small>1k</small></div>
-                        <div style="--gain: -1"><span>−1</span><i></i><small>2k</small></div>
-                        <div style="--gain: -1"><span>−1</span><i></i><small>4k</small></div>
-                        <div style="--gain: -2"><span>−2</span><i></i><small>8k</small></div>
-                        <div style="--gain: -2"><span>−2</span><i></i><small>16k</small></div>
-                    </div>
-                    <p class="eq-demo-note" data-i18n="eqDemoNote">
-                        Попробуй пресеты на схеме. Звук настраивается в приложении.
-                    </p>
-                    <span class="eq-demo-announcement" aria-live="polite" role="status"></span>
-                </div>
-            </section>
-            <section class="extras wrap" aria-labelledby="extras-title">
-                <div data-reveal>
-                    <p class="eyebrow">
-                        <span class="orange">04</span><span data-i18n="extrasKicker">ЧТО ЕЩЁ ВНУТРИ</span>
-                    </p>
-                    <h2 id="extras-title" data-i18n="extrasTitle">Маленькие вещи.<br />Большая разница.</h2>
-                </div>
-                <div class="extras-list" data-reveal="stagger">
+            <section class="features-section wrap" id="features" aria-labelledby="features-title">
+                <div class="section-heading compact" data-reveal>
                     <div>
-                        <span>Discord Rich Presence</span>
-                        <p data-i18n="discordBody">Покажи друзьям, что слушаешь.</p>
-                        <span class="extra-mark" aria-hidden="true">↗</span>
-                    </div>
-                    <div>
-                        <span>Last.fm</span>
-                        <p data-i18n="lastfmBody">Продолжай свою историю прослушиваний.</p>
-                        <span class="extra-mark" aria-hidden="true">↗</span>
-                    </div>
-                    <div>
-                        <span data-i18n="backgroundTitle">Музыка в фоне</span>
-                        <p data-i18n="backgroundBody">
-                            Сверни окно — музыка продолжит играть. У Моей волны лёгкий статичный фон.
+                        <p class="eyebrow">
+                            <span>03 /</span><span data-i18n="featuresKicker">БОЛЬШЕ, ЧЕМ ПЛЕЕР</span>
                         </p>
-                        <span class="extra-mark" aria-hidden="true">↗</span>
+                        <h2 id="features-title" data-i18n="featuresTitle">Твоя коллекция. Твой звук.</h2>
                     </div>
-                    <div>
-                        <span data-i18n="openTitle">Открытый код</span>
-                        <p data-i18n="openBody">Загляни внутрь, предложи идею или сообщи об ошибке.</p>
-                        <a href="https://github.com/rvelabs/soundcloud-rpc" aria-label="GitHub" class="extra-mark"
-                            ><svg class="icon"><use href="#diagonal" /></svg
-                        ></a>
-                    </div>
+                </div>
+                <div class="tools-grid">
+                    <article class="tool-panel" id="collection" data-reveal>
+                        <div class="tool-heading">
+                            <span class="tool-icon"
+                                ><svg class="icon" aria-hidden="true"><use href="#i-library" /></svg></span
+                            ><span class="tool-number">01 / TRANSFER</span>
+                        </div>
+                        <h3 data-i18n="importTitle">Плейлисты не бросаем.</h3>
+                        <p data-i18n="importIntro">
+                            Клиент найдёт версии твоих треков в SoundCloud и соберёт плейлист из совпадений. Даже если
+                            нашлось не всё.
+                        </p>
+                        <div class="platforms" role="group" aria-label="Источник плейлиста" data-label="platformLabel">
+                            <button type="button" data-source="spotify" aria-pressed="true">Spotify</button
+                            ><button type="button" data-source="yandex" aria-pressed="false" data-i18n="yandex">
+                                Яндекс Музыка</button
+                            ><button type="button" data-source="youtube" aria-pressed="false">YouTube</button
+                            ><button type="button" data-source="file" aria-pressed="false">CSV / TXT</button>
+                        </div>
+                        <div class="transfer-route">
+                            <span class="source-name">Spotify</span
+                            ><svg class="icon" aria-hidden="true"><use href="#i-arrow" /></svg
+                            ><span
+                                ><svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg>SoundCloud</span
+                            >
+                        </div>
+                        <p class="source-copy" data-source-copy aria-live="polite">
+                            Вставь ссылку на публичный плейлист Spotify в импорт внутри клиента.
+                        </p>
+                        <p class="tool-footnote" data-i18n="importDetail">
+                            Не копирует аудиофайлы. Совпадения можно проверить и сохранить частями. Поддерживаются CSV,
+                            TXT и TSV.
+                        </p>
+                    </article>
+                    <article class="tool-panel" id="equalizer" data-reveal>
+                        <div class="tool-heading">
+                            <span class="tool-icon"
+                                ><svg class="icon" aria-hidden="true"><use href="#i-sliders" /></svg></span
+                            ><span class="tool-number">02 / SOUND</span>
+                        </div>
+                        <h3 data-i18n="eqTitle">Настроен под тебя.</h3>
+                        <p data-i18n="eqIntro">
+                            Десять полос, 42 пресета и ручная настройка в штатном плеере. С автоматическим запасом
+                            громкости от перегрузки.
+                        </p>
+                        <div class="eq-presets" role="group" aria-label="Пример пресета" data-label="eqPresetsLabel">
+                            <button type="button" data-eq="warm" aria-pressed="true" data-i18n="eqWarm">Тёплое</button
+                            ><button type="button" data-eq="punch" aria-pressed="false" data-i18n="eqPunch">Бас</button
+                            ><button type="button" data-eq="vocal" aria-pressed="false" data-i18n="eqVocal">
+                                Вокал
+                            </button>
+                        </div>
+                        <div class="eq-bands" aria-hidden="true">
+                            <div style="--gain: 2"><span>2</span><i></i><small>31</small></div>
+                            <div style="--gain: 3"><span>3</span><i></i><small>63</small></div>
+                            <div style="--gain: 3"><span>3</span><i></i><small>125</small></div>
+                            <div style="--gain: 2"><span>2</span><i></i><small>250</small></div>
+                            <div style="--gain: 1"><span>1</span><i></i><small>500</small></div>
+                            <div style="--gain: 0"><span>0</span><i></i><small>1k</small></div>
+                            <div style="--gain: -1"><span>-1</span><i></i><small>2k</small></div>
+                            <div style="--gain: -1"><span>-1</span><i></i><small>4k</small></div>
+                            <div style="--gain: -2"><span>-2</span><i></i><small>8k</small></div>
+                            <div style="--gain: -2"><span>-2</span><i></i><small>16k</small></div>
+                        </div>
+                        <p class="tool-footnote" data-i18n="eqDemoNote">
+                            Визуальный пример пресета. Звук настраивается в приложении; некоторые защищённые потоки не
+                            поддерживают обработку.
+                        </p>
+                        <span class="sr-only eq-demo-announcement" aria-live="polite"></span>
+                    </article>
+                </div>
+                <div class="extras-grid" data-reveal>
+                    <article>
+                        <svg class="icon" aria-hidden="true"><use href="#i-headphones" /></svg>
+                        <h3>Discord &amp; Last.fm</h3>
+                        <p data-i18n="socialBody">Статус с текущим треком и продолжение твоей истории прослушиваний.</p>
+                    </article>
+                    <article>
+                        <svg class="icon" aria-hidden="true"><use href="#i-shield" /></svg>
+                        <h3 data-i18n="clientTitle">Настройки в F1</h3>
+                        <p data-i18n="clientBody">
+                            Блокировка рекламы, обновления, тема, масштаб, дополнения и сброс обучения.
+                        </p>
+                    </article>
+                    <article>
+                        <svg class="icon" aria-hidden="true"><use href="#i-github" /></svg>
+                        <h3 data-i18n="openTitle">Открытый код</h3>
+                        <p data-i18n="openBody">
+                            Бесплатный независимый проект. Можно заглянуть внутрь и предложить улучшение.
+                        </p>
+                    </article>
                 </div>
             </section>
             <section class="faq-section wrap" id="faq" aria-labelledby="faq-title">
-                <div class="faq-heading" data-reveal>
-                    <p class="eyebrow">FAQ /</p>
-                    <h2 id="faq-title" data-i18n="faqTitle">
-                        На всякий<br />
-                        случай.
-                    </h2>
-                    <a class="text-link" href="https://github.com/rvelabs/soundcloud-rpc/issues"
-                        ><span data-i18n="askQuestion">Другой вопрос?</span
-                        ><svg class="icon"><use href="#diagonal" /></svg
+                <div data-reveal>
+                    <p class="eyebrow"><span>04 /</span><span>FAQ</span></p>
+                    <h2 id="faq-title" data-i18n="faqTitle">Перед первым треком.</h2>
+                    <a class="text-link muted-link" href="https://github.com/rvelabs/soundcloud-rpc/issues"
+                        ><span data-i18n="askQuestion">Задать вопрос</span
+                        ><svg class="icon" aria-hidden="true"><use href="#i-external" /></svg
                     ></a>
                 </div>
-                <div class="questions" data-reveal="stagger">
+                <div class="questions" data-reveal>
                     <details>
                         <summary>
                             <span data-i18n="faqOfficialQ">Это официальный SoundCloud?</span><i aria-hidden="true"></i>
                         </summary>
                         <div class="faq-answer">
                             <p data-i18n="faqOfficialA">
-                                Нет. Это независимый бесплатный форк soundcloud-rpc от rvelabs. Проект не связан с
-                                SoundCloud. Для прослушивания нужен свой аккаунт SoundCloud.
+                                Нет. Это бесплатный независимый форк soundcloud-rpc от rvelabs, не связанный с
+                                SoundCloud. Для прослушивания нужен свой аккаунт сервиса.
                             </p>
                         </div>
                     </details>
                     <details>
                         <summary>
-                            <span data-i18n="faqRadioQ">Как работает «Моя волна»?</span><i aria-hidden="true"></i>
+                            <span data-i18n="faqRadioQ">Как работает Моя волна?</span><i aria-hidden="true"></i>
                         </summary>
                         <div class="faq-answer">
                             <p data-i18n="faqRadioA">
-                                Клиент использует похожие треки SoundCloud, собственное ранжирование и ваши реакции.
-                                Обычное прослушивание учитывается и при выключенной волне; звуковые признаки
-                                обрабатываются локально и сохраняются в кэше. Это не закрытый алгоритм Яндекс Музыки.
-                                Точность настроения и темпа зависит от доступных метаданных.
+                                Похожие треки SoundCloud, собственное ранжирование и твои реакции. Учитывается и обычное
+                                прослушивание. Это не закрытый алгоритм Яндекс Музыки: точность настроения и темпа
+                                зависит от доступных метаданных.
                             </p>
                         </div>
                     </details>
@@ -447,23 +509,36 @@
                         </summary>
                         <div class="faq-answer">
                             <p data-i18n="faqImportA">
-                                Импорт ищет существующие версии в SoundCloud, а не копирует аудиофайлы. Какие-то записи
-                                могут отсутствовать или быть недоступны. Найденную часть можно сохранить отдельно.
-                                Источник может вернуть неполный список; лимит плейлиста SoundCloud — 500 треков.
+                                Импорт ищет существующие версии, а не копирует музыку. Записи могут отсутствовать или
+                                быть недоступны. Найденную часть можно сохранить отдельно; лимит плейлиста — 500 треков.
+                                Источники иногда отдают неполные списки. Для Spotify может понадобиться дополнительный
+                                вход, от которого можно отказаться.
                             </p>
                         </div>
                     </details>
                     <details>
                         <summary>
-                            <span data-i18n="faqNetworkQ">А если сервис не открывается в моей сети?</span
+                            <span data-i18n="faqDataQ">Где хранится анализ и можно ли его сбросить?</span
+                            ><i aria-hidden="true"></i>
+                        </summary>
+                        <div class="faq-answer">
+                            <p data-i18n="faqDataA">
+                                Профиль вкуса и измеренные звуковые признаки сохраняются локально. В F1 можно сбросить
+                                анализ и обучение: лайки и плейлисты в SoundCloud останутся. Перед сбросом создаётся
+                                резервная копия, затем клиент перезапускается.
+                            </p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>
+                            <span data-i18n="faqNetworkQ">Что делать, если сервис не открывается?</span
                             ><i aria-hidden="true"></i>
                         </summary>
                         <div class="faq-answer">
                             <p data-i18n="faqNetworkA">
-                                В F1 есть мастер личного Cloudflare Worker. Он может использоваться для резервного
-                                подключения SoundCloud и чтения публичных плейлистов. Нужен ваш аккаунт Cloudflare; сам
-                                Cloudflare должен быть доступен в сети. Если Worker уже установлен, обновите его через
-                                мастер в F1. Альтернатива для списка треков — импорт CSV/TXT/TSV.
+                                В F1 есть мастер личного Cloudflare Worker для резервного подключения и чтения публичных
+                                плейлистов. Нужен свой аккаунт Cloudflare; Cloudflare должен быть доступен в твоей сети.
+                                Можно использовать уже созданный Worker. Для импорта списка есть CSV/TXT/TSV.
                             </p>
                         </div>
                     </details>
@@ -473,49 +548,54 @@
                         </summary>
                         <div class="faq-answer">
                             <p data-i18n="faqInstallA">
-                                Windows 10 или 11 (x64), WebView2 и аккаунт SoundCloud. Текущая сборка работает на Rust
-                                + WebView2. Установщик заменяет Electron и переносит поддерживаемую историю и аудиокэш;
-                                в SoundCloud нужно войти заново. Профиль Native сохраняется при обновлении. Доверенной
-                                подписи издателя пока нет — Windows может показать предупреждение.
+                                Windows 10 или 11, x64, WebView2 и аккаунт SoundCloud. Сборка работает на Rust +
+                                WebView2. Установщик заменяет Electron и переносит поддерживаемую историю и аудиокэш;
+                                после перехода нужно войти снова. Профиль сохраняется при обновлении. Доверенной подписи
+                                издателя пока нет — Windows может показать предупреждение.
                             </p>
                         </div>
                     </details>
                 </div>
             </section>
-            <section class="download-section" aria-labelledby="download-title">
-                <div class="wrap download-inner" data-reveal="stagger">
-                    <p class="eyebrow" data-i18n="downloadKicker">СЛЕДУЮЩИЙ ТРЕК МОЖЕТ СТАТЬ ЛЮБИМЫМ</p>
-                    <h2 id="download-title" data-i18n="downloadTitle">Дальше —<br />твоя музыка.</h2>
-                    <div class="download-actions">
-                        <a
-                            class="button button-dark"
-                            href="https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.12/SoundCloud-0.2.12-x64-setup.exe"
-                            ><span data-i18n="download">Скачать для Windows</span
-                            ><svg class="icon"><use href="#download" /></svg></a
-                        ><a class="text-link" href="https://github.com/rvelabs/soundcloud-rpc"
-                            ><span data-i18n="sourceCode">Исходный код</span
-                            ><svg class="icon"><use href="#diagonal" /></svg
-                        ></a>
-                    </div>
-                    <p class="download-note" data-i18n="downloadNote">
-                        0.2.12 · Windows x64 · Rust + WebView2 · Бесплатно
+            <section class="download-section wrap" id="download" aria-labelledby="download-title" data-reveal>
+                <div>
+                    <p class="eyebrow">
+                        <span class="status-dot"></span
+                        ><span data-i18n="downloadKicker">СЛЕДУЮЩИЙ ТРЕК УЖЕ ГДЕ-ТО РЯДОМ</span>
                     </p>
-                    <span class="giant-arrow" aria-hidden="true">↗</span>
+                    <h2 id="download-title" data-i18n="downloadTitle">Продолжим слушать?</h2>
+                    <p data-i18n="downloadNote">0.2.12 · Windows x64 · Бесплатно</p>
+                </div>
+                <div class="download-actions">
+                    <a
+                        class="button button-orange"
+                        href="https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.12/SoundCloud-0.2.12-x64-setup.exe"
+                        ><svg class="icon" aria-hidden="true"><use href="#i-download" /></svg
+                        ><span data-i18n="download">Скачать для Windows</span></a
+                    ><a class="text-link" href="https://github.com/rvelabs/soundcloud-rpc"
+                        ><svg class="icon" aria-hidden="true"><use href="#i-github" /></svg
+                        ><span data-i18n="sourceCode">Исходный код</span
+                        ><svg class="icon" aria-hidden="true"><use href="#i-external" /></svg
+                    ></a>
                 </div>
             </section>
         </main>
-        <footer class="wrap footer">
+        <footer class="footer wrap">
             <a class="brand" href="#"
-                ><svg class="cloud-icon"><use href="#cloud" /></svg
-                ><span>soundcloud<small>DESKTOP / BY RVELABS</small></span></a
+                ><svg class="icon" aria-hidden="true"><use href="#i-cloud" /></svg
+                ><span>soundcloud<small>DESKTOP · RVELABS</small></span></a
             >
-            <p data-i18n="footerNote">
-                Независимый проект. Сделан, чтобы слушать.<br />SoundCloud и другие названия принадлежат их владельцам.
-            </p>
+            <p data-i18n="footerNote">Независимый проект. SoundCloud и другие названия принадлежат их владельцам.</p>
             <div>
                 <a href="https://github.com/rvelabs/soundcloud-rpc/blob/main/LICENSE">MIT</a
                 ><a href="https://github.com/rvelabs/soundcloud-rpc/issues" data-i18n="feedback">Обратная связь</a>
             </div>
         </footer>
+        <dialog class="image-dialog" aria-label="Интерфейс клиента" data-label="galleryLabel">
+            <button class="dialog-close" type="button" data-close-image aria-label="Закрыть" data-label="closeLabel">
+                <svg class="icon" aria-hidden="true"><use href="#i-close" /></svg></button
+            ><img alt="" width="1280" height="820" />
+            <p data-i18n="demoNote">Демонстрация интерфейса · примеры треков</p>
+        </dialog>
     </body>
 </html>

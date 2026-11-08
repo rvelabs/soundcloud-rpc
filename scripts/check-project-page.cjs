@@ -38,7 +38,7 @@ app.whenReady().then(async () => {
         );
         const recordRunning = () =>
             wc.executeJavaScript(
-                "document.querySelector('.vinyl').getAnimations().some(a=>a.animationName==='record-spin' && a.playState==='running')",
+                "document.querySelector('.vinyl-rotor').getAnimations().some(a=>a.animationName==='vinyl-spin' && a.playState==='running')",
             );
         assert(await recordRunning(), 'record starts before any interaction, without document focus');
         assert.equal(
@@ -55,7 +55,7 @@ app.whenReady().then(async () => {
         );
         assert.equal(
             await wc.executeJavaScript(
-                "document.getAnimations().filter(a=>a.playState==='running' && !a.effect?.target?.classList.contains('vinyl')).length",
+                "document.getAnimations().filter(a=>a.playState==='running' && !a.effect?.target?.classList.contains('vinyl-rotor')).length",
             ),
             0,
         );
@@ -93,18 +93,19 @@ app.whenReady().then(async () => {
         );
         await new Promise((r) => setTimeout(r, 200));
         assert.equal(
-            await wc.executeJavaScript("getComputedStyle(document.querySelector('.vinyl')).animationPlayState"),
+            await wc.executeJavaScript("getComputedStyle(document.querySelector('.vinyl-rotor')).animationPlayState"),
             'running',
         );
         await wc.executeJavaScript("dispatchEvent(new Event('blur'))");
         await new Promise((r) => setTimeout(r, 70));
         assert.equal(
-            await wc.executeJavaScript("getComputedStyle(document.querySelector('.vinyl')).animationPlayState"),
-            'running',
+            await wc.executeJavaScript("getComputedStyle(document.querySelector('.vinyl-rotor')).animationPlayState"),
+            'paused',
             await wc.executeJavaScript(
                 "JSON.stringify({classes:document.querySelector('.record-art').className,focus:document.hasFocus(),hidden:document.hidden})",
             ),
         );
+        await wc.executeJavaScript("dispatchEvent(new Event('focus'))");
         const state = await wc.executeJavaScript(
             `({h1:document.querySelectorAll('h1').length,canonical:document.querySelector('link[rel=canonical]').href,schema:JSON.parse(document.querySelector('script[type="application/ld+json"]').textContent)})`,
         );
@@ -112,13 +113,62 @@ app.whenReady().then(async () => {
         assert.equal(state.canonical, 'https://rvelabs.github.io/soundcloud-rpc/');
         assert.equal(state.schema['@type'], 'SoftwareApplication');
         assert.deepEqual(errors, []);
+        for (const language of ['ru', 'en']) {
+            await wc.executeJavaScript(`document.querySelector('[data-site-language="${language}"]').click()`);
+            for (const tab of ['wave', 'settings', 'import', 'equalizer']) {
+                await wc.executeJavaScript(`document.querySelector('[data-gallery="${tab}"]').click()`);
+                const suffix = `app-${tab}${language === 'ru' ? '-ru' : ''}.webp`;
+                let preview;
+                for (let attempt = 0; attempt < 30; attempt++) {
+                    preview = await wc.executeJavaScript(
+                        `(()=>{const image=document.querySelector('#product-image');return {src:image.src,width:image.naturalWidth,selected:document.querySelector('[data-gallery][aria-selected="true"]').dataset.gallery,tabStops:document.querySelectorAll('[data-gallery][tabindex="0"]').length,error:image.dataset.loadError}})()`,
+                    );
+                    if (preview.src.endsWith(suffix) && preview.width === 1280) break;
+                    await new Promise((resolve) => setTimeout(resolve, 25));
+                }
+                assert(preview.src.endsWith(suffix) && preview.width === 1280, 'localized preview loads');
+                assert.equal(preview.selected, tab);
+                assert.equal(preview.tabStops, 1);
+                assert(!preview.error);
+            }
+        }
+        await wc.executeJavaScript("document.querySelector('[data-gallery=wave]').focus()");
+        await wc.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', key: 'End', code: 'End' });
+        assert.equal(await wc.executeJavaScript('document.activeElement.dataset.gallery'), 'equalizer');
+        await wc.executeJavaScript("document.querySelector('[data-zoom]').click()");
+        assert(await wc.executeJavaScript("document.querySelector('dialog').open"));
+        await wc.debugger.sendCommand('Input.dispatchKeyEvent', {
+            type: 'keyDown',
+            key: 'Escape',
+            code: 'Escape',
+            windowsVirtualKeyCode: 27,
+            nativeVirtualKeyCode: 27,
+        });
+        await wc.debugger.sendCommand('Input.dispatchKeyEvent', {
+            type: 'keyUp',
+            key: 'Escape',
+            code: 'Escape',
+            windowsVirtualKeyCode: 27,
+            nativeVirtualKeyCode: 27,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        assert.equal(await wc.executeJavaScript("document.querySelector('dialog').open"), false);
+        assert(await wc.executeJavaScript("document.activeElement.matches('[data-zoom]')"));
+        for (const source of ['spotify', 'yandex', 'youtube', 'file']) {
+            await wc.executeJavaScript(`document.querySelector('[data-source="${source}"]').click()`);
+            assert.equal(
+                await wc.executeJavaScript("document.querySelector('[data-source][aria-pressed=true]').dataset.source"),
+                source,
+            );
+        }
+        await wc.executeJavaScript("document.querySelector('[data-site-language=ru]').click()");
         await wc.executeJavaScript(
             "document.querySelector('#equalizer').scrollIntoView({behavior:'instant',block:'center'});true;",
         );
         await new Promise((resolve) => setTimeout(resolve, 140));
         assert(
             await wc.executeJavaScript(
-                "document.querySelector('.equalizer-demo').getAnimations().some(a=>a.effect.getTiming().duration===850)",
+                "document.querySelector('#equalizer').getAnimations().some(a=>a.effect.getTiming().duration===650)",
             ),
             'new section reveals when scrolled into view',
         );
@@ -144,7 +194,7 @@ app.whenReady().then(async () => {
         );
         await new Promise((resolve) => setTimeout(resolve, 1100));
         assert.notEqual(
-            await wc.executeJavaScript("getComputedStyle(document.querySelector('.transfer')).transform"),
+            await wc.executeJavaScript("getComputedStyle(document.querySelector('.taste-illustration')).transform"),
             'none',
             'reveals preserve the tilted card design',
         );
@@ -168,7 +218,7 @@ app.whenReady().then(async () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
         assert.equal(
             await wc.executeJavaScript(
-                "document.getAnimations().filter(a=>a.playState==='running'&&!a.effect?.target?.classList.contains('vinyl')).length",
+                "document.getAnimations().filter(a=>a.playState==='running'&&!a.effect?.target?.classList.contains('vinyl-rotor')).length",
             ),
             0,
             'reduced motion cancels entrance and scroll effects',
@@ -180,9 +230,6 @@ app.whenReady().then(async () => {
             mobile: false,
         });
         await wc.executeJavaScript("scrollTo({top:0,behavior:'instant'});true;");
-        await wc.insertCSS(
-            '.header .navigation{height:88px}.hero.wrap{padding-top:36px}.hero .hero-copy h1{font-size:108px;margin-block:20px}.hero .record-art{width:420px;margin:0;align-self:start}.hero .hero-actions,.hero .fineprint,.hero .hero-baseline{display:none}',
-        );
         await wc.executeJavaScript(
             'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
         );
@@ -193,14 +240,12 @@ app.whenReady().then(async () => {
         );
         const image = capture.toPNG();
         fs.writeFileSync(path.join(out, 'social-cover.png'), image);
-        if (process.env.WAVE_EXPORT_SOCIAL === '1')
-            fs.writeFileSync(path.join(root, 'docs/images/social-cover.png'), image);
         const result = {
             autoStartWithoutClick: true,
             resumeAfterReducedMotion: true,
             viewportChecks: 24,
             languageSwitch: true,
-            visibleRecordIgnoresFocus: true,
+            offscreenAndUnfocusedRecordPauses: true,
             spinsWithSystemReducedMotion: true,
             decorativeRecordOnly: true,
             schema: true,
@@ -208,6 +253,10 @@ app.whenReady().then(async () => {
             socialPreview: true,
             scrollReveals: true,
             equalizerPreviewMatchesApp: true,
+            localizedGalleryChecks: 8,
+            galleryKeyboard: true,
+            imageDialogEscapeAndFocus: true,
+            playlistSourceChoices: 4,
             reducedMotionCancelsEffects: true,
             tiltedCardPreserved: true,
         };

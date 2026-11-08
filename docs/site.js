@@ -4,122 +4,95 @@
         skip: 'Skip to content',
         navLabel: 'Main navigation',
         navWave: 'My Wave',
-        navImport: 'Bring your music',
-        heroKicker: 'YOUR SOUNDCLOUD. TO BE CONTINUED.',
-        heroTitle: '<span>Off</span><span>repeat<span class="orange">.</span></span>',
-        heroDescription: 'Your next favorite track is out there. My Wave helps you find it — right inside SoundCloud.',
+        navFeatures: 'Features',
+        navDownload: 'Download',
+        releaseNote: 'A new chapter for My Wave',
+        heroTitle: 'More music.<br><em>Fewer repeats.</em>',
+        heroDescription:
+            'The SoundCloud you know — with personal radio, playlist import and your own sound. A free desktop client for Windows.',
         download: 'Download for Windows',
-        seeApp: 'Take a look',
-        heroNote: 'Free. Open source. Windows 10 / 11, x64.',
-        releaseNote: 'New in 0.2.12: improved My Wave and ad blocking ↗',
-        sleeveLabel: 'THE NEVER-ENDING SIDE A',
-        baseline: 'A FAMILIAR PLAYER. A DIFFERENT NEXT TRACK.',
-        learnMore: 'Learn more',
-        waveKicker: 'PERSONAL RADIO',
-        waveTitle: 'Your favorites.<br>A starting point.',
+        seeApp: 'Take a look inside',
+        heroNote: 'Free. Open source.',
+        stripWave: 'Your personal radio',
+        stripImport: 'Your playlists, with you',
+        stripEq: '42 sound presets',
+        appKicker: 'FAMILIAR. NOW MORE YOU.',
+        appTitle: 'Right where you listen.',
+        appIntro:
+            'An addition to the SoundCloud interface. Its player, queue and your likes stay right where they belong.',
+        galleryLabel: 'Client interface',
+        zoomLabel: 'Enlarge the image',
+        closeLabel: 'Close',
+        tabWave: 'My Wave',
+        tabSettings: 'Customize',
+        tabImport: 'Import',
+        tabEq: 'Equalizer',
+        demoNote: 'Interface demonstration · sample tracks',
+        waveKicker: 'MORE THAN SHUFFLE',
+        waveTitle: 'Your taste.<br>More than one direction.',
         waveIntro:
-            'You don’t have to decide what comes next. Start with something you love, and let the music carry on.',
-        tasteTitle: 'From your favorites to new finds',
+            'From recordings you enjoy to something you haven’t heard yet. My Wave combines related SoundCloud tracks and independent ranking.',
         tasteBody:
-            'Related SoundCloud tracks and independent ranking. Likes and listening feedback help set the direction.',
-        moodTitle: 'For the moment you’re in',
-        moodBody: 'Mood, activity, familiar or unfamiliar tracks, and music language. All in one panel.',
-        queueTitle: 'Something good is already up next',
+            'Likes and ordinary listening help build your taste profile. Sound features are processed locally and cached.',
+        moodBody:
+            'Choose a mood, activity, music language and a balance of familiar music and discoveries. One quick skip does not reject a whole genre.',
         queueBody:
-            'The next tracks are prepared ahead of time. Music keeps playing as you change pages or minimize the window.',
-        algorithmLink: 'See how discovery works',
-        nativePlayer: 'The queue, likes and player are still SoundCloud.',
-        waveAlt: 'My Wave card inside the SoundCloud desktop client',
-        settingsAlt: 'My Wave settings for mood, activity and music language',
-        settingsNote: 'Your day.<br>Your settings.',
-        waveBottom: 'LESS SEARCHING. MORE “WAIT, WHAT IS THIS TRACK?”',
-        importKicker: 'YOUR COLLECTION COMES WITH YOU',
-        importTitle: 'Keep your<br>playlists close.',
+            'The next tracks are prepared ahead of time. Change pages or minimize the window — your music keeps playing.',
+        algorithmLink: 'How discovery works',
+        tasteQueue: 'Something new, up next',
+        tasteQueueOne: 'Connected to your interests',
+        tasteQueueTwo: 'Another side of your taste',
+        tasteQueueThree: 'Room for a discovery',
+        tasteCaption: 'One favorite style shouldn’t close off all the others.',
+        featuresKicker: 'MORE THAN A PLAYER',
+        featuresTitle: 'Your collection. Your sound.',
+        importTitle: 'Keep your playlists close.',
         importIntro:
-            'Spent years putting them together? Bring them along. The client finds SoundCloud versions and builds a playlist from the matches.',
-        importDetail:
-            'Not everything matched? Save what did. Source unavailable? Load the list through your Worker or import a CSV/TXT/TSV file.',
-        importLimits: 'More about playlist import',
-        transferLabel: 'WHERE’S YOUR MUSIC?',
+            'The client finds SoundCloud versions of your tracks and builds a playlist from the matches. Even when not everything is found.',
         platformLabel: 'Playlist source',
         yandex: 'Yandex Music',
-        transferResult: 'Keep the matches, even when not every track is found.',
-        eqKicker: 'MAKE THE SOUND YOURS',
-        eqTitle: 'More bass.<br>Or more detail.',
-        eqIntro: 'Ten bands, 42 presets and your own settings — right in the native SoundCloud player.',
-        eqDetail:
-            'From softer highs to punchier bass. Choose a genre, bring vocals forward, or adjust every band. Your settings save automatically.',
-        eqSafety: 'Automatic headroom helps avoid overload when boosting frequencies.',
-        eqName: 'Equalizer',
+        importDetail:
+            'Audio files are not copied. Review matches and save the found part. CSV, TXT and TSV files are supported.',
+        eqTitle: 'Tuned to you.',
+        eqIntro:
+            'Ten bands, 42 presets and manual adjustment in the SoundCloud player. Automatic headroom helps avoid overload.',
         eqPresetsLabel: 'Preset preview',
         eqWarm: 'Warm',
-        eqPunch: 'Bass punch',
+        eqPunch: 'Bass',
         eqVocal: 'Vocals',
-        eqDemoNote: 'Try the presets on this diagram. Adjust your sound in the app.',
-        extrasKicker: 'ALSO ON THE RECORD',
-        extrasTitle: 'Little things.<br>A big difference.',
-        discordBody: 'Let your friends see what’s playing.',
-        lastfmBody: 'Keep your listening history going.',
-        backgroundTitle: 'Music in the background',
-        backgroundBody: 'Minimize the window. Your music keeps playing, with a lightweight static My Wave background.',
+        eqDemoNote: 'A visual preset example. Adjust the sound in the app; some protected streams cannot be processed.',
+        socialBody: 'Show the track you’re playing and keep your listening history going.',
+        clientTitle: 'Settings in F1',
+        clientBody: 'Ad blocking, updates, theme, zoom, extensions and learning reset.',
         openTitle: 'Open source',
-        openBody: 'Look inside, suggest an idea, or report a bug.',
-        faqTitle: 'Good to<br> know.',
-        askQuestion: 'Another question?',
+        openBody: 'A free, independent project. Look inside and suggest an improvement.',
+        faqTitle: 'Before the first track.',
+        askQuestion: 'Ask a question',
         faqOfficialQ: 'Is this the official SoundCloud app?',
         faqOfficialA:
-            'No. This is a free, independent fork of soundcloud-rpc maintained by rvelabs. It is not affiliated with SoundCloud. You need your own SoundCloud account to listen.',
+            'No. This is a free, independent soundcloud-rpc fork by rvelabs, not affiliated with SoundCloud. You need your own SoundCloud account to listen.',
         faqRadioQ: 'How does My Wave work?',
         faqRadioA:
-            'It combines related SoundCloud tracks, independent ranking and your reactions. Ordinary listening counts with My Wave off; sound features are processed locally and cached. It is not Yandex Music’s proprietary algorithm. Mood and tempo accuracy depend on available metadata.',
+            'Related SoundCloud tracks, independent ranking and your reactions. Ordinary listening counts too. It is not Yandex Music’s proprietary algorithm: mood and tempo accuracy depend on available metadata.',
         faqImportQ: 'Will every track be transferred?',
         faqImportA:
-            'Import finds existing SoundCloud versions; it does not copy audio files. Some tracks may be missing or unavailable. You can save the matched part separately. Sources may return incomplete lists; SoundCloud playlists are limited to 500 tracks.',
-        faqNetworkQ: 'What if the service won’t open on my network?',
+            'Import finds existing versions; it does not copy music. Recordings may be missing or unavailable. Save the matched part separately; SoundCloud playlists are limited to 500 tracks. Sources sometimes return incomplete lists. Spotify may require an additional sign-in, which you can decline.',
+        faqDataQ: 'Where is the analysis stored? Can I reset it?',
+        faqDataA:
+            'Your taste profile and measured sound features are stored locally. Reset analysis and learning in F1 without deleting SoundCloud likes or playlists. A backup is created before the reset, then the client restarts.',
+        faqNetworkQ: 'What if the service will not open?',
         faqNetworkA:
-            'F1 includes a setup wizard for a personal Cloudflare Worker. It can provide a fallback connection to SoundCloud and read public playlist metadata. You need your own Cloudflare account, and Cloudflare must be reachable. If you already have a Worker, update it through the F1 setup wizard. CSV/TXT/TSV import is an alternative for track lists.',
+            'F1 includes a personal Cloudflare Worker setup wizard for fallback connectivity and reading public playlists. You need your own Cloudflare account, and Cloudflare must be reachable on your network. You can also use an existing Worker. CSV/TXT/TSV import is available for track lists.',
         faqInstallQ: 'What do I need to install it?',
         faqInstallA:
-            'Windows 10 or 11 (x64), WebView2 and a SoundCloud account. The current build uses Rust + WebView2. The installer replaces Electron and imports supported history and audio cache; sign in again afterward. Existing Native profiles survive updates. There is no trusted publisher signature yet, so Windows may show a warning.',
-        downloadKicker: 'THE NEXT TRACK COULD BE YOUR FAVORITE',
-        downloadTitle: 'Your music.<br>To be continued.',
+            'Windows 10 or 11, x64, WebView2 and a SoundCloud account. The build uses Rust + WebView2. The installer replaces Electron and imports supported history and audio cache; sign in again after the switch. Profiles survive updates. There is no trusted publisher signature yet, so Windows may show a warning.',
+        downloadKicker: 'YOUR NEXT FAVORITE IS ALREADY OUT THERE',
+        downloadTitle: 'Keep the music going?',
+        downloadNote: '0.2.12 · Windows x64 · Free',
         sourceCode: 'Source code',
-        downloadNote: '0.2.12 · Windows x64 · Rust + WebView2 · Free',
-        footerNote:
-            'An independent project. Made for listening.<br>SoundCloud and other names belong to their respective owners.',
+        footerNote: 'An independent project. SoundCloud and other names belong to their respective owners.',
         feedback: 'Feedback',
     };
-    const sources = {
-        spotify: {
-            name: ['Spotify', 'Spotify'],
-            copy: [
-                'Открой публичный плейлист Spotify, скопируй ссылку и вставь её в импорт внутри клиента.',
-                'Open a public Spotify playlist, copy its link, and paste it into playlist import in the app.',
-            ],
-        },
-        yandex: {
-            name: ['Яндекс Музыка', 'Yandex Music'],
-            copy: [
-                'Поделись публичным плейлистом Яндекс Музыки. Вставь его ссылку в импорт внутри клиента.',
-                'Share a public Yandex Music playlist. Paste its link into playlist import in the app.',
-            ],
-        },
-        youtube: {
-            name: ['YouTube Music', 'YouTube Music'],
-            copy: [
-                'Скопируй ссылку на публичный плейлист YouTube или YouTube Music и открой импорт в клиенте.',
-                'Copy the link to a public YouTube or YouTube Music playlist and open playlist import in the app.',
-            ],
-        },
-        file: {
-            name: ['CSV / TXT / TSV', 'CSV / TXT / TSV'],
-            copy: [
-                'Выбери файл до 4 МБ: CSV/TSV с названием и исполнителем или TXT «Исполнитель — Название». Доступ к исходному сервису не нужен.',
-                'Choose a file up to 4 MB: CSV/TSV with track and artist columns, or TXT “Artist — Title”. No source service access is needed.',
-            ],
-        },
-    };
-    const original = new Map();
     const seo = {
         ru: {
             title: 'SoundCloud для Windows — Моя волна и импорт плейлистов',
@@ -138,103 +111,191 @@
             imageAlt: 'SoundCloud Desktop by rvelabs: My Wave, equalizer and playlist import for Windows',
         },
     };
-    for (const element of document.querySelectorAll('[data-i18n]')) original.set(element, element.innerHTML);
-    const attributes = new Map();
-    for (const element of document.querySelectorAll('[data-label],[data-alt]'))
-        attributes.set(element, element.getAttribute(element.dataset.alt ? 'alt' : 'aria-label'));
-    const record = document.querySelector('.record-art');
-    const recordDisc = document.querySelector('.record-disc');
+    const original = new Map([...document.querySelectorAll('[data-i18n]')].map((node) => [node, node.innerHTML]));
+    const attributes = new Map(
+        [...document.querySelectorAll('[data-label]')].map((node) => [node, node.getAttribute('aria-label')]),
+    );
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
-    const reveals = new Set();
-    const eqCurves = {
+    const animations = new Set();
+    const gallery = {
+        wave: {
+            title: ['Нажми. И слушай.', 'Press play. Keep going.'],
+            description: [
+                'Лайки и прослушивания задают направление. Следующие треки готовятся, пока играет текущий.',
+                'Likes and listening set the direction. The next tracks are prepared while the current one plays.',
+            ],
+            points: [
+                ['Подбор по твоим интересам', 'Discovery around your interests'],
+                ['Привычная очередь SoundCloud', 'The familiar SoundCloud queue'],
+                ['Музыка продолжает играть в фоне', 'Music keeps playing in the background'],
+            ],
+        },
+        settings: {
+            title: ['Под твой момент.', 'For your kind of moment.'],
+            description: [
+                'Настроение, занятие, язык и баланс знакомой музыки с открытиями. Настройки живут рядом с плеером.',
+                'Mood, activity, music language and a balance of old favorites and discoveries. Settings live right beside the player.',
+            ],
+            points: [
+                ['Выбор настроения и занятия', 'Mood and activity controls'],
+                ['Знакомое или новое', 'Familiar music or discoveries'],
+                ['Звучание, темп и исключения', 'Sound, tempo and exclusions'],
+            ],
+        },
+        import: {
+            title: ['Собирал годами? Забирай.', 'Years in the making? Bring it.'],
+            description: [
+                'Вставь ссылку, проверь найденные версии и сохрани совпадения в SoundCloud. Пропущенные треки не останавливают весь перенос.',
+                'Paste a link, review the matching versions and save them to SoundCloud. Missing tracks do not stop the whole transfer.',
+            ],
+            points: [
+                ['Spotify, Яндекс Музыка, YouTube', 'Spotify, Yandex Music, YouTube'],
+                ['CSV, TXT и TSV без исходного сервиса', 'CSV, TXT and TSV without the source service'],
+                ['Сохранение найденной части', 'Save the matched part'],
+            ],
+        },
+        equalizer: {
+            title: ['Твой характер звука.', 'Your kind of sound.'],
+            description: [
+                'От тёплого звучания до акцента на басе или вокале. Выбери пресет или настрой каждую полосу самостоятельно.',
+                'From a warmer sound to a focus on bass or vocals. Pick a preset or adjust every band yourself.',
+            ],
+            points: [
+                ['10 полос и 42 пресета', '10 bands and 42 presets'],
+                ['Настройки сохраняются автоматически', 'Settings save automatically'],
+                ['Работает и в свёрнутом окне', 'Keeps working when minimized'],
+            ],
+        },
+    };
+    const sources = {
+        spotify: [
+            'Вставь ссылку на публичный плейлист или альбом Spotify в импорт внутри клиента.',
+            'Paste a public Spotify playlist or album link into playlist import in the client.',
+        ],
+        yandex: [
+            'Поделись публичным плейлистом Яндекс Музыки и вставь его ссылку в клиент.',
+            'Share a public Yandex Music playlist and paste its link into the client.',
+        ],
+        youtube: [
+            'Скопируй ссылку на публичный плейлист YouTube или YouTube Music.',
+            'Copy a public YouTube or YouTube Music playlist link.',
+        ],
+        file: [
+            'Выбери CSV/TSV со столбцами исполнителя и названия или TXT «Исполнитель — Название». До 4 МБ.',
+            'Choose a CSV/TSV with artist and track columns, or a TXT “Artist — Track” list. Up to 4 MB.',
+        ],
+    };
+    const sourceNames = {
+        spotify: ['Spotify', 'Spotify'],
+        yandex: ['Яндекс Музыка', 'Yandex Music'],
+        youtube: ['YouTube Music', 'YouTube Music'],
+        file: ['CSV / TXT', 'CSV / TXT'],
+    };
+    const curves = {
         warm: [2, 3, 3, 2, 1, 0, -1, -1, -2, -2],
         punch: [0, 2, 5, 2, -1, -1, 0, 0, 0, 0],
         vocal: [-3, -2, -1, 0, 2, 3, 4, 2, 0, -1],
     };
     let language = 'ru',
         source = 'spotify',
-        visible = true,
-        entrancePlayed = false;
-    const trackAnimation = (animation) => {
-        reveals.add(animation);
+        selected = 'wave',
+        sequence = 0,
+        recordVisible = true,
+        focused = true,
+        frame = 0;
+    const index = () => (language === 'en' ? 1 : 0);
+    const runAnimation = (element, frames, options) => {
+        if (reduce.matches || document.hidden || !element.animate) return;
+        const animation = element.animate(frames, options);
+        if (!focused) animation.pause();
+        animations.add(animation);
         animation.finished.then(
-            () => reveals.delete(animation),
-            () => reveals.delete(animation),
+            () => animations.delete(animation),
+            () => animations.delete(animation),
         );
+        return animation;
     };
-    const motionAllowed = () => !document.hidden && visible;
     const syncMotion = () => {
-        record.classList.toggle('is-still', !motionAllowed());
-        if (!reduce.matches && motionAllowed() && !entrancePlayed) {
-            entrancePlayed = true;
-            trackAnimation(
-                recordDisc.animate(
-                    [
-                        { opacity: 0.4, transform: 'translate(-18%, 5%) rotate(-6deg)' },
-                        { opacity: 1, transform: 'none' },
-                    ],
-                    { duration: 1100, easing: 'cubic-bezier(.22,1,.36,1)' },
-                ),
-            );
-            trackAnimation(
-                record
-                    .querySelector('.sleeve')
-                    .animate([{ transform: 'translateX(14px) rotate(-14deg)' }, { transform: 'rotate(-9deg)' }], {
-                        duration: 1200,
-                        easing: 'cubic-bezier(.22,1,.36,1)',
-                    }),
-            );
-        }
-        for (const animation of reveals) {
-            if (reduce.matches || ['idle', 'finished'].includes(animation.playState)) {
-                animation.cancel();
-                reveals.delete(animation);
-            } else if (document.hidden || (!visible && animation.effect?.target.closest('.record-art')))
-                animation.pause();
-            else animation.play();
+        const active = !document.hidden && focused;
+        document.body.classList.toggle('motion-still', !active || !recordVisible);
+        for (const animation of animations) {
+            if (reduce.matches) {
+                animation.finish();
+                continue;
+            }
+            if (active) animation.play();
+            else animation.pause();
         }
     };
     const updateSource = () => {
-        const index = language === 'en' ? 1 : 0;
-        document.querySelector('.source-name').textContent = sources[source].name[index];
+        document.querySelector('.source-name').textContent = sourceNames[source][index()];
         const text = document.querySelector('[data-source-copy]');
-        text.textContent = sources[source].copy[index];
-        if (!reduce.matches && !document.hidden)
-            trackAnimation(
-                text.animate(
-                    [
-                        { opacity: 0.2, transform: 'translateY(5px)' },
-                        { opacity: 1, transform: 'none' },
-                    ],
-                    { duration: 260, easing: 'ease-out' },
-                ),
-            );
+        text.textContent = sources[source][index()];
         for (const button of document.querySelectorAll('[data-source]'))
             button.setAttribute('aria-pressed', String(button.dataset.source === source));
+        runAnimation(
+            text,
+            [
+                { opacity: 0.4, transform: 'translateY(5px)' },
+                { opacity: 1, transform: 'none' },
+            ],
+            { duration: 240, easing: 'ease-out' },
+        );
     };
-    for (const button of document.querySelectorAll('[data-eq]'))
-        button.addEventListener('click', () => {
-            const curve = eqCurves[button.dataset.eq];
-            for (const [index, band] of [...document.querySelectorAll('.eq-bands > div')].entries()) {
-                band.style.setProperty('--gain', curve[index]);
-                band.querySelector('span').textContent = curve[index] > 0 ? '+' + curve[index] : String(curve[index]);
-            }
-            for (const preset of document.querySelectorAll('[data-eq]'))
-                preset.setAttribute('aria-pressed', String(preset === button));
-            document.querySelector('.eq-demo-announcement').textContent = button.textContent;
-        });
+    const image = document.getElementById('product-image');
+    const updateGallery = async (animate = true) => {
+        const current = ++sequence,
+            item = gallery[selected],
+            keys = Object.keys(gallery);
+        document.querySelector('[data-gallery-index]').textContent = '0' + (keys.indexOf(selected) + 1) + ' / 04';
+        document.querySelector('[data-gallery-title]').textContent = item.title[index()];
+        document.querySelector('[data-gallery-description]').textContent = item.description[index()];
+        document.querySelector('[data-gallery-points]').replaceChildren(
+            ...item.points.map((point) => {
+                const li = document.createElement('li');
+                li.textContent = point[index()];
+                return li;
+            }),
+        );
+        for (const button of document.querySelectorAll('[data-gallery]')) {
+            const active = button.dataset.gallery === selected;
+            button.setAttribute('aria-selected', String(active));
+            button.tabIndex = active ? 0 : -1;
+        }
+        document.getElementById('gallery-panel').setAttribute('aria-labelledby', 'tab-' + selected);
+        const url = './images/app-' + selected + (language === 'ru' ? '-ru' : '') + '.webp';
+        const next = new Image();
+        next.src = url;
+        try {
+            await next.decode();
+        } catch {
+            if (current === sequence) image.dataset.loadError = 'true';
+            return;
+        }
+        if (current !== sequence) return;
+        image.removeAttribute('data-load-error');
+        image.src = url;
+        image.alt =
+            item.title[index()] +
+            ' — ' +
+            (language === 'ru' ? 'демонстрация интерфейса SoundCloud' : 'SoundCloud interface demonstration');
+        if (animate)
+            runAnimation(
+                image,
+                [
+                    { opacity: 0.35, transform: 'translateY(6px)' },
+                    { opacity: 1, transform: 'none' },
+                ],
+                { duration: 330, easing: 'cubic-bezier(.22,1,.36,1)' },
+            );
+    };
     const setLanguage = (next) => {
         language = next === 'en' ? 'en' : 'ru';
         document.documentElement.lang = language;
-        for (const [element, html] of original)
-            element.innerHTML = language === 'en' ? english[element.dataset.i18n] || html : html;
-        for (const [element, value] of attributes) {
-            const key = element.dataset.alt || element.dataset.label;
-            element.setAttribute(
-                element.dataset.alt ? 'alt' : 'aria-label',
-                language === 'en' ? english[key] || value : value,
-            );
-        }
+        for (const [node, text] of original)
+            node.innerHTML = language === 'en' ? english[node.dataset.i18n] || text : text;
+        for (const [node, text] of attributes)
+            node.setAttribute('aria-label', language === 'en' ? english[node.dataset.label] || text : text);
         for (const button of document.querySelectorAll('[data-site-language]'))
             button.setAttribute('aria-pressed', String(button.dataset.siteLanguage === language));
         const metadata = seo[language];
@@ -258,56 +319,180 @@
             schema.textContent = JSON.stringify(value);
         }
         updateSource();
-        syncMotion();
+        void updateGallery(false);
     };
     for (const button of document.querySelectorAll('[data-site-language]'))
         button.addEventListener('click', () => setLanguage(button.dataset.siteLanguage));
     for (const button of document.querySelectorAll('[data-source]'))
         button.addEventListener('click', () => {
+            if (!Object.hasOwn(sources, button.dataset.source)) return;
             source = button.dataset.source;
             updateSource();
         });
+    const tabs = [...document.querySelectorAll('[data-gallery]')];
+    for (const button of tabs) {
+        button.addEventListener('click', () => {
+            if (selected === button.dataset.gallery) return;
+            selected = button.dataset.gallery;
+            void updateGallery();
+        });
+        button.addEventListener('keydown', (event) => {
+            const at = tabs.indexOf(button),
+                step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+            let next = step
+                ? (at + step + tabs.length) % tabs.length
+                : event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? tabs.length - 1
+                    : -1;
+            if (next < 0) return;
+            event.preventDefault();
+            tabs[next].focus();
+            tabs[next].click();
+        });
+    }
+    for (const button of document.querySelectorAll('[data-eq]'))
+        button.addEventListener('click', () => {
+            const curve = curves[button.dataset.eq];
+            for (const [at, band] of [...document.querySelectorAll('.eq-bands>div')].entries()) {
+                band.style.setProperty('--gain', curve[at]);
+                band.querySelector('span').textContent = (curve[at] > 0 ? '+' : '') + curve[at];
+            }
+            for (const other of document.querySelectorAll('[data-eq]'))
+                other.setAttribute('aria-pressed', String(other === button));
+            document.querySelector('.eq-demo-announcement').textContent = button.textContent;
+        });
+    const disclosureAnimations = new Map();
+    for (const details of document.querySelectorAll('.questions details'))
+        details.querySelector('summary').addEventListener('click', (event) => {
+            if (reduce.matches || !details.animate) return;
+            event.preventDefault();
+            const content = details.querySelector('.faq-answer'),
+                previous = disclosureAnimations.get(details);
+            const closing = previous ? previous.closing === false : details.open;
+            const from = details.open ? content.getBoundingClientRect().height : 0;
+            previous?.animation.cancel();
+            details.open = true;
+            const full = content.scrollHeight;
+            const animation = content.animate(
+                [
+                    { height: from + 'px', opacity: closing ? 1 : 0 },
+                    { height: (closing ? 0 : full) + 'px', opacity: closing ? 0 : 1 },
+                ],
+                { duration: 260, easing: 'cubic-bezier(.22,1,.36,1)' },
+            );
+            disclosureAnimations.set(details, { animation, closing });
+            animations.add(animation);
+            animation.onfinish = () => {
+                details.open = !closing;
+                disclosureAnimations.delete(details);
+                animations.delete(animation);
+            };
+            animation.oncancel = () => animations.delete(animation);
+        });
+    const dialog = document.querySelector('.image-dialog');
+    const zoom = document.querySelector('[data-zoom]');
+    zoom.addEventListener('click', () => {
+        const enlarged = dialog.querySelector('img');
+        enlarged.src = image.src;
+        enlarged.alt = image.alt;
+        if (!dialog.open) dialog.showModal();
+        runAnimation(
+            dialog,
+            [
+                { opacity: 0, transform: 'translateY(9px)' },
+                { opacity: 1, transform: 'none' },
+            ],
+            { duration: 220, easing: 'ease-out' },
+        );
+    });
+    document.querySelector('[data-close-image]').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('close', () => zoom.focus({ preventScroll: true }));
+    dialog.addEventListener('click', (event) => {
+        const rect = dialog.getBoundingClientRect();
+        if (
+            event.target === dialog &&
+            (event.clientX < rect.left ||
+                event.clientX > rect.right ||
+                event.clientY < rect.top ||
+                event.clientY > rect.bottom)
+        )
+            dialog.close();
+    });
     if ('IntersectionObserver' in window) {
-        new IntersectionObserver(
-            ([entry]) => {
-                visible = entry.isIntersecting;
-                syncMotion();
-            },
-            { threshold: 0.06 },
-        ).observe(record);
-        const observer = new IntersectionObserver(
+        const once = new IntersectionObserver(
             (entries) => {
                 for (const entry of entries) {
                     if (!entry.isIntersecting) continue;
-                    observer.unobserve(entry.target);
-                    if (reduce.matches || document.hidden) continue;
-                    const targets =
-                        entry.target.dataset.reveal === 'stagger'
-                            ? [...entry.target.children].filter((element) => !element.classList.contains('giant-arrow'))
-                            : [entry.target];
-                    targets.forEach((target, index) => {
-                        const animation = target.animate(
-                            [
-                                { opacity: 0, translate: '0 28px' },
-                                { opacity: 1, translate: '0 0' },
-                            ],
-                            {
-                                duration: 850,
-                                delay: Math.min(index * 85, 340),
-                                fill: 'backwards',
-                                easing: 'cubic-bezier(.22,1,.36,1)',
-                            },
-                        );
-                        trackAnimation(animation);
-                    });
+                    once.unobserve(entry.target);
+                    runAnimation(
+                        entry.target,
+                        [
+                            { opacity: 0.4, translate: '0 18px' },
+                            { opacity: 1, translate: '0 0' },
+                        ],
+                        { duration: 650, easing: 'cubic-bezier(.22,1,.36,1)' },
+                    );
                 }
             },
-            { threshold: 0, rootMargin: '0px 0px -28px 0px' },
+            { rootMargin: '0px 0px -16px 0px' },
         );
-        for (const section of document.querySelectorAll('[data-reveal]')) observer.observe(section);
+        for (const element of document.querySelectorAll('[data-reveal]')) once.observe(element);
+        new IntersectionObserver(
+            ([entry]) => {
+                recordVisible = entry.isIntersecting;
+                syncMotion();
+            },
+            { threshold: 0.02 },
+        ).observe(document.querySelector('[data-motion]'));
+        const links = [...document.querySelectorAll('.nav-links a')];
+        const sections = new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries)
+                    if (entry.isIntersecting)
+                        for (const link of links)
+                            link.setAttribute('aria-current', String(link.hash === '#' + entry.target.id));
+            },
+            { rootMargin: '-15% 0px -60%' },
+        );
+        for (const link of links) {
+            const section = document.querySelector(link.hash);
+            if (section) sections.observe(section);
+        }
     }
+    const progress = () => {
+        frame = 0;
+        const range = document.documentElement.scrollHeight - innerHeight;
+        document.documentElement.style.setProperty('--scroll', String(range > 0 ? scrollY / range : 0));
+    };
+    const queueProgress = () => {
+        if (!frame && !document.hidden) frame = requestAnimationFrame(progress);
+    };
+    const nativeProgress = CSS.supports('animation-timeline:scroll()');
+    const syncProgress = () => {
+        const fallback = !nativeProgress || reduce.matches;
+        for (const type of ['scroll', 'resize']) {
+            removeEventListener(type, queueProgress);
+            if (fallback) addEventListener(type, queueProgress, { passive: true });
+        }
+        if (fallback) queueProgress();
+    };
+    syncProgress();
     document.addEventListener('visibilitychange', syncMotion);
-    reduce.addEventListener('change', syncMotion);
+    addEventListener('blur', () => {
+        focused = false;
+        syncMotion();
+    });
+    addEventListener('focus', () => {
+        focused = true;
+        syncMotion();
+    });
     addEventListener('pageshow', syncMotion);
+    reduce.addEventListener('change', () => {
+        syncMotion();
+        syncProgress();
+    });
     setLanguage(/^ru(?:-|$)/i.test(navigator.language || '') ? 'ru' : 'en');
+    syncMotion();
 })();
