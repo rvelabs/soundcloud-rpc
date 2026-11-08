@@ -35,6 +35,30 @@ export async function checkSettings(): Promise<void> {
         assert(saved.zoom === 1.05 && !saved.minimizeToTray, 'native preferences persist');
         await invoke('client_options', { options: preferences });
         checks.push('client-preferences-roundtrip');
+        const reset = document.getElementById('native-analysis-reset') as HTMLButtonElement;
+        const confirmation = document.getElementById('native-analysis-confirmation')!;
+        assert(reset && confirmation.hidden, 'learning reset requires confirmation');
+        reset.click();
+        assert(!confirmation.hidden && reset.hidden, 'learning reset shows restart warning');
+        document.getElementById('native-analysis-cancel')!.click();
+        assert(confirmation.hidden && !reset.hidden, 'learning reset can be cancelled without changes');
+        checks.push('learning-reset-confirmation-and-cancel');
+        assert(document.getElementById('native-adblock-enabled'), 'ad blocker control is present');
+        await invoke('client_options', { options: { ...preferences, adBlocker: false } });
+        assert(
+            !(await invoke<{ enabled: boolean }>('adblock_action', { action: 'status' })).enabled,
+            'ad blocker disables without restart',
+        );
+        await invoke('client_options', { options: { ...preferences, adBlocker: true } });
+        const blocking = await invoke<{ enabled: boolean; attached: boolean; rules: number }>('adblock_action', {
+            action: 'status',
+        });
+        assert(
+            blocking.enabled && blocking.attached && blocking.rules > 1000,
+            'ad blocker enables with installed network rules',
+        );
+        await invoke('client_options', { options: preferences });
+        checks.push('adblock-settings-live-toggle');
         const integrations = await invoke<Record<string, unknown>>('listening_options');
         assert(
             !('apiSecret' in integrations) && !('sessionKey' in integrations) && !('webhookUrl' in integrations),

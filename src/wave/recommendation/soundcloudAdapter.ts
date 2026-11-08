@@ -78,7 +78,7 @@ export class SoundCloudRecommender {
     }
     constructor(
         private store: Store,
-        accountId: string,
+        private accountId: string,
         discover: Discovery,
         private now: () => number = Date.now,
     ) {
@@ -324,6 +324,7 @@ export class SoundCloudRecommender {
         this.addCandidates(tracks, false);
     }
     seedRecent(tracks: WaveCandidate[]): void {
+        if (this.store.get(`waveLearningResetV1_${this.accountId}`) === true) return;
         if (!tracks.length) return;
         const heard = new Set(this.session.profile().heardIds);
         const additions: Feedback[] = [];

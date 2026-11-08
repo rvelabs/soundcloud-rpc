@@ -95,12 +95,9 @@ export function discoverySeeds(
     });
     if (!distinct.length) return [];
     const primary = distinct.filter((track) => primaryIds.has(track.id));
-    const start = (Math.max(0, rotation) * 2) % Math.max(1, primary.length);
-    const rotated = [
-        ...primary.slice(start),
-        ...primary.slice(0, start),
-        ...distinct.filter((track) => !primaryIds.has(track.id)),
-    ];
+    const turn = Math.max(0, Math.floor(rotation));
+    const start = (turn * 2) % distinct.length;
+    const rotated = [...distinct.slice(start), ...distinct.slice(0, start)];
     const eligible = new Map(sources.map((track) => [track.id, track]));
     const current = currentAnchor && eligible.get(currentAnchor.id);
     const selected: Track[] = current ? [current] : [];
@@ -114,25 +111,19 @@ export function discoverySeeds(
             (track) => track && !selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)),
         );
     if (recent) add(recent);
-    const compare = catalogSimilarity([...unique.values()]);
+    if (!selected.length) add(primary[turn % primary.length] || rotated[0]);
     while (selected.length < 3) {
         const available = rotated.filter(
             (track) => !selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)),
         );
         if (!available.length) break;
-        const continuation = selected.length
-            ? available
-                  .map((track, order) => ({ track, score: compare(track, selected[0]) - order / 10000 }))
-                  .filter((item) => item.score >= 0.12)
-                  .sort((left, right) => right.score - left.score)[0]?.track
-            : undefined;
         const alternative =
-            controls.discovery === 'new' && selected.length >= 2
+            selected.length === 2 && (turn % 3 === 0 || controls.discovery === 'new')
                 ? available.find(
-                      (track) => hasMusicalMetadata(track) && selected.every((item) => compare(track, item) < 0.5),
+                      (track) => hasMusicalMetadata(track) && selected.every((item) => seedCompare(track, item) < 0.5),
                   )
                 : undefined;
-        add(alternative || continuation || available[0]);
+        add(alternative || available[0]);
     }
     return selected;
 }

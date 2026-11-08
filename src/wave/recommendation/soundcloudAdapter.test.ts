@@ -26,6 +26,27 @@ const memoryStore = (initial: Record<string, unknown> = {}) => {
     };
 };
 describe('SoundCloud recommendation adapter', () => {
+    it('starts learning again after reset without reimporting old play history, while retaining library likes', () => {
+        const { store, values } = memoryStore({ waveLearningResetV1_reset: true, waveLegacyMergedV1_reset: true });
+        const model = new SoundCloudRecommender(store, 'reset', async () => []);
+        const old = item('https://soundcloud.com/a/old', 'A', 'jungle');
+        const favorite = item('https://soundcloud.com/a/favorite', 'A', 'jungle');
+        model.seedRecent([old]);
+        model.seedLikes([favorite]);
+        expect(model.stats().heard).toBe(0);
+        expect(model.liked(favorite.url)).toBe(true);
+        model.record(old, 'complete', 1);
+        expect(model.stats().heard).toBe(1);
+        const reopened = new SoundCloudRecommender(store, 'reset', async () => []);
+        reopened.seedRecent([item('https://soundcloud.com/a/another-old', 'A', 'jungle')]);
+        expect(reopened.stats().heard).toBe(1);
+        expect(values.get('waveFeedbackV1_reset')).toHaveLength(2);
+        const normalStore = memoryStore();
+        const normal = new SoundCloudRecommender(normalStore.store, 'normal', async () => []);
+        normal.seedRecent([old]);
+        expect(normalStore.values.get('waveFeedbackV1_normal')).toHaveLength(1);
+        expect(normal.stats().heard).toBe(0);
+    });
     it('restores catalog identity from feedback even without a candidate cache', async () => {
         const favorite = { ...item('https://soundcloud.com/a/favorite', 'A', 'jungle'), apiId: 42, uploaderId: 8 };
         const { store } = memoryStore({

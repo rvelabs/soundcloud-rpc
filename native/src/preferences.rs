@@ -6,6 +6,7 @@ pub struct Preferences {
     pub zoom: f64,
     pub theme: String,
     pub navigation: bool,
+    pub ad_blocker: bool,
     pub hide_promotions: bool,
     pub hide_events: bool,
     pub hide_artist_upsells: bool,
@@ -17,6 +18,7 @@ impl Default for Preferences {
             zoom: 1.0,
             theme: "dark".into(),
             navigation: false,
+            ad_blocker: true,
             hide_promotions: true,
             hide_events: true,
             hide_artist_upsells: true,
@@ -114,6 +116,17 @@ mod tests {
     #[test]
     fn validates_bounded_preferences() {
         let mut settings = Preferences::default();
+        assert!(settings.ad_blocker);
+        assert!(
+            serde_json::from_str::<Preferences>(r#"{}"#)
+                .unwrap()
+                .ad_blocker
+        );
+        assert!(
+            !serde_json::from_str::<Preferences>(r#"{"adBlocker":false}"#)
+                .unwrap()
+                .ad_blocker
+        );
         assert!(settings.validate().is_ok());
         settings.zoom = f64::NAN;
         assert!(settings.validate().is_err());

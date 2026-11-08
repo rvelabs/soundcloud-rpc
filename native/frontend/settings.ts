@@ -5,6 +5,7 @@ import { installIntegrationSettings } from './integrationSettings';
 import { installExtensionSettings } from './extensionSettings';
 import { installUpdateSettings } from './updateSettings';
 import { installWorkerSettings } from './workerSettings';
+import { installAnalysisSettings } from './analysisSettings';
 
 async function mountSettings() {
     const language = await invoke<string>('interface_language');
@@ -127,6 +128,7 @@ async function mountSettings() {
         () => void invoke('restart_native').catch((error) => (status.textContent = String(error))),
     );
     const results = await Promise.allSettled([
+        Promise.resolve().then(() => installAnalysisSettings(ru)),
         installClientPreferences(ru),
         installAccountSettings(ru),
         installIntegrationSettings(ru),

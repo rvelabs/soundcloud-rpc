@@ -22,8 +22,39 @@ it('does not let a stale recommendation graph outrank the active direction', () 
     const stale = track('stale-rap', 'hiphop', { source: 'related', relatedTo: [rap.id] });
     const fresh = track('fresh-metal', 'metal', { source: 'related', relatedTo: [metal.id] });
     const ranked = recommend([stale, fresh], history, controls, { now, discoverySeeds: [metal] });
-    expect(ranked.map((item) => item.track.id)).toEqual([fresh.id]);
+    expect(ranked.map((item) => item.track.id)).toEqual([fresh.id, stale.id]);
     expect(ranked[0].selection).toMatchObject({ activeLinks: 1, staleLinks: 0, directionSimilarity: 1 });
+});
+
+it('rotates confirmed interests instead of limiting every seed slot to the strongest token cluster', () => {
+    const events = [
+        ...Array.from({ length: 30 }, (_, i) => like(track('rap-' + i, 'hiphop'))),
+        ...Array.from({ length: 6 }, (_, i) => like(track('jungle-' + i, 'jungle'))),
+        ...Array.from({ length: 6 }, (_, i) => like(track('rock-' + i, 'rock'))),
+    ];
+    const profile = buildProfile(events, now);
+    const selected = Array.from({ length: 24 }, (_, turn) => discoverySeeds(profile, controls, turn)).flat();
+    expect(new Set(selected.map((track) => track.id)).size).toBeGreaterThan(20);
+    expect(new Set(selected.map((track) => track.genre))).toEqual(new Set(['hiphop', 'jungle', 'rock']));
+    expect(selected.every((track) => profile.likedIds.has(track.id))).toBe(true);
+});
+
+it('allows another confirmed taste neighbourhood without admitting unrelated material', () => {
+    const root = track('root', 'ambient');
+    const other = track('other', 'jungle');
+    const events = [like(root), like(other), like(track('third', 'ambient'))];
+    const results = recommend(
+        [
+            track('next-ambient', 'ambient', { source: 'related', relatedTo: [root.id] }),
+            track('next-jungle', 'jungle', { source: 'collection' }),
+            track('unrelated', 'country', { source: 'home' }),
+        ],
+        events,
+        controls,
+        { now, discoverySeeds: [root] },
+    );
+    expect(new Set(results.map((item) => item.track.id))).toEqual(new Set(['next-ambient', 'next-jungle']));
+    expect(results[0].track.id).toBe('next-ambient');
 });
 
 it('accepts direct SoundCloud evidence when uploader genre labels conflict', () => {

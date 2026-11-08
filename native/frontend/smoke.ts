@@ -13,6 +13,7 @@ import { requestSignIn } from './spotify';
 import speedPlugin from 'soundcloud-builtin-plugin';
 import { checkAudio } from './audioCheck';
 import { PlaylistRequestError } from './playlistErrors';
+import { checkAdblock } from './adblockCheck';
 
 const assert = (value: unknown, message: string) => {
     if (!value) throw new Error(message);
@@ -55,6 +56,7 @@ async function test() {
     assert(saved.get('test') === 'persisted', 'native IPC persistence');
     checks.push('native-profile-ipc');
     checks.push('durable-profile-barrier');
+    checks.push(...(await checkAdblock()));
     const media = document.createElement('audio');
     media.muted = true;
     document.body.append(media);
@@ -574,9 +576,10 @@ async function test() {
     });
 }
 
-void test().catch((error) => {
-    (window as any).__scSmokeError = String(error);
-    return invoke('smoke_result', {
-        report: { success: false, message: String(error), stack: error instanceof Error ? error.stack : undefined },
+if (window === window.top)
+    void test().catch((error) => {
+        (window as any).__scSmokeError = String(error);
+        return invoke('smoke_result', {
+            report: { success: false, message: String(error), stack: error instanceof Error ? error.stack : undefined },
+        });
     });
-});

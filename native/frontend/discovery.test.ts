@@ -25,6 +25,161 @@ const setup = (
 };
 
 describe('native discovery integration', () => {
+    it('shares an in-flight ID page between fast synchronization and catalogue enrichment', async () => {
+        vi.useFakeTimers();
+        let resolve!: (value: unknown) => void;
+        const { discovery, request } = setup((operation, fields) => {
+            if (operation === 'tracks') return fields.ids.map(track);
+            if (fields.path === '/me/track_likes/ids')
+                return fields.params.cursor
+                    ? new Promise((done) => {
+                          resolve = done;
+                      })
+                    : { collection: [1], next_href: 'https://api-v2.soundcloud.com/me/track_likes/ids?cursor=next' };
+            return { collection: [] };
+        });
+        try {
+            await discovery.initial();
+            const sync = discovery.syncLibrary(() => {});
+            await vi.advanceTimersByTimeAsync(1500);
+            const enrichment = discovery.enrich();
+            resolve({ collection: [2] });
+            await Promise.all([sync, enrichment]);
+            expect(
+                request.mock.calls.filter(
+                    ([, fields]) =>
+                        (fields as any).path === '/me/track_likes/ids' && (fields as any).params.cursor === 'next',
+                ),
+            ).toHaveLength(1);
+        } finally {
+            discovery.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('backs off failed continuation pages instead of continuously retrying a blocked service', async () => {
+        vi.useFakeTimers();
+        const { discovery, request } = setup(
+            (_operation, fields) => {
+                if (fields.path === '/me/track_likes/ids') {
+                    if (fields.params.cursor) throw Error('429');
+                    return {
+                        collection: [1],
+                        next_href: 'https://api-v2.soundcloud.com/me/track_likes/ids?cursor=next',
+                    };
+                }
+                return { collection: [] };
+            },
+            () => 1,
+            () => Date.now(),
+        );
+        try {
+            await discovery.initial();
+            const sync = discovery.syncLibrary(() => {});
+            await vi.advanceTimersByTimeAsync(30000);
+            await sync;
+            expect(request.mock.calls.filter(([, fields]) => (fields as any).params?.cursor === 'next')).toHaveLength(
+                3,
+            );
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            discovery.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('finishes library ID pages in the background and samples metadata across the completed library', async () => {
+        vi.useFakeTimers();
+        const { discovery, request } = setup((operation, fields) => {
+            if (operation === 'likes') return { collection: [] };
+            if (operation === 'tracks') return fields.ids.map(track);
+            if (fields.path === '/me/track_likes/ids') {
+                const page = Number(fields.params.cursor || 0);
+                return {
+                    collection: [page * 2 + 1, page * 2 + 2],
+                    next_href:
+                        page < 2 ? `https://api-v2.soundcloud.com/me/track_likes/ids?cursor=${page + 1}` : undefined,
+                };
+            }
+            return { collection: [] };
+        });
+        try {
+            await discovery.initial();
+            const update = vi.fn();
+            const sync = discovery.syncLibrary(update);
+            const duplicate = discovery.syncLibrary(update);
+            await vi.advanceTimersByTimeAsync(3000);
+            await Promise.all([sync, duplicate]);
+            expect(update.mock.calls[update.mock.calls.length - 1]?.[0]).toMatchObject({
+                likedIds: [1, 2, 3, 4, 5, 6],
+                likesComplete: true,
+            });
+            expect(update.mock.calls.flatMap(([, items]) => items).map((item) => item.apiId)).toEqual([
+                1, 2, 3, 4, 5, 6,
+            ]);
+            const requests = request.mock.calls.length;
+            await discovery.syncLibrary(update);
+            expect(request.mock.calls.length).toBe(requests);
+            expect(
+                request.mock.calls
+                    .filter(([operation]) => operation === 'tracks')
+                    .every(([, fields, background]) => (fields as any).ids.length <= 40 && background),
+            ).toBe(true);
+        } finally {
+            discovery.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('cancels a pending library continuation on disposal and ignores a changed account', async () => {
+        vi.useFakeTimers();
+        let revision = 1;
+        const { discovery, request } = setup(
+            (_operation, fields) =>
+                fields.path === '/me/track_likes/ids'
+                    ? { collection: [1], next_href: 'https://api-v2.soundcloud.com/me/track_likes/ids?cursor=next' }
+                    : { collection: [] },
+            () => revision,
+        );
+        try {
+            await discovery.initial();
+            const calls = request.mock.calls.length,
+                update = vi.fn();
+            const sync = discovery.syncLibrary(update);
+            revision++;
+            await vi.advanceTimersByTimeAsync(1500);
+            await sync;
+            expect(request.mock.calls.length).toBe(calls);
+            expect(update).not.toHaveBeenCalled();
+            const cancelled = discovery.syncLibrary(update);
+            discovery.dispose();
+            await cancelled;
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            discovery.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not restore a heart removed while sampled metadata was in flight', async () => {
+        let resolve!: (value: unknown) => void;
+        const { discovery } = setup((operation, fields) => {
+            if (operation === 'tracks')
+                return new Promise((done) => {
+                    resolve = done;
+                });
+            return { collection: fields.path === '/me/track_likes/ids' ? [1, 2] : [] };
+        });
+        await discovery.initial();
+        const update = vi.fn(),
+            sync = discovery.syncLibrary(update);
+        discovery.reacted(2, false);
+        resolve([track(1), track(2)]);
+        await sync;
+        expect(update.mock.calls.flatMap(([, items]) => items).map((item) => item.apiId)).toEqual([1]);
+        discovery.dispose();
+    });
+
     it('resolves imported recordings without API IDs and reuses their catalog metadata', async () => {
         const { discovery, request } = setup((operation, fields) =>
             operation === 'resolve'

@@ -14,6 +14,7 @@ import { Events, Profile, api, invoke } from './bridge';
 import { AudioAnalysisCache } from '../../src/wave/audioAnalysisCache';
 import { ListeningEvidence } from '../../src/wave/listeningEvidence';
 import { playbackRate } from './playbackRate';
+import type { LibrarySignals } from '../../src/soundcloud/radioSources';
 
 export const defaultControls: WaveControls = {
     mood: 'any',
@@ -163,16 +164,48 @@ export class Wave {
             .enrich()
             .then((result) => {
                 if (discovery !== this.discovery || !recommender) return;
-                if (result.signals) recommender.setLibrarySignals(result.signals.likedIds, result.signals.blockedIds);
+                if (result.signals) this.applyLibrarySignals(result.signals);
                 recommender.seedLikes(result.likes);
                 recommender.seedRecent(result.recent);
                 this.remember([...result.likes, ...result.recent, ...result.tracks]);
                 this.events.emit('stats', recommender.stats());
+                this.syncLibrary();
             })
             .catch((error) => this.error(error))
             .finally(() => {
                 this.enriching = undefined;
             });
+    }
+
+    private applyLibrarySignals(signals: LibrarySignals): void {
+        this.recommender?.setLibrarySignals(signals.likedIds, signals.blockedIds);
+        const invalid = [...this.queued].filter((url) => {
+            const track = this.candidates.get(url);
+            return track && !this.recommender?.accepts(track);
+        });
+        if (!invalid.length) return;
+        for (const url of invalid) {
+            this.queued.delete(url);
+            const track = this.candidates.get(url);
+            if (track) this.recommender?.release(track);
+        }
+        void this.queue('remove', invalid)
+            .then(() => this.refill())
+            .catch((error) => this.error(error));
+    }
+
+    private syncLibrary(): void {
+        const discovery = this.discovery;
+        if (!discovery) return;
+        void discovery
+            .syncLibrary((signals, likes) => {
+                if (discovery !== this.discovery || !this.recommender) return;
+                this.applyLibrarySignals(signals);
+                this.recommender.seedLikes(likes);
+                this.remember(likes);
+                this.events.emit('stats', this.recommender.stats());
+            })
+            .catch((error) => this.error(error, false));
     }
 
     private async initialize(): Promise<void> {
@@ -221,6 +254,7 @@ export class Wave {
         this.recommender.seedLikes(initial.likes);
         this.remember(initial.likes);
         this.events.emit('stats', this.recommender.stats());
+        this.syncLibrary();
     }
 
     async start(): Promise<void> {
@@ -355,7 +389,7 @@ export class Wave {
         const generation = this.sessionGeneration;
         if (!this.active || !this.recommender || Date.now() - this.lastFailure < 15000) return;
         const next = await this.queue('list', [], generation);
-        if (next.state !== 'done') return;
+        if (next.state !== 'done' || generation !== this.sessionGeneration || !this.active || !this.recommender) return;
         const future = new Set(next.urls || []);
         for (const url of this.queued)
             if (!future.has(url)) {
@@ -368,13 +402,20 @@ export class Wave {
             await this.recommender.refresh();
             this.lastRefresh = Date.now();
         }
+        if (generation !== this.sessionGeneration || !this.active || !this.recommender) return;
         for (const track of this.recommender.rank(10)) {
             if (generation !== this.sessionGeneration || !this.active || this.queued.size >= 2) break;
             if (future.has(track.url) || track.url === this.current?.url) continue;
+            if (!this.recommender.accepts(track)) continue;
             this.candidates.set(track.url, track);
             const decision = this.describeDecision('next', track);
             const result = await this.queue('add', [track.url], generation);
+            if (generation !== this.sessionGeneration || !this.active || !this.recommender) return;
             if (result.state === 'done') {
+                if (!this.recommender.accepts(track)) {
+                    await this.queue('remove', [track.url], generation);
+                    continue;
+                }
                 this.rememberDecision(decision);
                 this.queued.add(track.url);
                 this.recommender.reserve(track, true);
@@ -450,6 +491,10 @@ export class Wave {
         } else if (previous && previous.isLiked !== next.isLiked && track) {
             if (track.apiId) this.discovery?.reacted(track.apiId, next.isLiked);
             this.recommender?.record(track, next.isLiked ? 'like' : 'unlike');
+        }
+        if (track && next.isLiked && this.recommender?.liked(track.url) === undefined) {
+            if (track.apiId) this.discovery?.reacted(track.apiId, true);
+            this.recommender?.seedLikes([{ ...track, liked: true }]);
         }
         if (track && this.recommender && this.qualified !== next.url) {
             const fraction = this.listening.fraction(next.url, seconds(next.duration));

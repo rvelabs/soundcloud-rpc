@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod accounts;
+mod adblock;
 mod cache;
 mod catalog;
 mod extensions;
@@ -43,6 +44,7 @@ use tauri::{
 use tokio::sync::Notify;
 
 struct State {
+    adblock: Arc<adblock::AdBlock>,
     taskbar: Arc<taskbar::Taskbar>,
     settings_panel: settings_panel::Panel,
     accounts: accounts::Accounts,
@@ -217,12 +219,57 @@ async fn client_options(
             "settings-client".into(),
             serde_json::to_value(&options).map_err(|_| "Invalid preferences")?,
         )?;
+        state.adblock.set_enabled(options.ad_blocker);
         if let Some(main) = app.get_webview("main") {
             let _ = main.set_zoom(options.zoom);
         }
         refresh_page_settings(&app);
     }
     Ok(serde_json::from_value(state.store.get("settings-client")).unwrap_or_default())
+}
+#[tauri::command]
+async fn analysis_reset(
+    window: Webview,
+    state: tauri::State<'_, Arc<State>>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    settings_guard(&window)?;
+    if state.smoke || state.probe || state.account_report.is_some() {
+        return Err("Learning reset is unavailable in read-only diagnostics".into());
+    }
+    let user = state.catalog.execute(Operation::Me, false).await?;
+    let owner = user["id"]
+        .as_u64()
+        .filter(|id| *id > 0)
+        .ok_or("Sign in to SoundCloud first")?;
+    let key = format!("wave-{owner}");
+    state.catalog.validate_profile(&key).await?;
+    let account = state.accounts.status();
+    migration::import_wave(
+        &state.store,
+        &owner.to_string(),
+        account["current"].as_str().unwrap_or("default"),
+    )?;
+    state.store.reset_wave(owner)?;
+    state.active.store(false, Ordering::Release);
+    app.restart()
+}
+
+#[tauri::command]
+async fn adblock_action(
+    window: Webview,
+    state: tauri::State<'_, Arc<State>>,
+    action: String,
+) -> Result<Value, String> {
+    settings_guard(&window)?;
+    match action.as_str() {
+        "status" => {}
+        "refresh" => {
+            let _ = state.adblock.refresh(true).await;
+        }
+        _ => return Err("Unknown ad blocker action".into()),
+    }
+    Ok(state.adblock.snapshot())
 }
 #[tauri::command]
 async fn extensions_theme(
@@ -324,7 +371,7 @@ async fn worker_setup_action(
                 .map_err(|_| "Invalid connection report")?)
         }
         "diagnostics" => Ok(
-            json!({"version":env!("CARGO_PKG_VERSION"),"connection":state.network.snapshot(),"catalog":state.catalog.diagnostics()}),
+            json!({"version":env!("CARGO_PKG_VERSION"),"connection":state.network.snapshot(),"catalog":state.catalog.diagnostics(),"adblock":state.adblock.snapshot()}),
         ),
         _ => Err("Unknown Worker setup action".into()),
     }
@@ -616,7 +663,7 @@ async fn native_diagnostics(
     guard(&window, &state)?;
     Ok(
         json!({ "version": env!("CARGO_PKG_VERSION"), "host": "Rust + WebView2", "electron": false,
-        "uptimeSeconds": state.started.elapsed().as_secs(), "waveActive": state.active.load(Ordering::Acquire),
+        "uptimeSeconds": state.started.elapsed().as_secs(), "waveActive": state.active.load(Ordering::Acquire), "adblock":state.adblock.snapshot(),
         "nativeMonitor": state.monitor.load(Ordering::Acquire), "catalog": state.catalog.diagnostics(), "relayActive": state.relay_port.is_some(), "discord":state.presence.diagnostics(), "taskbar":state.taskbar.diagnostics(),"integrations":state.listening.status(false), "updates":state.updates.snapshot(), "connection":state.network.snapshot() }),
     )
 }
@@ -817,6 +864,7 @@ async fn smoke_result(
         return Err("Integration report too large".into());
     }
     let mut report = report;
+    report["adblock"] = state.adblock.snapshot();
     report["nativeWindowVisible"] = json!(window.window().is_visible().map_err(|e| e.to_string())?);
     report["nativeWindowMinimized"] =
         json!(window.window().is_minimized().map_err(|e| e.to_string())?);
@@ -940,6 +988,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             extensions_apply,
             extensions_theme,
             client_options,
+            adblock_action,
+            analysis_reset,
             accounts_options,
             accounts_action,
             extensions_options,
@@ -971,10 +1021,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if !smoke && !probe && !account_check { listening.start(); }
         let extensions = extensions::Extensions::new(account_report.as_deref().unwrap_or(&profile), store.clone())?;
         let updates = updates::Updates::new(store.clone());
-        let state = Arc::new(State { taskbar:Arc::new(taskbar::Taskbar::default()),settings_panel:settings_panel::Panel::default(),accounts, catalog: catalog.clone(), store: store.clone(), active: AtomicBool::new(false), monitor: AtomicBool::new(false), discovery_deadline: AtomicU64::new(120000), wake: Notify::new(), started: Instant::now(), smoke, probe, profile: profile.clone(), connection: std::sync::Mutex::new(connection), relay_port, source_client: source::client()?, source_requests: requests::Requests::default(), spotify: spotify::Imports::default(), presence, listening, extensions: extensions.clone(), updates: updates.clone(), network: network.clone(), worker_setup: worker_setup::Setup::new(account_report.as_deref().unwrap_or(&profile))?, account_report: account_report.clone() });
+        let client_preferences:preferences::Preferences=serde_json::from_value(store.get("settings-client")).unwrap_or_default();
+        let adblock = adblock::AdBlock::new(account_report.as_deref().unwrap_or(&profile), client_preferences.ad_blocker)?;
+        let state = Arc::new(State { adblock:adblock.clone(),taskbar:Arc::new(taskbar::Taskbar::default()),settings_panel:settings_panel::Panel::default(),accounts, catalog: catalog.clone(), store: store.clone(), active: AtomicBool::new(false), monitor: AtomicBool::new(false), discovery_deadline: AtomicU64::new(120000), wake: Notify::new(), started: Instant::now(), smoke, probe, profile: profile.clone(), connection: std::sync::Mutex::new(connection), relay_port, source_client: source::client()?, source_requests: requests::Requests::default(), spotify: spotify::Imports::default(), presence, listening, extensions: extensions.clone(), updates: updates.clone(), network: network.clone(), worker_setup: worker_setup::Setup::new(account_report.as_deref().unwrap_or(&profile))?, account_report: account_report.clone() });
         app.manage(state.clone());
         if !smoke && !probe && !account_check { updates.start(app.handle().clone()); }
-        let url = if smoke { WebviewUrl::App("smoke.html".into()) } else { WebviewUrl::External("https://soundcloud.com/".parse()?) };
+        let url = if smoke { WebviewUrl::App("smoke.html".into()) } else { WebviewUrl::External("about:blank".parse()?) };
         let mut browser_args = "--autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows".to_string();
         if let Some(port) = relay_port { browser_args.push_str(&format!(" --proxy-pac-url=http://127.0.0.1:{port}/proxy.pac")); }
         let mut window_builder = WebviewWindowBuilder::new(app, if smoke { "smoke" } else { "main" }, url)
@@ -996,14 +1048,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         window.as_ref().set_auto_resize(false)?;
         window.on_window_event({let handle=app.handle().clone();let state=state.clone();move|event|{if matches!(event,tauri::WindowEvent::Resized(_)|tauri::WindowEvent::ScaleFactorChanged{..}){state.settings_panel.resized(&handle);}}});
         webview::accelerators(window.as_ref(),app.handle().clone())?;
-        let client_preferences:preferences::Preferences=serde_json::from_value(store.get("settings-client")).unwrap_or_default();
         window.set_zoom(client_preferences.zoom)?;
         if !smoke && !probe && !account_check{preferences::restore(&window.as_ref().window(),&store);}
         if smoke { window.minimize()?; window.hide()?; }
         if account_check { window.minimize()?; window.hide()?; }
         window.as_ref().show()?;
         if !probe && !account_check && let Err(error) = state.taskbar.install(&window, app.handle().clone()) { eprintln!("{error}"); }
-        if !smoke { webview::observe(&window, catalog)?; }
+        webview::observe(&window, catalog, adblock.clone(), smoke)?;
+        if !smoke && !probe && !account_check { tauri::async_runtime::spawn(async move { let _ = adblock.refresh(false).await; }); }
         if !smoke && !probe && !account_check { let app = app.handle().clone(); tauri::async_runtime::spawn(async move { let _ = extensions.refresh(&app).await; let _ = extensions.watch(app); }); }
         let host = app.handle().clone(); let state_loop = state.clone();
         tauri::async_runtime::spawn(async move {

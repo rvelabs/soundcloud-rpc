@@ -17,12 +17,12 @@
         "allow-updates-action",
         "allow-worker-setup-action",
         "allow-client-options",
+        "allow-adblock-action",
+        "allow-analysis-reset",
         "allow-accounts-options",
         "allow-accounts-action",
         "allow-settings-test-result",
         "allow-close-settings"
     ],
-    "webviews": [
-        "settings"
-    ]
+    "webviews": ["settings"]
 }

@@ -34,6 +34,8 @@ fn main() {
             "extensions_apply",
             "extensions_theme",
             "client_options",
+            "adblock_action",
+            "analysis_reset",
             "accounts_options",
             "accounts_action",
             "extensions_options",

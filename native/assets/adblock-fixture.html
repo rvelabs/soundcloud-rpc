@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><script>
+(async()=>{
+ const checks=[];
+ const verify=(value,name)=>{if(!value)throw Error(name);checks.push(name)};
+ try{
+  const ads=await fetch('https://api-v2.soundcloud.com/audio-ads?__native_adblock_fixture=1');
+  verify(ads.status===204,'ad-request-filtered');
+  const external=await fetch('https://ad.doubleclick.net/pagead/ads?__native_adblock_fixture=1');
+  verify(external.status===204,'easylist-request-filtered');
+  const track=await fetch('https://api-v2.soundcloud.com/tracks/7?__native_adblock_fixture=1');
+  verify(track.status===200&&(await track.json()).id===7,'track-api-preserved');
+  const captcha=await fetch('https://geo.captcha-delivery.com/captcha/?__native_adblock_fixture=1');
+  verify(captcha.status===200,'human-verification-preserved');
+  const fetchedAd=await fetch('https://cf-media.sndcdn.com/audio/advert.mp3?__native_adblock_fixture=1');
+  const fetchedBytes=new Uint8Array(await fetchedAd.arrayBuffer());
+  verify(fetchedBytes[0]===82&&fetchedBytes[1]===73&&fetchedBytes.length<5000,'fetched-ad-audio-filtered');
+  const audio=new Audio('https://cf-media.sndcdn.com/audio/advert.mp3?__native_adblock_fixture=1');
+  audio.muted=true;document.body.append(audio);
+  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('filtered audio stalled')),4000);audio.onended=()=>{clearTimeout(timer);resolve()};audio.onerror=()=>{clearTimeout(timer);reject(Error('filtered audio invalid'))};audio.play().catch(reject)});
+  verify(audio.duration<0.2,'ad-media-finishes-without-stalling');
+  const music=new Audio('https://cf-media.sndcdn.com/music/stream.wav?__native_adblock_fixture=1');
+  music.muted=true;document.body.append(music);await music.play();music.pause();
+  verify(music.readyState>=2,'normal-music-preserved');
+  parent.postMessage({type:'native-adblock-fixture',success:true,checks},'*');
+ }catch(error){parent.postMessage({type:'native-adblock-fixture',success:false,error:String(error),checks},'*')}
+})();
+</script>

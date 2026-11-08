@@ -5,6 +5,34 @@ import type { Track } from './types';
 afterEach(() => vi.restoreAllMocks());
 const track = (id: string): Track => ({ id, artist: id, title: id, genre: 'ambient' });
 describe('recommendation session caching and sequential balance', () => {
+    it.each(['new', 'popular'] as const)(
+        'uses known likes as %s discovery roots while excluding them from playback',
+        async (discovery) => {
+            const good = { ...track('good'), apiId: 1, uploaderId: 10 };
+            const muted = { ...track('muted'), apiId: 2, uploaderId: 12 };
+            const excluded = { ...track('excluded'), apiId: 3, uploaderId: 13 };
+            const fresh = { ...track('fresh'), apiId: 4, source: 'related' as const, relatedTo: [good.id] };
+            const provider = vi.fn(async (seeds: Track[]) => {
+                expect(seeds).not.toHaveLength(0);
+                return [good, muted, excluded, fresh];
+            });
+            const session = new RecommendationSession({ related: provider });
+            session.loadFeedback(
+                [good, muted, excluded].map((track) => ({ track, kind: 'like', origin: 'library', at: Date.now() })),
+            );
+            session.setControls({ discovery });
+            session.setLibrarySignals([1, 2, 3], [12]);
+            session.setExcludedArtists([excluded.artist]);
+            const ranked = await session.refresh();
+            expect(provider.mock.calls[0][0].map((track) => track.id)).toEqual([good.id]);
+            expect(session.discoveryRoots().map((track) => track.id)).toEqual([good.id]);
+            expect(ranked.map((item) => item.track.id)).toEqual([fresh.id]);
+            session.setAnchor(fresh);
+            session.feedback({ track: fresh, kind: 'complete', listenedFraction: 1, origin: 'wave' });
+            await session.refresh();
+            expect(provider.mock.calls[1][0].map((track) => track.id)).toEqual([good.id]);
+        },
+    );
     it('keeps unplayed queue items out of discovery roots and follows an explicit endorsement', async () => {
         const initial = track('initial'),
             next = track('next');

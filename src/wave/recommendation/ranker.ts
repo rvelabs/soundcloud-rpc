@@ -113,7 +113,6 @@ function scoreTrack(
         referenceIds: Set<string>;
         established: boolean;
         negative: Feedback[];
-        tokenScale: number;
         activeReferences: Track[];
         activeIds: Set<string>;
     },
@@ -124,7 +123,7 @@ function scoreTrack(
         tags.reduce((sum, token) => {
             const weight = profile.tokens.get(token) || 0;
             return (
-                sum + Math.sign(weight) * 5 * Math.sqrt(Math.abs(weight) / intent.tokenScale) * tasteTokenWeight(token)
+                sum + Math.sign(weight) * Math.min(5, Math.log2(1 + Math.abs(weight)) / 1.5) * tasteTokenWeight(token)
             );
         }, 0) / Math.sqrt(Math.max(1, tags.length));
     const affinity = Math.max(-3.5, Math.min(3.5, tokenAffinity));
@@ -134,7 +133,15 @@ function scoreTrack(
     const activeLinks = usable.filter((id) => intent.activeIds.has(id));
     const directionSimilarity = Math.max(0, ...intent.activeReferences.map((seed) => compare(track, seed)));
     const focused = intent.activeReferences.length > 0 && !['favorites', 'familiar'].includes(controls.discovery);
-    if (focused && !activeLinks.length && directionSimilarity < 0.22) return null;
+    if (
+        focused &&
+        !activeLinks.length &&
+        directionSimilarity < 0.22 &&
+        seedSimilarity < 0.22 &&
+        !profile.likedIds.has(track.id) &&
+        !context.knownLikedApiIds?.has(track.apiId || 0)
+    )
+        return null;
     if (
         intent.established &&
         !controls.genre &&
@@ -317,12 +324,9 @@ export function recommend(
     const profile = suppliedProfile || buildProfile(events, context.now);
     const reactions = context.sessionReactions || recentReactions(events, context.now);
     const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
-    let tokenScale = 5;
-    for (const weight of profile.tokens.values()) tokenScale = Math.max(tokenScale, Math.abs(weight));
     const intent = {
         activeReferences: context.discoverySeeds || [],
         activeIds: new Set((context.discoverySeeds || []).map((track) => track.id)),
-        tokenScale,
         rejected,
         references: profile.trustedSeeds.length ? profile.trustedSeeds : profile.positiveSeeds,
         referenceIds: new Set(

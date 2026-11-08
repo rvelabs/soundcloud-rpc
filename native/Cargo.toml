@@ -1,6 +1,6 @@
 [package]
 name = "soundcloud-native"
-version = "0.2.9"
+version = "0.2.12"
 edition = "2024"
 rust-version = "1.88"
 description = "SoundCloud desktop host for Windows WebView2"
@@ -34,6 +34,7 @@ rquickjs = "0.11"
 notify = "8"
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
+adblock = { version = "0.13.5", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 time = { version = "0.3", features = ["formatting"] }
 
 [dev-dependencies]

@@ -1,6 +1,6 @@
 use serde_json::Value;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
@@ -24,6 +24,7 @@ struct Entries {
     values: BTreeMap<String, Value>,
     sizes: BTreeMap<String, usize>,
     bytes: usize,
+    frozen: BTreeSet<String>,
 }
 
 impl Store {
@@ -68,6 +69,7 @@ impl Store {
                 values: entries,
                 sizes,
                 bytes,
+                frozen: BTreeSet::new(),
             }),
             _lock: lock,
             write: Mutex::new(()),
@@ -99,6 +101,9 @@ impl Store {
             return Err("Profile entry too large".into());
         }
         let mut entries = self.entries.lock().unwrap();
+        if entries.frozen.contains(&key) {
+            return Err("My Wave was reset; restart SoundCloud before saving new learning".into());
+        }
         let old_size = entries.sizes.get(&key).copied();
         if entries.values.len() >= 20 && old_size.is_none() {
             return Err("Profile entry limit reached".into());
@@ -127,14 +132,63 @@ impl Store {
         if bytes.len() > PROFILE_LIMIT {
             return Err("Native profile quota exceeded".into());
         }
-        let temporary = self.path.with_extension("json.tmp");
-        let mut file = File::create(&temporary).map_err(|e| e.to_string())?;
-        file.write_all(&bytes)
-            .and_then(|_| file.sync_all())
-            .map_err(|e| e.to_string())?;
-        drop(file);
-        replace(&temporary, &self.path).map_err(|e| e.to_string())
+        write_atomic(&self.path, &bytes)
     }
+    pub fn reset_wave(&self, owner: u64) -> Result<(), String> {
+        if owner == 0 || owner >= (1u64 << 53) {
+            return Err("Sign in to SoundCloud before resetting My Wave".into());
+        }
+        let _guard = self.write.lock().unwrap();
+        let mut entries = self.entries.lock().unwrap();
+        let key = format!("wave-{owner}");
+        if entries.frozen.contains(&key) {
+            return Err("My Wave is already reset; restart SoundCloud".into());
+        }
+        let previous = entries.values.get(&key).cloned().unwrap_or(Value::Null);
+        let mut value = previous.as_object().cloned().unwrap_or_default();
+        for prefix in [
+            "waveAudioAnalysisV1_",
+            "waveFeedbackV1_",
+            "waveCandidatesV2_",
+            "waveHistory_",
+            "waveDecisionTraceV1_",
+        ] {
+            value.remove(&format!("{prefix}{owner}"));
+        }
+        value.insert(format!("waveLegacyMergedV1_{owner}"), Value::Bool(true));
+        value.insert(format!("waveLearningResetV1_{owner}"), Value::Bool(true));
+        let value = Value::Object(value);
+        let mut next = entries.clone();
+        next.sizes.insert(
+            key.clone(),
+            serde_json::to_vec(&value).map_err(|e| e.to_string())?.len(),
+        );
+        next.values.insert(key.clone(), value);
+        let bytes = serde_json::to_vec(&next.values).map_err(|e| e.to_string())?;
+        if bytes.len() > PROFILE_LIMIT || next.values.len() > 20 {
+            return Err("Profile quota exceeded; previous learning retained".into());
+        }
+        let backup = self.path.with_file_name(format!("wave-reset-{owner}.json"));
+        write_atomic(
+            &backup,
+            &serde_json::to_vec(&previous).map_err(|e| e.to_string())?,
+        )?;
+        write_atomic(&self.path, &bytes)?;
+        next.bytes = bytes.len();
+        next.frozen.insert(key);
+        *entries = next;
+        Ok(())
+    }
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let temporary = path.with_extension("json.tmp");
+    let mut file = File::create(&temporary).map_err(|e| e.to_string())?;
+    file.write_all(bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|e| e.to_string())?;
+    drop(file);
+    replace(&temporary, path).map_err(|e| e.to_string())
 }
 
 #[cfg(windows)]
@@ -161,6 +215,69 @@ pub(crate) fn replace(from: &Path, to: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn learning_reset_is_durable_scoped_and_rejects_stale_writes() {
+        let dir = std::env::temp_dir().join(format!("sc-reset-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir).unwrap();
+        let old = serde_json::json!({
+            "controls":{"mood":"calm"},"waveExcludedArtistsV1_7":["blocked"],
+            "waveFeedbackV1_7":[{"kind":"dislike","track":{"features":{"energy":0.8}}}],
+            "waveAudioAnalysisV1_7":[["track",{}]],"waveCandidatesV2_7":{"tracks":[{}]},
+            "waveHistory_7":[{}],"waveDecisionTraceV1_7":[{}]
+        });
+        store.set("wave-7".into(), old.clone()).unwrap();
+        store.set("wave-8".into(), old.clone()).unwrap();
+        store
+            .set("import-7".into(), serde_json::json!({"tracks":[42]}))
+            .unwrap();
+        store
+            .set("settings".into(), serde_json::json!({"language":"ru"}))
+            .unwrap();
+        assert!(store.reset_wave(0).is_err());
+        store.reset_wave(7).unwrap();
+        let cleared = store.get("wave-7");
+        assert!(cleared["waveFeedbackV1_7"].is_null());
+        assert!(cleared["waveAudioAnalysisV1_7"].is_null());
+        assert!(cleared["waveCandidatesV2_7"].is_null());
+        assert!(cleared["waveHistory_7"].is_null());
+        assert!(cleared["waveDecisionTraceV1_7"].is_null());
+        assert_eq!(cleared["waveLegacyMergedV1_7"], true);
+        assert_eq!(cleared["waveLearningResetV1_7"], true);
+        assert_eq!(cleared["controls"], old["controls"]);
+        assert_eq!(
+            cleared["waveExcludedArtistsV1_7"],
+            old["waveExcludedArtistsV1_7"]
+        );
+        assert_eq!(store.get("wave-8"), old);
+        assert_eq!(store.get("import-7")["tracks"][0], 42);
+        assert!(store.set("wave-7".into(), old.clone()).is_err());
+        let backup: Value =
+            serde_json::from_slice(&fs::read(dir.join("wave-reset-7.json")).unwrap()).unwrap();
+        assert_eq!(backup, old);
+        store.flush().unwrap();
+        drop(store);
+        let reopened = Store::open(&dir).unwrap();
+        assert_eq!(reopened.get("wave-7"), cleared);
+        assert_eq!(reopened.get("settings")["language"], "ru");
+        reopened.set("wave-7".into(), cleared).unwrap();
+    }
+
+    #[test]
+    fn reset_backup_failure_preserves_learning_and_writer() {
+        let dir = std::env::temp_dir().join(format!("sc-reset-io-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&dir).unwrap();
+        let old = serde_json::json!({"waveFeedbackV1_7":[1]});
+        store.set("wave-7".into(), old.clone()).unwrap();
+        store.flush().unwrap();
+        fs::create_dir(dir.join("wave-reset-7.json.tmp")).unwrap();
+        assert!(store.reset_wave(7).is_err());
+        assert_eq!(store.get("wave-7"), old);
+        store.set("wave-7".into(), old.clone()).unwrap();
+        let disk: Value =
+            serde_json::from_slice(&fs::read(dir.join("native-state.json")).unwrap()).unwrap();
+        assert_eq!(disk["wave-7"], old);
+    }
+
     #[test]
     fn profile_survives_replacement_and_refuses_path_keys() {
         let dir = std::env::temp_dir().join(format!("sc-native-store-{}", std::process::id()));

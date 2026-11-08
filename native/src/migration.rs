@@ -211,6 +211,17 @@ pub fn stage(store: &Store, source: &Path) -> Result<Value, String> {
         options.insert("equalizer".into(), settings["equalizerSettingsV1"].clone());
     }
     let fields = pending.len();
+    if let Some(enabled) = settings["adBlocker"].as_bool() {
+        let mut client = store
+            .get("settings-client")
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        if !client.contains_key("adBlocker") {
+            client.insert("adBlocker".into(), json!(enabled));
+            store.set("settings-client".into(), Value::Object(client))?;
+        }
+    }
     let report = json!({"found":true,"version":1,"fields":fields,"partition":settings["currentAccountId"].as_str().unwrap_or("default"),"boundOwner":null});
     store.set("settings".into(), Value::Object(options.clone()))?;
     store.set(PENDING.into(), Value::Object(pending))?;

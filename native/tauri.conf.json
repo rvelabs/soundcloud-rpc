@@ -2,7 +2,7 @@
     "$schema": "https://schema.tauri.app/config/2",
     "productName": "SoundCloud",
     "mainBinaryName": "SoundCloud",
-    "version": "0.2.9",
+    "version": "0.2.12",
     "identifier": "io.rvelabs.soundcloud.native.preview",
     "build": {
         "frontendDist": "assets"
@@ -10,24 +10,17 @@
     "app": {
         "windows": [],
         "security": {
-            "capabilities": [
-                "soundcloud",
-                "smoke",
-                "settings",
-                "spotify"
-            ]
+            "capabilities": ["soundcloud", "smoke", "settings", "spotify"]
         }
     },
     "bundle": {
         "active": true,
-        "targets": [
-            "nsis"
-        ],
-        "icon": [
-            "../assets/icons/soundcloud-win.ico"
-        ],
+        "targets": ["nsis"],
+        "icon": ["../assets/icons/soundcloud-win.ico"],
         "resources": {
-            "../LICENSE": "LICENSE"
+            "../LICENSE": "LICENSE",
+            "assets/adblock-EasyList-LICENSE.txt": "licenses/EasyList-CC-BY-SA-3.0.txt",
+            "assets/adblock-engine-LICENSE.txt": "licenses/adblock-rust-MPL-2.0.txt"
         },
         "windows": {
             "minimumWebview2Version": "120.0.0.0",
@@ -38,10 +31,7 @@
             "nsis": {
                 "installerHooks": "installer/hooks.nsh",
                 "displayLanguageSelector": false,
-                "languages": [
-                    "English",
-                    "Russian"
-                ]
+                "languages": ["English", "Russian"]
             }
         },
         "createUpdaterArtifacts": true
@@ -49,9 +39,7 @@
     "plugins": {
         "updater": {
             "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZCNEY4QkU0MjhFNkQ2QUIKUldTcjF1WW81SXRQKzhHY1F0NjFDYjZ1TFVkREdlN1dyd2VKVjBYbkNJS1QvZVQ0Y0duN3JRbDIK",
-            "endpoints": [
-                "https://rvelabs.github.io/soundcloud-rpc/native-update.json"
-            ],
+            "endpoints": ["https://rvelabs.github.io/soundcloud-rpc/native-update.json"],
             "requireSignedVersion": true,
             "windows": {
                 "installMode": "passive"

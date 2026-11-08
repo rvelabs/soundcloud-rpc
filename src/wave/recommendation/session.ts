@@ -57,10 +57,14 @@ export class RecommendationSession {
         this.excludedArtists = new Set(artists.map(artistIdentity));
         this.invalidateRanking();
     }
+    private allowedSource(track: Track): boolean {
+        return (
+            !this.excludedArtists.has(artistIdentity(track.artist)) && !this.blockedUploaders.has(track.uploaderId || 0)
+        );
+    }
     private allowed(track: Track): boolean {
         return (
-            !this.excludedArtists.has(artistIdentity(track.artist)) &&
-            !this.blockedUploaders.has(track.uploaderId || 0) &&
+            this.allowedSource(track) &&
             (!['new', 'popular'].includes(this.controls.discovery) || !this.knownApiIds.has(track.apiId || 0))
         );
     }
@@ -332,15 +336,17 @@ export class RecommendationSession {
         const seeds = discoverySeeds(
             {
                 ...this.profile(),
-                positiveSeeds: this.profile().positiveSeeds.filter((track) => this.allowed(track)),
-                trustedSeeds: this.profile().trustedSeeds.filter((track) => this.allowed(track)),
+                positiveSeeds: this.profile().positiveSeeds.filter((track) => this.allowedSource(track)),
+                trustedSeeds: this.profile().trustedSeeds.filter((track) => this.allowedSource(track)),
             },
             controls,
             rotation,
-            this.anchor && this.allowed(this.anchor) ? this.anchor : undefined,
+            this.anchor && this.allowedSource(this.anchor) ? this.anchor : undefined,
             {
                 ...context,
-                sessionReactions: recentReactions(this.events, this.now()).filter((event) => this.allowed(event.track)),
+                sessionReactions: recentReactions(this.events, this.now()).filter((event) =>
+                    this.allowedSource(event.track),
+                ),
             },
         );
         this.activeSeeds = seeds;

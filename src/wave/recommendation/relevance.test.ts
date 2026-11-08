@@ -19,6 +19,20 @@ const favorites = Array.from({ length: 4 }, (_, i) =>
 );
 
 describe('relevance before novelty and artist diversity', () => {
+    it('does not reduce an established smaller interest merely because another style has a large import', () => {
+        const events = Array.from({ length: 6 }, (_, i) => like(track('jungle-' + i, 'jungle')));
+        const candidate = track('jungle-next', 'jungle');
+        const before = recommend([candidate], events, controls, { now })[0];
+        const after = recommend(
+            [candidate],
+            [...events, ...Array.from({ length: 300 }, (_, i) => like(track('rap-' + i, 'hiphop')))],
+            controls,
+            { now },
+        )[0];
+        expect(before).toBeDefined();
+        expect(after).toBeDefined();
+        expect(after.score).toBeCloseTo(before.score, 4);
+    });
     it('retains the strength of repeated interests instead of clipping all positive tags to the same weight', () => {
         const events = [
             like(track('rare', 'country')),

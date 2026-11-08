@@ -4,6 +4,7 @@ export type Preferences = {
     zoom: number;
     theme: 'dark' | 'light' | 'auto';
     navigation: boolean;
+    adBlocker: boolean;
     hidePromotions: boolean;
     hideEvents: boolean;
     hideArtistUpsells: boolean;
@@ -125,6 +126,7 @@ export async function installClientPreferences(ru: boolean): Promise<void> {
     panel.append(label);
     for (const [key, title] of [
         ['navigation', text('Кнопки навигации', 'Navigation controls')],
+        ['adBlocker', text('Блокировать рекламу, включая аудиорекламу', 'Block ads, including audio ads')],
         ['hidePromotions', text('Скрывать продвижение', 'Hide promotions')],
         ['hideEvents', text('Скрывать события рядом', 'Hide nearby events')],
         ['hideArtistUpsells', text('Скрывать предложения Artist Pro', 'Hide Artist Pro offers')],
@@ -133,6 +135,7 @@ export async function installClientPreferences(ru: boolean): Promise<void> {
         label.className = 'check';
         const input = document.createElement('input');
         input.type = 'checkbox';
+        if (key === 'adBlocker') input.id = 'native-adblock-enabled';
         input.checked = value[key];
         input.onchange = () => {
             value[key] = input.checked;
@@ -141,6 +144,51 @@ export async function installClientPreferences(ru: boolean): Promise<void> {
         label.append(input, document.createTextNode(title));
         panel.append(label);
     }
+    const adStatus = document.createElement('p');
+    adStatus.id = 'native-adblock-status';
+    adStatus.setAttribute('role', 'status');
+    const showAdStatus = async (action: 'status' | 'refresh') => {
+        try {
+            const state = await invoke<{
+                enabled: boolean;
+                attached: boolean;
+                rules: number;
+                blocked: number;
+                error?: string;
+            }>('adblock_action', { action });
+            adStatus.textContent =
+                state.enabled && !state.attached
+                    ? text(
+                          'Сетевой фильтр не подключён. Перезапустите клиент и проверьте диагностику.',
+                          'Network filtering is not attached. Restart the client and check diagnostics.',
+                      )
+                    : text('Правил: ', 'Rules: ') +
+                      state.rules +
+                      text(' · Заблокировано с запуска: ', ' · Blocked since launch: ') +
+                      state.blocked +
+                      (state.error
+                          ? text(
+                                ' · Список не обновился; используются сохранённые правила.',
+                                ' · Update unavailable; saved rules remain active.',
+                            )
+                          : '');
+        } catch (error) {
+            adStatus.textContent = String(error);
+        }
+    };
+    const updateRules = document.createElement('button');
+    updateRules.textContent = text('Обновить правила блокировки', 'Update blocking rules');
+    updateRules.type = 'button';
+    updateRules.onclick = async () => {
+        updateRules.disabled = true;
+        try {
+            await showAdStatus('refresh');
+        } finally {
+            updateRules.disabled = false;
+        }
+    };
+    panel.append(adStatus, updateRules);
+    await showAdStatus('status');
     const zoomLabel = document.createElement('label'),
         zoom = document.createElement('input');
     zoom.type = 'range';

@@ -9,6 +9,8 @@ import { Wave } from './wave';
 import { recentReactions } from '../../src/wave/recommendation/sessionSignals';
 import { SoundCloudRecommender } from '../../src/wave/recommendation/soundcloudAdapter';
 import type { Feedback } from '../../src/wave/recommendation/types';
+import type { WaveCandidate } from '../../src/wave/waveEngine';
+import type { LibrarySignals } from '../../src/soundcloud/radioSources';
 
 const raw = (id: number) => ({
     id,
@@ -64,6 +66,11 @@ type Internals = {
     recommender: SoundCloudRecommender;
     canAdvance(): boolean;
     current?: object;
+    candidates: Map<string, WaveCandidate>;
+    queued: Set<string>;
+    queue(operation: string, urls: string[]): Promise<unknown>;
+    refill(): Promise<void>;
+    applyLibrarySignals(signals: LibrarySignals): void;
 };
 const frame = (id: number, elapsed = '0:00') => ({
     url: raw(id).permalink_url,
@@ -73,6 +80,58 @@ const frame = (id: number, elapsed = '0:00') => ({
     elapsed,
     isPlaying: true,
     isLiked: false,
+});
+
+it('imports a positive heart from the first hydrated snapshot once, without inventing a live reaction', async () => {
+    const wave = new Wave(),
+        state = wave as unknown as Internals;
+    await wave.tick();
+    state.observe({ ...frame(20), isLiked: true });
+    await settle();
+    state.observe({ ...frame(20), isLiked: true });
+    await settle();
+    const events = saved.waveFeedbackV1_7 as Feedback[];
+    const likes = events.filter((event) => event.kind === 'like' && event.track.apiId === 20);
+    expect(likes).toHaveLength(1);
+    expect(likes[0].origin).toBe('library');
+    expect(recentReactions(events, Date.now()).some((event) => event.kind === 'like')).toBe(false);
+    expect(state.recommender.liked(frame(20).url)).toBe(true);
+    state.observe(frame(21));
+    await settle();
+    expect(
+        (saved.waveFeedbackV1_7 as Feedback[]).some((event) => event.kind === 'unlike' && event.track.apiId === 21),
+    ).toBe(false);
+});
+
+it('withdraws newly recognized library tracks from the upcoming New queue without touching other tracks', async () => {
+    const wave = new Wave(),
+        state = wave as unknown as Internals;
+    await wave.tick();
+    state.observe(frame(20));
+    await settle();
+    const first = state.candidates.get(frame(20).url)!;
+    const second = { ...first, url: frame(21).url, apiId: 21 };
+    state.candidates.set(second.url, second);
+    state.recommender.addCandidates([first, second]);
+    state.recommender.setControls({ ...wave.controls, discovery: 'new' });
+    state.queued.add(first.url);
+    state.queued.add(second.url);
+    state.recommender.reserve(first, true);
+    state.recommender.reserve(second, true);
+    state.queue = vi.fn(async () => ({ state: 'done' }));
+    state.refill = vi.fn(async () => {});
+    state.applyLibrarySignals({
+        likedIds: [20],
+        blockedIds: [],
+        likesComplete: true,
+        blocksComplete: true,
+        more: false,
+    });
+    await settle();
+    expect([...state.queued]).toEqual([second.url]);
+    expect(state.queue).toHaveBeenCalledWith('remove', [first.url]);
+    expect(state.refill).toHaveBeenCalledOnce();
+    expect(host.player).not.toHaveBeenCalled();
 });
 
 it('learns ordinary playback, measures its audio and changes discovery without ever starting My Wave', async () => {

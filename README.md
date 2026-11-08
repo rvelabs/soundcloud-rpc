@@ -192,3 +192,7 @@ sign-in cookies and tokens.
 An unofficial fork of [richardhbtz/soundcloud-rpc](https://github.com/richardhbtz/soundcloud-rpc), maintained by
 [rvelabs](https://github.com/rvelabs). [MIT license](LICENSE). Not affiliated with SoundCloud or the other streaming
 services mentioned here.
+
+Native ad blocking uses [adblock-rust](https://github.com/brave/adblock-rust) (MPL-2.0) and an unmodified
+[EasyList](https://easylist.to/) snapshot by The EasyList authors (CC BY-SA 3.0). License texts are included with
+the Windows package. Filter updates run in the background; bundled rules remain available offline.

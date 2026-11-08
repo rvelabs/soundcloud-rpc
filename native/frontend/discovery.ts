@@ -14,6 +14,17 @@ type Enrichment = {
     signals?: LibrarySignals;
 };
 const optional = <T>(task: Promise<T>): Promise<T | null> => task.catch(() => null);
+const pause = (signal: AbortSignal) =>
+    new Promise<boolean>((resolve) => {
+        if (signal.aborted) return resolve(false);
+        const finish = () => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', finish);
+            resolve(!signal.aborted);
+        };
+        const timer = setTimeout(finish, 1500);
+        signal.addEventListener('abort', finish, { once: true });
+    });
 
 export class Discovery {
     private sources: RadioSources;
@@ -27,6 +38,21 @@ export class Discovery {
     private resolved = new Map<string, WaveCandidate>();
     private resolving = new Map<string, Promise<WaveCandidate | undefined>>();
     private retryAt = new Map<string, number>();
+    private librarySync?: Promise<void>;
+    private librarySample = '';
+    private hydratedLikes = new Set<number>();
+    private signalTask?: Promise<LibrarySignals | null>;
+
+    private async readSignals(): Promise<LibrarySignals | null> {
+        if (this.signalTask) return this.signalTask;
+        const task = this.sources.signals(this.owner, this.aborted.signal);
+        this.signalTask = task;
+        try {
+            return await task;
+        } finally {
+            if (this.signalTask === task) this.signalTask = undefined;
+        }
+    }
 
     async hydrate(seeds: Track[], background = false): Promise<WaveCandidate[]> {
         const revision = this.revision();
@@ -145,7 +171,7 @@ export class Discovery {
         if (this.aborted.signal.aborted) throw new Error('SoundCloud account changed');
         const revision = this.revision();
         const [signals, pages] = await Promise.all([
-            this.sources.signals(this.owner),
+            this.readSignals(),
             Promise.allSettled([0, 50].map((offset) => this.request('likes', { owner: this.owner, offset }, true))),
         ]);
         if (this.aborted.signal.aborted || revision !== this.revision()) throw new Error('SoundCloud account changed');
@@ -157,6 +183,7 @@ export class Discovery {
                   })
                 : [],
         );
+        for (const track of likes) this.hydratedLikes.add(track.apiId!);
         if (signals) {
             this.signals = {
                 ...signals,
@@ -171,6 +198,65 @@ export class Discovery {
                 more: true,
             };
         return { likes, recent: [], tracks: [], signals: this.signals };
+    }
+
+    async syncLibrary(update: (signals: LibrarySignals, likes: WaveCandidate[]) => void): Promise<void> {
+        if (this.librarySync) return this.librarySync;
+        const task = this.syncLibraryOnce(update);
+        this.librarySync = task;
+        try {
+            await task;
+        } finally {
+            if (this.librarySync === task) this.librarySync = undefined;
+        }
+    }
+
+    private async syncLibraryOnce(update: (signals: LibrarySignals, likes: WaveCandidate[]) => void): Promise<void> {
+        const revision = this.revision();
+        const current = () => !this.aborted.signal.aborted && revision === this.revision();
+        while (this.signals?.more && current()) {
+            if (!(await pause(this.aborted.signal)) || !current()) return;
+            const signals = await this.readSignals();
+            if (!signals || !current()) return;
+            this.signals = signals;
+            update(signals, []);
+        }
+        if (!current() || !this.signals?.likesComplete) return;
+        const ids = this.signals.likedIds;
+        const signature = ids.join(',');
+        if (signature === this.librarySample) return;
+        const sample = [
+            ...new Set(
+                Array.from(
+                    { length: Math.min(80, ids.length) },
+                    (_, index) => ids[Math.floor((index * ids.length) / Math.min(80, ids.length))],
+                ),
+            ),
+        ].filter((id) => !this.hydratedLikes.has(id));
+        for (let offset = 0; offset < sample.length; offset += 40) {
+            if (!current()) return;
+            const batch = sample.slice(offset, offset + 40);
+            try {
+                const raw = await this.request('tracks', { ids: batch }, true);
+                if (!current()) return;
+                if (!Array.isArray(raw)) {
+                    this.failed('/tracks');
+                    return;
+                }
+                const liked = new Set(this.signals.likedIds);
+                const requested = new Set(batch);
+                const tracks = this.convert(
+                    raw.filter((track) => requested.has(track?.id) && liked.has(track.id)),
+                    'collection',
+                ).map((track) => ({ ...track, liked: true }));
+                for (const track of tracks) this.hydratedLikes.add(track.apiId!);
+                update(this.signals, tracks);
+            } catch {
+                this.failed('/tracks');
+                return;
+            }
+        }
+        this.librarySample = signature;
     }
 
     async related(seeds: Track[], onHydrated?: (items: WaveCandidate[]) => void): Promise<WaveCandidate[]> {
@@ -203,7 +289,7 @@ export class Discovery {
         const extras = this.now() - this.lastExtras >= 5 * 60000;
         if (extras) this.lastExtras = this.now();
         const [signals, personal, home, following, collections, artists] = await Promise.all([
-            optional(this.sources.signals(this.owner)),
+            optional(this.readSignals()),
             extras ? optional(this.sources.personal(this.owner, this.aborted.signal)) : null,
             extras && !this.seeds.length ? optional(this.sources.home()) : null,
             extras ? optional(this.sources.following(this.owner)) : null,
@@ -247,6 +333,10 @@ export class Discovery {
 
     reacted(id: number, liked: boolean): void {
         this.sources.liked(id, liked);
+        if (this.signals)
+            this.signals.likedIds = liked
+                ? [...new Set([...this.signals.likedIds, id])]
+                : this.signals.likedIds.filter((known) => known !== id);
     }
 
     diagnostics() {
