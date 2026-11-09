@@ -65,6 +65,67 @@ app.whenReady().then(async () => {
         });
         await new Promise((resolve) => setTimeout(resolve, 140));
         assert(await recordRunning(), 'restoring motion resumes rotation without a click');
+        await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+        });
+        const chooseMotion = (mode) =>
+            wc.executeJavaScript(
+                `(()=>{const choice=document.querySelector('[data-motion-preference]');choice.value='${mode}';choice.dispatchEvent(new Event('change'))})()`,
+            );
+        await chooseMotion('full');
+        assert.equal(await wc.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'), 'smooth');
+        assert.equal(
+            await wc.executeJavaScript("getComputedStyle(document.querySelector('.vinyl-rotor')).animationDuration"),
+            '28s',
+        );
+        await wc.executeJavaScript("document.querySelector('[data-source=yandex]').click()");
+        assert(
+            await wc.executeJavaScript(
+                "document.querySelector('[data-source-copy]').getAnimations().some(a=>a.playState==='running')",
+            ),
+            'explicit full motion overrides system reduction',
+        );
+        await wc.loadFile(path.join(root, 'docs/index.html'));
+        await wc.executeJavaScript('document.fonts.ready.then(()=>true)');
+        assert.equal(await wc.executeJavaScript('document.documentElement.dataset.motionMode'), 'full');
+        assert.equal(await wc.executeJavaScript("document.querySelector('[data-motion-preference]').value"), 'full');
+        assert.equal(await wc.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'), 'smooth');
+        assert(
+            await wc.executeJavaScript("matchMedia('(prefers-reduced-motion:reduce)').matches"),
+            'the OS setting has not been changed',
+        );
+        await wc.executeJavaScript("document.querySelector('[data-site-language=en]').click()");
+        assert.equal(
+            await wc.executeJavaScript("document.querySelector('[data-motion-preference] option:checked').textContent"),
+            'On',
+        );
+        await chooseMotion('auto');
+        await wc.loadFile(path.join(root, 'docs/index.html'));
+        await wc.executeJavaScript('document.fonts.ready.then(()=>true)');
+        await chooseMotion('full');
+        assert(
+            await wc.executeJavaScript(
+                "document.querySelector('.hero-copy').getAnimations().some(a=>a.effect.getTiming().duration===650)",
+            ),
+            'enabling motion reveals elements skipped by the system preference',
+        );
+        await chooseMotion('reduced');
+        await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+        });
+        await wc.executeJavaScript(
+            'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',
+        );
+        assert.equal(await wc.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'), 'auto');
+        assert.equal(
+            await wc.executeJavaScript(
+                "document.getAnimations().filter(a=>a.playState==='running'&&!a.effect?.target?.classList.contains('vinyl-rotor')).length",
+            ),
+            0,
+        );
+        await chooseMotion('auto');
+        assert.equal(await wc.executeJavaScript('getComputedStyle(document.documentElement).scrollBehavior'), 'smooth');
+        await wc.executeJavaScript("localStorage.removeItem('soundcloud-site-motion')");
         checkpoint('loaded');
         for (const width of [320, 360, 375, 390, 393, 412, 430, 768, 844, 1024, 1200, 1440]) {
             checkpoint('viewport-' + width);
@@ -243,6 +304,9 @@ app.whenReady().then(async () => {
         const result = {
             autoStartWithoutClick: true,
             resumeAfterReducedMotion: true,
+            explicitMotionOverridesSystem: true,
+            motionPreferencePersists: true,
+            reducedMotionOverride: true,
             viewportChecks: 24,
             languageSwitch: true,
             offscreenAndUnfocusedRecordPauses: true,

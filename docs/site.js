@@ -13,6 +13,10 @@
         download: 'Download for Windows',
         seeApp: 'Take a look inside',
         heroNote: 'Free. Open source.',
+        motionLabel: 'Animations',
+        motionAuto: 'Follow system settings',
+        motionFull: 'On',
+        motionReduced: 'Reduce motion',
         stripWave: 'Your personal radio',
         stripImport: 'Your playlists, with you',
         stripEq: '42 sound presets',
@@ -116,6 +120,16 @@
         [...document.querySelectorAll('[data-label]')].map((node) => [node, node.getAttribute('aria-label')]),
     );
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    const motionChoice = document.querySelector('[data-motion-preference]');
+    const motionOptions = ['auto', 'full', 'reduced'];
+    let motionPreference = 'auto';
+    try {
+        const saved = localStorage.getItem('soundcloud-site-motion');
+        if (motionOptions.includes(saved)) motionPreference = saved;
+    } catch {}
+    const motionReduced = () => motionPreference === 'reduced' || (motionPreference === 'auto' && reduce.matches);
+    document.documentElement.dataset.motionMode = motionPreference;
+    motionChoice.value = motionPreference;
     const animations = new Set();
     const gallery = {
         wave: {
@@ -203,9 +217,10 @@
         recordVisible = true,
         focused = true,
         frame = 0;
+    let revealVisible = () => {};
     const index = () => (language === 'en' ? 1 : 0);
     const runAnimation = (element, frames, options) => {
-        if (reduce.matches || document.hidden || !element.animate) return;
+        if (motionReduced() || document.hidden || !element.animate) return;
         const animation = element.animate(frames, options);
         if (!focused) animation.pause();
         animations.add(animation);
@@ -219,7 +234,7 @@
         const active = !document.hidden && focused;
         document.body.classList.toggle('motion-still', !active || !recordVisible);
         for (const animation of animations) {
-            if (reduce.matches) {
+            if (motionReduced()) {
                 animation.finish();
                 continue;
             }
@@ -366,7 +381,7 @@
     const disclosureAnimations = new Map();
     for (const details of document.querySelectorAll('.questions details'))
         details.querySelector('summary').addEventListener('click', (event) => {
-            if (reduce.matches || !details.animate) return;
+            if (motionReduced() || !details.animate) return;
             event.preventDefault();
             const content = details.querySelector('.faq-answer'),
                 previous = disclosureAnimations.get(details);
@@ -421,24 +436,36 @@
             dialog.close();
     });
     if ('IntersectionObserver' in window) {
+        const pending = new Set(document.querySelectorAll('[data-reveal]'));
+        const reveal = (element) => {
+            const animation = runAnimation(
+                element,
+                [
+                    { opacity: 0.4, translate: '0 18px' },
+                    { opacity: 1, translate: '0 0' },
+                ],
+                { duration: 650, easing: 'cubic-bezier(.22,1,.36,1)' },
+            );
+            if (!animation) return;
+            pending.delete(element);
+            once.unobserve(element);
+        };
         const once = new IntersectionObserver(
             (entries) => {
                 for (const entry of entries) {
                     if (!entry.isIntersecting) continue;
-                    once.unobserve(entry.target);
-                    runAnimation(
-                        entry.target,
-                        [
-                            { opacity: 0.4, translate: '0 18px' },
-                            { opacity: 1, translate: '0 0' },
-                        ],
-                        { duration: 650, easing: 'cubic-bezier(.22,1,.36,1)' },
-                    );
+                    reveal(entry.target);
                 }
             },
             { rootMargin: '0px 0px -16px 0px' },
         );
-        for (const element of document.querySelectorAll('[data-reveal]')) once.observe(element);
+        for (const element of pending) once.observe(element);
+        revealVisible = () => {
+            for (const element of pending) {
+                const rect = element.getBoundingClientRect();
+                if (rect.bottom > 0 && rect.top < innerHeight - 16) reveal(element);
+            }
+        };
         new IntersectionObserver(
             ([entry]) => {
                 recordVisible = entry.isIntersecting;
@@ -471,7 +498,7 @@
     };
     const nativeProgress = CSS.supports('animation-timeline:scroll()');
     const syncProgress = () => {
-        const fallback = !nativeProgress || reduce.matches;
+        const fallback = !nativeProgress || motionReduced();
         for (const type of ['scroll', 'resize']) {
             removeEventListener(type, queueProgress);
             if (fallback) addEventListener(type, queueProgress, { passive: true });
@@ -479,7 +506,20 @@
         if (fallback) queueProgress();
     };
     syncProgress();
-    document.addEventListener('visibilitychange', syncMotion);
+    const refreshMotion = () => {
+        syncMotion();
+        syncProgress();
+        revealVisible();
+    };
+    motionChoice.addEventListener('change', () => {
+        motionPreference = motionOptions.includes(motionChoice.value) ? motionChoice.value : 'auto';
+        document.documentElement.dataset.motionMode = motionPreference;
+        try {
+            localStorage.setItem('soundcloud-site-motion', motionPreference);
+        } catch {}
+        refreshMotion();
+    });
+    document.addEventListener('visibilitychange', refreshMotion);
     addEventListener('blur', () => {
         focused = false;
         syncMotion();
@@ -488,11 +528,8 @@
         focused = true;
         syncMotion();
     });
-    addEventListener('pageshow', syncMotion);
-    reduce.addEventListener('change', () => {
-        syncMotion();
-        syncProgress();
-    });
+    addEventListener('pageshow', refreshMotion);
+    reduce.addEventListener('change', refreshMotion);
     setLanguage(/^ru(?:-|$)/i.test(navigator.language || '') ? 'ru' : 'en');
     syncMotion();
 })();
