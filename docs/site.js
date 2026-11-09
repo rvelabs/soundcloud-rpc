@@ -13,10 +13,6 @@
         download: 'Download for Windows',
         seeApp: 'Take a look inside',
         heroNote: 'Free. Open source.',
-        motionLabel: 'Animations',
-        motionAuto: 'Follow system settings',
-        motionFull: 'On',
-        motionReduced: 'Reduce motion',
         stripWave: 'Your personal radio',
         stripImport: 'Your playlists, with you',
         stripEq: '42 sound presets',
@@ -119,17 +115,6 @@
     const attributes = new Map(
         [...document.querySelectorAll('[data-label]')].map((node) => [node, node.getAttribute('aria-label')]),
     );
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
-    const motionChoice = document.querySelector('[data-motion-preference]');
-    const motionOptions = ['auto', 'full', 'reduced'];
-    let motionPreference = 'auto';
-    try {
-        const saved = localStorage.getItem('soundcloud-site-motion');
-        if (motionOptions.includes(saved)) motionPreference = saved;
-    } catch {}
-    const motionReduced = () => motionPreference === 'reduced' || (motionPreference === 'auto' && reduce.matches);
-    document.documentElement.dataset.motionMode = motionPreference;
-    motionChoice.value = motionPreference;
     const animations = new Set();
     const gallery = {
         wave: {
@@ -220,7 +205,7 @@
     let revealVisible = () => {};
     const index = () => (language === 'en' ? 1 : 0);
     const runAnimation = (element, frames, options) => {
-        if (motionReduced() || document.hidden || !element.animate) return;
+        if (document.hidden || !element.animate) return;
         const animation = element.animate(frames, options);
         if (!focused) animation.pause();
         animations.add(animation);
@@ -234,10 +219,6 @@
         const active = !document.hidden && focused;
         document.body.classList.toggle('motion-still', !active || !recordVisible);
         for (const animation of animations) {
-            if (motionReduced()) {
-                animation.finish();
-                continue;
-            }
             if (active) animation.play();
             else animation.pause();
         }
@@ -381,7 +362,7 @@
     const disclosureAnimations = new Map();
     for (const details of document.querySelectorAll('.questions details'))
         details.querySelector('summary').addEventListener('click', (event) => {
-            if (motionReduced() || !details.animate) return;
+            if (!details.animate) return;
             event.preventDefault();
             const content = details.querySelector('.faq-answer'),
                 previous = disclosureAnimations.get(details);
@@ -498,7 +479,7 @@
     };
     const nativeProgress = CSS.supports('animation-timeline:scroll()');
     const syncProgress = () => {
-        const fallback = !nativeProgress || motionReduced();
+        const fallback = !nativeProgress;
         for (const type of ['scroll', 'resize']) {
             removeEventListener(type, queueProgress);
             if (fallback) addEventListener(type, queueProgress, { passive: true });
@@ -511,14 +492,6 @@
         syncProgress();
         revealVisible();
     };
-    motionChoice.addEventListener('change', () => {
-        motionPreference = motionOptions.includes(motionChoice.value) ? motionChoice.value : 'auto';
-        document.documentElement.dataset.motionMode = motionPreference;
-        try {
-            localStorage.setItem('soundcloud-site-motion', motionPreference);
-        } catch {}
-        refreshMotion();
-    });
     document.addEventListener('visibilitychange', refreshMotion);
     addEventListener('blur', () => {
         focused = false;
@@ -529,7 +502,6 @@
         syncMotion();
     });
     addEventListener('pageshow', refreshMotion);
-    reduce.addEventListener('change', refreshMotion);
     setLanguage(/^ru(?:-|$)/i.test(navigator.language || '') ? 'ru' : 'en');
     syncMotion();
 })();

@@ -354,26 +354,6 @@ h3 {
     font-size: 10px;
     margin-top: 18px;
 }
-.motion-choice {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 4px 10px;
-    margin-top: 8px;
-    color: var(--muted);
-    font-size: 11px;
-}
-.motion-choice select {
-    max-width: 100%;
-    min-height: 32px;
-    padding: 3px 7px;
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    font: inherit;
-    color: var(--ink);
-    background: var(--panel);
-    cursor: pointer;
-}
 .record-art {
     position: relative;
     isolation: isolate;
@@ -1973,36 +1953,4 @@ h3 {
     .footer > div {
         gap: 12px;
     }
-}
-@media (prefers-reduced-motion: reduce) {
-    html:not([data-motion-mode='full']) {
-        scroll-behavior: auto;
-    }
-    :root:not([data-motion-mode='full']) *,
-    :root:not([data-motion-mode='full']) *:before,
-    :root:not([data-motion-mode='full']) *:after {
-        transition: none !important;
-    }
-    :root:not([data-motion-mode='full']) .vinyl-rotor {
-        animation-duration: 90s;
-    }
-    :root:not([data-motion-mode='full']) .reading-progress {
-        animation: none;
-        transform: scaleX(var(--scroll, 0));
-    }
-}
-html[data-motion-mode='reduced'] {
-    scroll-behavior: auto;
-}
-:root[data-motion-mode='reduced'] *,
-:root[data-motion-mode='reduced'] *:before,
-:root[data-motion-mode='reduced'] *:after {
-    transition: none !important;
-}
-:root[data-motion-mode='reduced'] .vinyl-rotor {
-    animation-duration: 90s;
-}
-:root[data-motion-mode='reduced'] .reading-progress {
-    animation: none;
-    transform: scaleX(var(--scroll, 0));
 }
