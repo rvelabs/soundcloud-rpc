@@ -6,6 +6,11 @@ export interface QueueRequest {
     urls: string[];
     ticket: string;
     expires: number;
+    replacement?: {
+        current: string;
+        expected: string[];
+        remove: string[];
+    };
 }
 export interface QueueResult {
     state: 'unsupported' | 'done' | 'unavailable' | 'uncertain' | 'cancelled';
@@ -96,7 +101,41 @@ export async function nativeQueueModel(
     const target = path(request.urls[0]);
     if (!target || request.urls.length !== 1) return { state: 'unavailable' };
     const queued = () => future().some((item) => item.explicit && address(item) === target);
-    if (request.operation === 'add' && queued()) return { state: 'done' };
+    const replacement = request.operation === 'add' ? request.replacement : undefined;
+    const obsolete = new Set(replacement?.remove.map(path));
+    const currentMatches = () =>
+        !replacement ||
+        (manager.getQueue() === queue &&
+            path(manager.getCurrentSound()?.get('permalink_url')) === path(replacement.current));
+    const queueMatches = () =>
+        !replacement ||
+        (currentMatches() && JSON.stringify(urls().map(path)) === JSON.stringify(replacement.expected.map(path)));
+    if (replacement) {
+        if (typeof queue.remove !== 'function') return { state: 'unsupported' };
+        if (!path(replacement.current) || obsolete.has(null) || obsolete.has(target)) return { state: 'unavailable' };
+        if (Date.now() >= request.expires || !queueMatches()) return { state: 'cancelled' };
+    }
+    const finishAdd = (): QueueResult => {
+        if (!replacement)
+            return { state: queued() || address(manager.getCurrentQueueItem()!) === target ? 'done' : 'uncertain' };
+        const next = future().filter((item) => item.explicit);
+        if (!currentMatches() || address(next.find((item) => !obsolete.has(address(item)))) !== target)
+            return { state: 'uncertain', urls: urls() };
+        try {
+            queue.remove(next.filter((item) => obsolete.has(address(item))));
+        } catch {
+            return { state: 'uncertain', urls: urls() };
+        }
+        const remaining = urls();
+        return {
+            state:
+                path(remaining[0]) === target && !remaining.some((url) => obsolete.has(path(url)))
+                    ? 'done'
+                    : 'uncertain',
+            urls: remaining,
+        };
+    };
+    if (request.operation === 'add' && queued()) return finishAdd();
     const Sound = exports.find(
         (value) =>
             (value as SoundClass)?.prototype?.resource_type === 'sound' &&
@@ -141,13 +180,12 @@ export async function nativeQueueModel(
             layoutInfo: layout?.getCurrentLayoutInfo(),
         };
         if (request.operation === 'add') {
+            if (!queueMatches()) return { state: 'cancelled' };
             if (!queued()) {
                 acted = true;
                 manager.addExplicitQueueItem(sound, sound, context);
             }
-            return {
-                state: queued() || address(manager.getCurrentQueueItem()!) === target ? 'done' : 'uncertain',
-            };
+            return finishAdd();
         }
         let gateFailed = false;
         const previousSound = manager.getCurrentSound();
@@ -176,7 +214,9 @@ export async function nativeQueueModel(
         }
         return { state: acted ? 'uncertain' : 'unavailable' };
     } catch {
-        return { state: acted ? 'uncertain' : 'unavailable' };
+        return replacement && acted
+            ? { state: 'uncertain', urls: urls() }
+            : { state: acted ? 'uncertain' : 'unavailable' };
     } finally {
         ticket.cancelled = true;
         if (tickets.get(request.ticket) === ticket) tickets.delete(request.ticket);

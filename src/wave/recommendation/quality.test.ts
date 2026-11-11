@@ -100,6 +100,44 @@ describe('recommendation quality regressions', () => {
         session.feedback(vote(dance, 'complete'));
         expect(session.rankBuffered([quiet, dance]).map((x) => x.track.id)).toEqual(['quiet']);
     });
+    it('keeps one copy per recording in a batch and excludes aliases of a reserved or recently played track', () => {
+        const original = track('original', 'ambient', { apiId: 42, artist: 'Artist', title: 'Song' });
+        const renamed = track('renamed', 'ambient', { apiId: 42 });
+        const repost = track('repost', 'ambient', { artist: 'Uploader', title: 'Artist — Song (Official Audio)' });
+        const remix = track('remix', 'ambient', { artist: 'Artist', title: 'Song (Other Remix)' });
+        for (const alias of [renamed, repost]) {
+            const list = recommend([original, alias, remix], [], settings, { now });
+            expect(list).toHaveLength(2);
+            expect(list.map((entry) => entry.track.id)).toContain(remix.id);
+            expect(recommend([original, alias], [], settings, { now, reservedTrackIds: [original.id] })).toEqual([]);
+            expect(recommend([alias], [vote(original, 'complete')], settings, { now })).toEqual([]);
+            expect(
+                recommend(
+                    [alias],
+                    [vote(original, 'complete', now - 7 * 86400000)],
+                    { ...settings, discovery: 'new' },
+                    { now },
+                ),
+            ).toEqual([]);
+        }
+    });
+    it('restores distinct recent tracks for the favorites cooldown after reopening', () => {
+        const favorites = ['one', 'two', 'three', 'four'].map((id, index) =>
+            track(id, 'ambient', { apiId: index + 1 }),
+        );
+        const session = new RecommendationSession({ related: async () => [] }, () => now);
+        session.setControls({ discovery: 'favorites' });
+        session.loadFeedback([
+            ...favorites.map((item) => vote(item, 'like', now - 86400000)),
+            vote(favorites[0], 'complete', now - 3000),
+            vote(favorites[1], 'complete', now - 2000),
+            vote(favorites[2], 'play', now - 1000),
+            vote(favorites[2], 'complete', now - 500),
+            vote({ ...favorites[2], id: 'three-new-url' }, 'complete'),
+        ]);
+        session.addCandidates(favorites);
+        expect(session.rank().map((entry) => entry.track.id)).toEqual(['four']);
+    });
     it('shares an in-flight discovery call and invalidates the profile cache on feedback', async () => {
         let resolve!: (tracks: Track[]) => void;
         const search = vi.fn(

@@ -50,6 +50,7 @@ export class Wave {
     private analysis?: AudioAnalysisCache;
     private sample = { path: '', seconds: 0, count: 0, energy: 0, bass: 0, brightness: 0 };
     private current?: Snapshot;
+    private trackSeed?: WaveCandidate;
     private currentOrigin?: Feedback['origin'];
     private candidates = new Map<string, WaveCandidate>();
     private queued = new Set<string>();
@@ -60,11 +61,16 @@ export class Wave {
     private initializing?: Promise<void>;
     private initializeRetryAt = 0;
     private filling?: Promise<void>;
+    private fillingFor?: { generation: number; revision: number };
+    private queueRevision = 0;
+    private reviewedRevision = 0;
     private disposeMonitor?: () => void;
     private attempts = 0;
     private manualPause = false;
     private terminalAttempt?: { url: string; attempts: number; retryAt: number; reported?: boolean };
     private lastRefresh = 0;
+    private trackWaveRefresh?: Promise<unknown>;
+    private lastDiscoveryCheck = -Infinity;
     private lastFailure = 0;
     private catalogRevision = -1;
     private excluded: string[] = [];
@@ -89,6 +95,8 @@ export class Wave {
                 genre: track.genre,
                 source: track.source,
                 relatedTo: track.relatedTo,
+                stationRank: track.stationRank,
+                tier: track.trackWaveTier,
                 score: track.recommendationScore,
                 evidence: track.selectionEvidence,
                 reasons: track.recommendationReasons,
@@ -141,22 +149,32 @@ export class Wave {
         this.recommender?.addCandidates(items);
     }
 
-    private async discover(seeds: Track[]): Promise<WaveCandidate[]> {
+    private async discover(seeds: Track[], advance = false): Promise<WaveCandidate[]> {
         const discovery = this.discovery;
         if (!discovery) return [];
+        const selected = this.trackSeed;
+        const valid = () => discovery === this.discovery && selected === this.trackSeed;
         const found = await discovery.related(
             seeds.map((seed) => ({ ...seed, apiId: seed.apiId || this.candidates.get(seed.id)?.apiId })),
             (items) => {
-                if (discovery === this.discovery) this.remember(items);
+                if (valid()) this.remember(items);
             },
+            advance,
         );
-        if (discovery !== this.discovery) return [];
+        if (!valid()) return [];
         this.remember(found);
         return found;
     }
 
     private enrich(): void {
-        if (!this.active || !this.discovery || this.enriching || Date.now() - this.lastEnrichment < 60000) return;
+        if (
+            !this.active ||
+            this.trackSeed ||
+            !this.discovery ||
+            this.enriching ||
+            Date.now() - this.lastEnrichment < 60000
+        )
+            return;
         this.lastEnrichment = Date.now();
         const discovery = this.discovery,
             recommender = this.recommender;
@@ -232,6 +250,8 @@ export class Wave {
         this.catalogRevision = Number((await invoke<any>('native_diagnostics')).catalog?.revision);
         this.discovery = new Discovery(user.id, () => this.catalogRevision);
         this.lastEnrichment = -Infinity;
+        this.lastDiscoveryCheck = -Infinity;
+        this.lastRefresh = 0;
         this.profile = new Profile('wave-' + user.id);
         await this.profile.load();
         const journal = this.profile.get('waveDecisionTraceV1_' + user.id);
@@ -240,7 +260,9 @@ export class Wave {
         if (!this.controlsSelected)
             this.controls = { ...defaultControls, ...((this.profile.get('controls') as object) || {}) };
         else this.profile.set('controls', this.controls);
-        this.recommender = new SoundCloudRecommender(this.profile, String(user.id), (seeds) => this.discover(seeds));
+        this.recommender = new SoundCloudRecommender(this.profile, String(user.id), (seeds, advance) =>
+            this.discover(seeds, advance),
+        );
         this.recommender.setControls(this.controls);
         this.events.emit('controls', this.controls);
         this.excluded = this.recommender.getExcludedArtists();
@@ -257,46 +279,103 @@ export class Wave {
         this.syncLibrary();
     }
 
-    async start(): Promise<void> {
-        if (this.starting) return this.starting;
-        const task = this.startOnce();
+    async start(trackUrl?: string): Promise<void> {
+        if (this.starting) {
+            if (trackUrl) throw new Error('Волна уже запускается. Попробуйте ещё раз через несколько секунд.');
+            return this.starting;
+        }
+        const task = this.startOnce(trackUrl);
         this.starting = task;
         try {
             await task;
-        } catch (error) {
-            this.stop();
-            this.error(error);
-            throw error;
         } finally {
             this.starting = undefined;
         }
+        await this.refill();
     }
-    private async startOnce(): Promise<void> {
-        const generation = ++this.sessionGeneration;
-        this.attempts = 0;
+    private async startOnce(trackUrl?: string): Promise<void> {
+        const previousGeneration = this.sessionGeneration;
         await this.initialize();
-        if (generation !== this.sessionGeneration) return;
+        if (previousGeneration !== this.sessionGeneration) return;
+        const model = this.recommender!;
+        let seed: WaveCandidate | undefined;
+        if (trackUrl) {
+            const known = this.candidates.get(trackUrl);
+            const raw = known?.apiId ? null : await api('resolve', { url: trackUrl });
+            if (previousGeneration !== this.sessionGeneration || model !== this.recommender) return;
+            seed = known?.apiId ? known : raw && candidate(raw, 'personal');
+            if (!seed) throw new Error('SoundCloud не нашёл выбранный трек.');
+            seed = this.analysis?.enrich(seed) || seed;
+        }
+        const generation = ++this.sessionGeneration;
+        this.cancelQueue();
+        const old = [...this.queued];
+        for (const url of old) {
+            const item = this.candidates.get(url);
+            if (item) model.release(item);
+        }
+        this.queued.clear();
+        this.trackSeed = seed;
+        this.trackWaveRefresh = undefined;
+        model.setTrackSeed(seed);
+        this.events.emit('track-seed', seed?.title);
+        this.attempts = 0;
         this.active = true;
         const autoplay = nativeAutoplay(false, nativeRuntimeExports);
         if (this.autoplayPrevious === undefined && autoplay) this.autoplayPrevious = autoplay.previous;
         this.analysisState();
         this.manualPause = false;
-        this.queued.clear();
         this.terminalAttempt = undefined;
-        await invoke('wave_active', { active: true });
         this.events.emit('active', true);
         this.events.emit('state', 'loading');
+        try {
+            await invoke('wave_active', { active: true });
+            if (generation !== this.sessionGeneration) return;
+            if (old.length) {
+                const result = await this.queue('remove', old, generation);
+                if (generation !== this.sessionGeneration) return;
+                if (result.state !== 'done') throw new Error('SoundCloud не подтвердил обновление очереди.');
+            }
+            if (seed) await this.playTrackWave(seed, model, generation);
+            else await this.playPersonalWave(model, generation);
+        } catch (error) {
+            if (generation !== this.sessionGeneration) return;
+            this.stop();
+            this.error(error);
+            throw error;
+        }
+    }
+
+    private async playTrackWave(seed: WaveCandidate, model: SoundCloudRecommender, generation: number): Promise<void> {
+        this.remember([seed]);
+        this.lastRefresh = Date.now();
+        this.lastDiscoveryCheck = -Infinity;
+        const related = model.refresh().catch((error) => this.error(error, false));
+        if (this.current?.url !== seed.url || !this.current.isPlaying) {
+            const result = await this.queue('play', [seed.url], generation);
+            if (generation !== this.sessionGeneration || this.manualPause) return;
+            if (result.state !== 'done') throw new Error('Не удалось включить выбранный трек в SoundCloud.');
+        }
+        this.currentOrigin = 'wave';
+        this.events.emit('candidate', seed);
+        await related;
+        if (generation === this.sessionGeneration) this.lastRefresh = -Infinity;
+    }
+
+    private async playPersonalWave(model: SoundCloudRecommender, generation: number): Promise<void> {
         if (this.current?.url) {
             const raw = await api('resolve', { url: this.current.url }).catch(() => null);
+            if (generation !== this.sessionGeneration) return;
             const track = raw && candidate(raw, 'personal');
             if (track) {
                 this.remember([track]);
-                this.recommender!.setAnchor(track);
+                model.setAnchor(track);
             }
         }
-        await this.recommender!.refresh();
+        this.lastRefresh = Date.now();
+        await model.refresh();
         if (generation !== this.sessionGeneration) return;
-        for (const track of this.recommender!.rank(8)) {
+        for (const track of model.rank(8)) {
             if (this.manualPause || generation !== this.sessionGeneration) return;
             this.candidates.set(track.url, track);
             const decision = this.describeDecision('start', track);
@@ -304,10 +383,9 @@ export class Wave {
             if (this.manualPause || generation !== this.sessionGeneration) return;
             if (result.state === 'done') {
                 this.rememberDecision(decision);
-                this.recommender!.reserve(track, true);
+                model.reserve(track, true);
                 this.events.emit('candidate', track);
                 this.enrich();
-                await this.refill();
                 return;
             }
             if (result.state === 'uncertain')
@@ -318,6 +396,11 @@ export class Wave {
 
     stop(): void {
         this.active = false;
+        if (this.trackSeed) {
+            this.trackSeed = undefined;
+            this.recommender?.setTrackSeed();
+            this.events.emit('track-seed', undefined);
+        }
         if (this.autoplayPrevious !== undefined) {
             nativeAutoplay(this.autoplayPrevious, nativeRuntimeExports);
             this.autoplayPrevious = undefined;
@@ -327,11 +410,22 @@ export class Wave {
         this.cancelQueue();
         this.events.emit('active', false);
         void invoke('wave_active', { active: false }).catch(() => {});
-        if (this.queued.size) void this.queue('remove', [...this.queued], this.sessionGeneration).catch(() => {});
+        if (this.queued.size) {
+            for (const url of this.queued) {
+                const item = this.candidates.get(url);
+                if (item) this.recommender?.release(item);
+            }
+            void this.queue('remove', [...this.queued], this.sessionGeneration).catch(() => {});
+        }
         this.queued.clear();
     }
 
-    private queue(operation: QueueRequest['operation'], urls: string[], generation = this.sessionGeneration) {
+    private queue(
+        operation: QueueRequest['operation'],
+        urls: string[],
+        generation = this.sessionGeneration,
+        replacement?: QueueRequest['replacement'],
+    ) {
         const task = this.queueTail
             .catch(() => {})
             .then(async () => {
@@ -346,7 +440,7 @@ export class Wave {
                 try {
                     return await Promise.race([
                         nativeQueueModel(
-                            { operation, urls, ticket, expires: Date.now() + 4500 },
+                            { operation, urls, ticket, expires: Date.now() + 4500, replacement },
                             nativeRuntimeExports,
                         ).catch((): QueueResult => ({ state: 'uncertain' })),
                         cancelled,
@@ -375,50 +469,91 @@ export class Wave {
     }
 
     private async refill(): Promise<void> {
-        if (this.filling) return this.filling;
+        if (this.starting) return;
+        const generation = this.sessionGeneration;
+        const revision = this.queueRevision;
+        if (this.filling) {
+            if (this.fillingFor?.generation === generation && this.fillingFor.revision === revision)
+                return this.filling;
+            await this.filling.catch((error) => this.error(error, false));
+            if (this.active && generation === this.sessionGeneration) return this.refill();
+            return;
+        }
+        this.fillingFor = { generation, revision };
         const task = this.fillOnce();
         this.filling = task;
         try {
             await task;
         } finally {
-            this.filling = undefined;
+            if (this.filling === task) {
+                this.filling = undefined;
+                this.fillingFor = undefined;
+            }
         }
     }
 
     private async fillOnce(): Promise<void> {
         const generation = this.sessionGeneration;
-        if (!this.active || !this.recommender || Date.now() - this.lastFailure < 15000) return;
+        const model = this.recommender;
+        const valid = () => this.active && generation === this.sessionGeneration && model === this.recommender;
+        if (!this.active || !model || Date.now() - this.lastFailure < 15000) return;
         const next = await this.queue('list', [], generation);
-        if (next.state !== 'done' || generation !== this.sessionGeneration || !this.active || !this.recommender) return;
-        const future = new Set(next.urls || []);
-        for (const url of this.queued)
-            if (!future.has(url)) {
-                const track = this.candidates.get(url);
-                if (track) this.recommender.release(track);
-                this.queued.delete(url);
-            }
-        if (this.queued.size >= 2) return;
-        if (this.recommender.rank(4).length < 2 || Date.now() - this.lastRefresh > 60000) {
-            await this.recommender.refresh();
-            this.lastRefresh = Date.now();
+        if (next.state !== 'done' || !valid()) return;
+        const urls = next.urls || [];
+        let future = new Set(urls);
+        this.reconcileQueue(future, model);
+        const revision = this.queueRevision;
+        if (this.queued.size >= 2 && revision === this.reviewedRevision) {
+            this.refreshReadyQueue(model, generation);
+            return;
         }
-        if (generation !== this.sessionGeneration || !this.active || !this.recommender) return;
-        for (const track of this.recommender.rank(10)) {
-            if (generation !== this.sessionGeneration || !this.active || this.queued.size >= 2) break;
+
+        const current = this.current?.url;
+        if (revision !== this.reviewedRevision && current && urls.length && urls.every((url) => this.queued.has(url))) {
+            const preferred = model.rank(1, urls)[0];
+            if (preferred && preferred.url !== urls[0] && preferred.url !== current && model.accepts(preferred)) {
+                const position = urls.indexOf(preferred.url);
+                const remove = position < 0 ? urls : urls.slice(0, position);
+                const result = await this.queue('add', [preferred.url], generation, {
+                    current,
+                    expected: urls,
+                    remove,
+                });
+                if (!valid()) return;
+                if (result.urls) {
+                    future = new Set(result.urls);
+                    this.reconcileQueue(future, model);
+                    if (future.has(preferred.url)) this.reserveUpcoming(preferred, model);
+                }
+                if (result.state === 'uncertain') {
+                    this.lastFailure = Date.now();
+                    return;
+                }
+                if (result.state === 'cancelled') return;
+            }
+        }
+        this.reviewedRevision = revision;
+
+        let ranked = this.queued.size < 2 ? model.rank(10) : [];
+        if (!this.trackSeed && !this.queued.size && !ranked.length && Date.now() - this.lastRefresh >= 15000) {
+            this.lastRefresh = Date.now();
+            await model.refresh();
+            if (!valid()) return;
+            ranked = model.rank(10);
+        }
+        for (const track of ranked) {
+            if (!valid() || this.queued.size >= 2) break;
             if (future.has(track.url) || track.url === this.current?.url) continue;
-            if (!this.recommender.accepts(track)) continue;
+            if (!model.accepts(track)) continue;
             this.candidates.set(track.url, track);
-            const decision = this.describeDecision('next', track);
             const result = await this.queue('add', [track.url], generation);
-            if (generation !== this.sessionGeneration || !this.active || !this.recommender) return;
+            if (!valid()) return;
             if (result.state === 'done') {
-                if (!this.recommender.accepts(track)) {
+                if (!model.accepts(track)) {
                     await this.queue('remove', [track.url], generation);
                     continue;
                 }
-                this.rememberDecision(decision);
-                this.queued.add(track.url);
-                this.recommender.reserve(track, true);
+                if (this.current?.url !== track.url) this.reserveUpcoming(track, model);
             } else if (result.state === 'uncertain') {
                 this.lastFailure = Date.now();
                 this.events.emit(
@@ -429,7 +564,68 @@ export class Wave {
                 return;
             }
         }
-        this.events.emit('state', 'playing');
+        const needsTrackCandidates =
+            this.trackSeed &&
+            (this.queued.size < 2 || [...this.queued].some((url) => this.candidates.get(url)?.trackWaveTier === 1));
+        if (needsTrackCandidates && !this.trackWaveRefresh && Date.now() - this.lastRefresh >= 15000) {
+            this.lastRefresh = Date.now();
+            const task = model.refresh(true).finally(() => {
+                if (this.trackWaveRefresh === task) this.trackWaveRefresh = undefined;
+            });
+            this.trackWaveRefresh = task;
+            void task
+                .then((tracks) => {
+                    if (!valid()) return;
+                    if (!tracks.length) {
+                        if (!this.queued.size)
+                            this.events.emit('state', 'playing', 'Пока не нашли достаточно похожих треков');
+                        return;
+                    }
+                    this.queueRevision++;
+                    return this.refill();
+                })
+                .catch((error) => this.error(error, false));
+        } else if (this.queued.size >= (this.trackSeed ? 2 : 1)) this.refreshReadyQueue(model, generation);
+        this.events.emit(
+            'state',
+            'playing',
+            this.trackSeed && !this.queued.size
+                ? this.trackWaveRefresh
+                    ? 'Подбираем продолжение по выбранному треку…'
+                    : 'Пока не нашли достаточно похожих треков'
+                : undefined,
+        );
+    }
+
+    private refreshReadyQueue(model: SoundCloudRecommender, generation: number): void {
+        if (Date.now() - this.lastDiscoveryCheck < 15000) return;
+        this.lastDiscoveryCheck = Date.now();
+        void model
+            .refreshIfNeeded()
+            .then((changed) => {
+                if (!changed || !this.active || generation !== this.sessionGeneration || model !== this.recommender)
+                    return;
+                this.queueRevision++;
+                return this.refill();
+            })
+            .catch((error) => this.error(error, false));
+    }
+
+    private reconcileQueue(future: ReadonlySet<string>, model: SoundCloudRecommender): void {
+        for (const url of this.queued) {
+            if (future.has(url)) continue;
+            const track = this.candidates.get(url);
+            if (track) model.release(track);
+            this.queued.delete(url);
+        }
+    }
+
+    private reserveUpcoming(track: WaveCandidate, model: SoundCloudRecommender): void {
+        if (this.queued.has(track.url)) return;
+        this.candidates.set(track.url, track);
+        this.rememberDecision(this.describeDecision('next', track));
+        this.queued.add(track.url);
+        model.reserve(track, true);
     }
 
     private loadCurrent(snapshot: Snapshot): void {
@@ -455,6 +651,7 @@ export class Wave {
         const next = raw as Snapshot;
         if (!next?.url) return;
         const previous = this.current;
+        const revision = this.queueRevision;
         const previousOrigin = this.currentOrigin;
         this.listening.observe(next.url, seconds(next.elapsed), next.isPlaying, playbackRate());
         this.current = next;
@@ -478,6 +675,7 @@ export class Wave {
         const track = this.candidates.get(next.url);
         if (!track) this.loadCurrent(next);
         if (previous?.url !== next.url) {
+            this.queueRevision++;
             this.currentOrigin = this.active ? 'wave' : undefined;
             this.qualified = undefined;
             this.analysisState();
@@ -487,10 +685,10 @@ export class Wave {
                 this.recommender?.setAnchor(track);
                 this.events.emit('candidate', track);
             }
-            void this.refill().catch((error) => this.error(error));
         } else if (previous && previous.isLiked !== next.isLiked && track) {
             if (track.apiId) this.discovery?.reacted(track.apiId, next.isLiked);
             this.recommender?.record(track, next.isLiked ? 'like' : 'unlike');
+            this.queueRevision++;
         }
         if (track && next.isLiked && this.recommender?.liked(track.url) === undefined) {
             if (track.apiId) this.discovery?.reacted(track.apiId, true);
@@ -501,6 +699,7 @@ export class Wave {
             if (fraction >= 0.5) {
                 this.qualified = next.url;
                 this.recommender.record(track, 'play', fraction, track.features, this.currentOrigin);
+                this.queueRevision++;
             }
         }
         if (this.recommender) {
@@ -513,6 +712,7 @@ export class Wave {
         }
         this.analysisState();
         this.events.emit('track', next);
+        if (this.queueRevision !== revision) void this.refill().catch((error) => this.error(error));
     }
 
     private forgetAccount(): void {
@@ -605,23 +805,29 @@ export class Wave {
     }
 
     async settings(controls: WaveControls): Promise<void> {
+        if (controls.mood !== this.controls.mood || controls.activity !== this.controls.activity) {
+            this.lastRefresh = -Infinity;
+            this.lastDiscoveryCheck = -Infinity;
+        }
         this.controlsSelected = true;
         this.controls = { ...defaultControls, ...controls, genre: '' };
         this.recommender?.setControls(this.controls);
         this.profile?.set('controls', this.controls);
-        if (this.active) {
-            const old = [...this.queued];
-            ++this.sessionGeneration;
-            this.cancelQueue();
-            this.queued.clear();
-            await this.queue('remove', old);
-            for (const url of old) {
-                const item = this.candidates.get(url);
-                if (item) this.recommender?.release(item);
-            }
-            await this.refill();
-        }
+        if (!this.trackSeed) await this.rebuildQueue();
         await this.profile?.flush();
+    }
+    private async rebuildQueue(): Promise<void> {
+        if (!this.active) return;
+        const old = [...this.queued];
+        const generation = ++this.sessionGeneration;
+        this.cancelQueue();
+        this.queued.clear();
+        for (const url of old) {
+            const item = this.candidates.get(url);
+            if (item) this.recommender?.release(item);
+        }
+        if (old.length) await this.queue('remove', old, generation);
+        if (generation === this.sessionGeneration) await this.refill();
     }
     private canAdvance(): boolean {
         try {
@@ -637,14 +843,23 @@ export class Wave {
     async exclude(artist: string, excluded: boolean): Promise<string[]> {
         this.recommender?.excludeArtist(artist, excluded);
         this.excluded = this.recommender?.getExcludedArtists() || [];
-        await this.settings(this.controls);
+        await this.rebuildQueue();
+        await this.profile?.flush();
         return this.excluded;
     }
     async dislike(url: string): Promise<void> {
         const track = this.candidates.get(url);
-        if (!track) return;
-        this.recommender?.record(track, 'dislike');
-        await this.settings(this.controls);
+        if (!track || !this.recommender) throw new Error('Track metadata is not ready. Try again in a moment.');
+        const model = this.recommender,
+            profile = this.profile;
+        model.record(track, 'dislike');
+        await profile?.flush(true);
+        if (this.recommender !== model || this.profile !== profile) return;
+        this.lastRefresh = -Infinity;
+        await this.rebuildQueue();
+        if (this.current?.url !== url) return;
+        if (this.active && !this.queued.size)
+            throw new Error('Preparing a different track. Try Next again in a moment.');
         nativePlayerCommand('next', nativeRuntimeExports);
     }
     control(command: string): void {
@@ -657,6 +872,7 @@ export class Wave {
             active: this.active,
             controls: this.controls,
             track: this.current,
+            trackSeed: this.trackSeed?.title,
             candidate: this.current && this.candidates.get(this.current.url),
             stats: this.recommender?.stats(),
             analysis: this.analysisStatus,
@@ -770,6 +986,10 @@ export class Wave {
         this.events.emit('candidate', this.candidates.get(track.url));
         this.analysisState();
         this.audioStatus({ phase: 'ready', path: input.path, sampleSeconds: features.sampleSeconds });
+        if (this.active && track.features?.source !== 'media-element-v1') {
+            this.queueRevision++;
+            void this.refill().catch((error) => this.error(error));
+        }
     }
     async dispose(): Promise<void> {
         this.discovery?.dispose();

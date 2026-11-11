@@ -35,6 +35,7 @@ export class Discovery {
     private signals?: LibrarySignals;
     private lastExtras = -Infinity;
     private seeds: Track[] = [];
+    private relatedRevision = 0;
     private resolved = new Map<string, WaveCandidate>();
     private resolving = new Map<string, Promise<WaveCandidate | undefined>>();
     private retryAt = new Map<string, number>();
@@ -259,11 +260,18 @@ export class Discovery {
         this.librarySample = signature;
     }
 
-    async related(seeds: Track[], onHydrated?: (items: WaveCandidate[]) => void): Promise<WaveCandidate[]> {
+    async related(
+        seeds: Track[],
+        onHydrated?: (items: WaveCandidate[]) => void,
+        advance = false,
+    ): Promise<WaveCandidate[]> {
         if (this.aborted.signal.aborted) return [];
         const revision = this.revision();
+        const selection = ++this.relatedRevision;
+        const current = () =>
+            !this.aborted.signal.aborted && revision === this.revision() && selection === this.relatedRevision;
         const hydrated = await this.hydrate(seeds.filter((seed) => !seed.apiId || (!seed.genre && !seed.tags?.length)));
-        if (this.aborted.signal.aborted || revision !== this.revision()) return [];
+        if (!current()) return [];
         onHydrated?.(hydrated);
         seeds = seeds.map((seed) => {
             const item = hydrated.find((item) => item.url === seed.id.replace(/\/$/, ''));
@@ -276,12 +284,21 @@ export class Discovery {
         while (this.seedIds.size > 200) this.seedIds.delete(this.seedIds.keys().next().value!);
         if (!this.seeds.length) {
             const home = await this.sources.home();
-            return !this.aborted.signal.aborted && revision === this.revision() ? this.convert(home || [], 'home') : [];
+            return current() ? this.convert(home || [], 'home') : [];
         }
-        return this.relatedDiscovery.discover(
-            this.seeds,
-            () => !this.aborted.signal.aborted && revision === this.revision(),
-        );
+        const root = this.seeds[0];
+        const [related, station] = await Promise.all([
+            this.relatedDiscovery.discover(this.seeds, current, advance),
+            advance && root?.apiId ? this.sources.station(root.apiId) : [],
+        ]);
+        if (!current()) return [];
+        const candidates = new Map(related.map((track) => [track.url, track]));
+        for (const track of this.convert(station, 'related')) {
+            if (track.url === root.id || track.apiId === root.apiId) continue;
+            const previous = candidates.get(track.url);
+            candidates.set(track.url, { ...(previous || track), stationSeed: root.id, stationRank: track.sourceRank });
+        }
+        return [...candidates.values()];
     }
 
     async enrich(): Promise<Enrichment> {

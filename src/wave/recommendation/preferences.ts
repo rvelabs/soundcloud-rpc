@@ -92,7 +92,15 @@ const moods: Record<
 export const words = (track: Track): Set<string> =>
     new Set(normalize([track.title, track.genre || '', ...(track.tags || [])].join(' ')).split(/[^\p{L}\p{N}]+/u));
 export function effectiveMood(controls: Controls, context: Context): Mood {
-    return controls.mood !== 'any' ? controls.mood : context.activity ? activities[context.activity].mood : 'any';
+    const activity = context.activity || controls.activity;
+    return controls.mood !== 'any' ? controls.mood : activity ? activities[activity].mood : 'any';
+}
+export function moodTags(terms: ReadonlySet<string>, mood: Exclude<Mood, 'any'>) {
+    const hints = moods[mood];
+    return {
+        match: hints.terms.some((term) => terms.has(term)),
+        opposite: hints.opposite.some((term) => terms.has(term)),
+    };
 }
 export function moodEvidence(
     track: Track,
@@ -103,10 +111,7 @@ export function moodEvidence(
     reason?: string;
 } {
     if (mood === 'any') return { score: 0, conflict: false };
-    const terms = words(track),
-        info = moods[mood];
-    const match = info.terms.some((term) => terms.has(term)),
-        opposite = info.opposite.some((term) => terms.has(term));
+    const { match, opposite } = moodTags(words(track), mood);
     const energy = track.features?.energy;
     if ((mood === 'calm' || mood === 'energetic') && energy !== undefined && Number.isFinite(energy)) {
         const value = Math.max(0, Math.min(1, energy));

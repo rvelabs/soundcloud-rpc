@@ -22,6 +22,8 @@ export interface Track {
     sourceRank?: number;
     queryHint?: string;
     relatedTo?: string[];
+    stationSeed?: string;
+    stationRank?: number;
     source?: 'related' | 'personal' | 'collection' | 'home' | 'following' | 'artist';
 }
 export type FeedbackKind = 'like' | 'unlike' | 'dislike' | 'play' | 'skip' | 'complete';
@@ -52,6 +54,7 @@ export interface Recommendation {
     track: Track;
     score: number;
     quality?: number;
+    trackWaveTier?: number;
     selection?: { profileSimilarity: number; directionSimilarity: number; activeLinks: number; staleLinks: number };
     reasons: string[];
     measuredTempoMatch: boolean;
@@ -69,8 +72,10 @@ export interface Context {
     seed?: number;
     sequenceOffset?: number;
     anchor?: Track;
+    trackSeed?: Track;
     preferenceSignals?: Map<string, number>;
     similarityCorpus?: Track[];
     sessionReactions?: Feedback[];
+    sessionMood?: import('./sessionMood').SessionMood;
     recentTracks?: Track[];
 }

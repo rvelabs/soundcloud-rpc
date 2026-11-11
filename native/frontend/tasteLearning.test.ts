@@ -11,6 +11,7 @@ import { SoundCloudRecommender } from '../../src/wave/recommendation/soundcloudA
 import type { Feedback } from '../../src/wave/recommendation/types';
 import type { WaveCandidate } from '../../src/wave/waveEngine';
 import type { LibrarySignals } from '../../src/soundcloud/radioSources';
+import type { QueueRequest, QueueResult } from '../../src/soundcloud/nativeQueueBridge';
 
 const raw = (id: number) => ({
     id,
@@ -68,9 +69,15 @@ type Internals = {
     current?: object;
     candidates: Map<string, WaveCandidate>;
     queued: Set<string>;
-    queue(operation: string, urls: string[]): Promise<unknown>;
+    queue(
+        operation: string,
+        urls: string[],
+        generation?: number,
+        replacement?: QueueRequest['replacement'],
+    ): Promise<QueueResult>;
     refill(): Promise<void>;
     applyLibrarySignals(signals: LibrarySignals): void;
+    fillOnce(): Promise<void>;
 };
 const frame = (id: number, elapsed = '0:00') => ({
     url: raw(id).permalink_url,
@@ -118,7 +125,7 @@ it('withdraws newly recognized library tracks from the upcoming New queue withou
     state.queued.add(second.url);
     state.recommender.reserve(first, true);
     state.recommender.reserve(second, true);
-    state.queue = vi.fn(async () => ({ state: 'done' }));
+    state.queue = vi.fn<Internals['queue']>(async () => ({ state: 'done' }));
     state.refill = vi.fn(async () => {});
     state.applyLibrarySignals({
         likedIds: [20],
@@ -216,4 +223,93 @@ it('invalidates a listening profile on account change even with My Wave off', as
     await wave.tick();
     expect(state.current).toBeUndefined();
     expect(state.recommender).toBeUndefined();
+});
+
+it('waits for a fresh queue generation after dislike interrupts an older prefetch', async () => {
+    const wave = new Wave(),
+        state = wave as unknown as Internals;
+    await wave.tick();
+    state.observe(frame(2));
+    await settle();
+    wave.active = true;
+    state.queue = vi.fn<Internals['queue']>(async () => ({ state: 'done' }));
+    let finish!: () => void;
+    const old = new Promise<void>((resolve) => {
+        finish = resolve;
+    });
+    state.fillOnce = vi
+        .fn()
+        .mockImplementationOnce(() => old)
+        .mockImplementationOnce(async () => {
+            state.queued.add(frame(3).url);
+        });
+    const filling = state.refill();
+    const rejecting = wave.dislike(frame(2).url);
+    await settle();
+    expect(host.player).not.toHaveBeenCalled();
+    expect(host.invoke.mock.calls.some(([command]) => command === 'profile_flush')).toBe(true);
+    finish();
+    await Promise.all([filling, rejecting]);
+    expect(state.fillOnce).toHaveBeenCalledTimes(2);
+    expect(state.recommender.accepts(state.candidates.get(frame(2).url)!)).toBe(false);
+    expect(host.player).toHaveBeenCalledWith('next', expect.any(Function));
+});
+
+it('does not advance into an unrelated queue if rejection cannot prepare a replacement', async () => {
+    const wave = new Wave(),
+        state = wave as unknown as Internals;
+    await wave.tick();
+    state.observe(frame(2));
+    await settle();
+    wave.active = true;
+    state.queue = vi.fn<Internals['queue']>(async () => ({ state: 'done' }));
+    state.refill = vi.fn(async () => {});
+    await expect(wave.dislike(frame(2).url)).rejects.toThrow('Preparing a different track');
+    expect(host.player).not.toHaveBeenCalled();
+    expect((saved.waveFeedbackV1_7 as Feedback[]).some((event) => event.kind === 'dislike')).toBe(true);
+});
+
+it('reviews the full native queue on a heart and puts the new direction first while discovery is pending', async () => {
+    const wave = new Wave(),
+        state = wave as unknown as Internals;
+    await wave.tick();
+    state.observe(frame(2));
+    await settle();
+    const current = state.candidates.get(frame(2).url)!;
+    const tracks = [30, 31, 32].map((id) => ({
+        ...current,
+        url: frame(id).url,
+        apiId: id,
+        artist: 'Artist ' + id,
+        title: 'Track ' + id,
+        genre: id === 32 ? 'jungle' : 'ambient',
+    }));
+    state.recommender.addCandidates(tracks);
+    let upcoming = tracks.slice(0, 2).map((track) => track.url);
+    for (const track of tracks.slice(0, 2)) {
+        state.candidates.set(track.url, track);
+        state.queued.add(track.url);
+        state.recommender.reserve(track, true);
+    }
+    const network = vi.spyOn(state.recommender, 'refreshIfNeeded').mockImplementation(() => new Promise(() => {}));
+    state.queue = vi.fn<Internals['queue']>(async (operation, urls, _generation, replacement) => {
+        if (operation === 'list') return { state: 'done', urls: [...upcoming] };
+        if (operation === 'add') {
+            upcoming.push(...urls);
+            if (replacement) upcoming = upcoming.filter((url) => !replacement.remove.includes(url));
+            return { state: 'done', urls: [...upcoming] };
+        }
+        throw new Error('Unexpected queue operation');
+    });
+    wave.active = true;
+    state.observe({ ...frame(2), isLiked: true });
+    await state.refill();
+    expect(upcoming[0]).toBe(tracks[2].url);
+    expect(state.queue).toHaveBeenCalledWith('add', [tracks[2].url], expect.any(Number), {
+        current: current.url,
+        expected: tracks.slice(0, 2).map((track) => track.url),
+        remove: tracks.slice(0, 2).map((track) => track.url),
+    });
+    expect(network).toHaveBeenCalledOnce();
+    expect(host.player).not.toHaveBeenCalled();
 });

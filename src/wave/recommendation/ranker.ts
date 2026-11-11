@@ -3,6 +3,8 @@ import {
     measuredBpm,
     normalize,
     recordingKey,
+    recordingAliases,
+    explicitlyRejected,
     tokensOf,
     tasteTokenWeight,
     hasMusicalMetadata,
@@ -29,6 +31,104 @@ import {
 import { preferenceEvidence } from './evidence';
 import { catalogSimilarity } from './similarity';
 import { parseSoundCloudTitle } from '../../utils/trackParser';
+import { rejectedSource, rejectionEvidence } from './rejections';
+import { inferSessionMood, sessionMoodReason, sessionMoodScore } from './sessionMood';
+const genericGenres = new Set(['hiphop rap', 'hiphop', 'rap', 'pop', 'rock', 'electronic', 'dance', 'alternative']);
+const genericStyle = (token: string) => genericGenres.has(token) || tasteTokenWeight(token) < 1;
+const genreKey = (genre?: string) => {
+    const key = tokensOf({ id: '', title: '', artist: '', genre }).sort().join(' ');
+    return ['other', 'unknown', 'all', 'various'].includes(key) ? '' : key;
+};
+const seedMetadata = (track: Track): Track => ({
+    ...track,
+    title: '',
+    genre: undefined,
+    tags: tokensOf({ ...track, title: '' }).filter((token) => !genericStyle(token)),
+});
+
+function scoreFromTrack(
+    track: Track,
+    seed: Track,
+    profile: TasteProfile,
+    compare: ReturnType<typeof catalogSimilarity>,
+    recentArtist: number,
+    context: Context,
+    tasteReferences: Track[],
+): Recommendation | null {
+    const linked = Boolean(track.relatedTo?.includes(seed.id));
+    const candidateStyle = seedMetadata(track);
+    const metadata = compare(track, seed);
+    const genre = genreKey(seed.genre);
+    const candidateGenre = genreKey(track.genre);
+    const sharedGenre = Boolean(genre && genre === candidateGenre);
+    const compatibleGenre = sharedGenre || !genre || !candidateGenre;
+    const sameGenre = sharedGenre && genre.split(' ').some((token) => !genericStyle(token));
+    const styleMatch = sameGenre || metadata >= 0.32;
+    const stationRank = track.stationSeed === seed.id ? (track.stationRank ?? Infinity) : Infinity;
+    const stationMatch = compatibleGenre && stationRank < (linked ? 24 : 10);
+    const sparseMatch =
+        linked && compatibleGenre && !candidateStyle.tags?.length && (track.sourceRank ?? Infinity) < 12;
+    if (!styleMatch && !(linked && sharedGenre) && !stationMatch && !sparseMatch) return null;
+    const profileSimilarity = Math.max(0, ...tasteReferences.map((reference) => compare(track, reference)));
+    const sound = measuredSoundSimilarity(track, seed);
+    const fromBpm = measuredBpm(seed.features),
+        toBpm = measuredBpm(track.features);
+    const tempoGap = fromBpm && toBpm ? Math.abs(Math.log2(toBpm / fromBpm)) : undefined;
+    const seedEnergy = seed.features?.energy;
+    const trackEnergy = track.features?.energy;
+    const similarEnergy =
+        seedEnergy !== undefined &&
+        trackEnergy !== undefined &&
+        Math.min(seedEnergy, trackEnergy) >= 0.02 &&
+        Math.max(seedEnergy, trackEnergy) <= Math.min(seedEnergy, trackEnergy) * 1.65 &&
+        Math.abs(seedEnergy - trackEnergy) <= 0.08;
+    const similarAudio =
+        sound !== undefined && sound >= 0.86 && (tempoGap === undefined ? similarEnergy : tempoGap <= 0.22);
+    const independentMatch = linked && sharedGenre && (profileSimilarity >= 0.45 || similarAudio);
+    const strong = styleMatch || independentMatch;
+    if (!strong) {
+        const audioMismatch =
+            sound !== undefined &&
+            (sound < 0.55 ||
+                (seedEnergy !== undefined &&
+                    trackEnergy !== undefined &&
+                    Math.max(seedEnergy, trackEnergy) >= 0.08 &&
+                    Math.min(seedEnergy, trackEnergy) * 3 < Math.max(seedEnergy, trackEnergy)));
+        if ((!stationMatch && !sparseMatch) || audioMismatch || (tempoGap !== undefined && tempoGap > 0.45))
+            return null;
+    }
+    if (tempoGap !== undefined && tempoGap > 0.45 && sound !== undefined && sound < 0.35) return null;
+    const rejection = rejectionEvidence(track, profile, compare);
+    if (rejection.blocked && !context.knownLikedApiIds?.has(track.apiId || 0)) return null;
+    const tempo = transitionAffinity(track, seed);
+    const quality =
+        metadata * 5 +
+        Number(sameGenre) +
+        Number(linked) * 2 +
+        (stationMatch ? 1.2 / Math.sqrt(1 + stationRank) + 0.9 : 0) +
+        profileSimilarity * 1.2 +
+        (sound === undefined ? 0 : (sound - 0.5) * 3) +
+        tempo * 2 -
+        rejection.similarity * 2.2 -
+        rejection.penalty;
+    if (quality < 0.8) return null;
+    return {
+        track,
+        quality,
+        trackWaveTier: strong ? 3 : stationMatch ? 2 : 1,
+        score: quality - (recentArtist < 0 ? 0 : 5 / (1 + recentArtist * 0.6)) + 0.3 / (1 + (track.sourceRank || 0)),
+        reasons: [
+            'подбор по выбранному треку',
+            ...(styleMatch ? ['похожие жанр и теги'] : []),
+            ...(independentMatch && profileSimilarity >= 0.45 ? ['совпадение жанра и тегов с историей'] : []),
+            ...(!strong && stationMatch ? ['из станции по выбранному треку'] : []),
+            ...(!strong && !stationMatch ? ['из похожих треков SoundCloud · мало данных о звучании'] : []),
+            ...(sound !== undefined && sound >= 0.75 ? ['похожее звучание по аудиоанализу'] : []),
+        ],
+        measuredTempoMatch: false,
+    };
+}
+
 const toneHints = {
     bass: new Set(['bass', '808', 'sub', 'phonk', 'trap', 'dubstep', 'drill']),
     bright: new Set(['bright', 'synth', 'pop', 'trance', 'hyperpop', 'vocal', 'sparkle']),
@@ -62,6 +162,7 @@ function fitsSettings(track: Track, controls: Controls, context: Context): boole
     if (
         controls.mood === 'any' &&
         !context.activity &&
+        !controls.activity &&
         controls.tempo === 'any' &&
         (!controls.language || controls.language === 'any') &&
         controls.discovery !== 'popular'
@@ -153,10 +254,9 @@ function scoreTrack(
         (hasMusicalMetadata(track) || references.length === 0)
     )
         return null;
-    const negativeSimilarity = Math.max(
-        0,
-        ...profile.negativeSeeds.map((seed) => compare(track, seed) * (profile.dislikedIds.has(seed.id) ? 1 : 0.3)),
-    );
+    const rejection = rejectionEvidence(track, profile, compare);
+    if (rejection.blocked && !context.knownLikedApiIds?.has(track.apiId || 0)) return null;
+    const negativeSimilarity = rejection.similarity;
     const familiarFactor = ['familiar', 'favorites'].includes(controls.discovery)
         ? 2.2
         : controls.discovery === 'new'
@@ -164,7 +264,9 @@ function scoreTrack(
           : 1.2;
     const affinityFactor =
         controls.discovery === 'new' ? 0.9 : ['familiar', 'favorites'].includes(controls.discovery) ? 1.15 : 1;
-    let score = affinity * affinityFactor + seedSimilarity * familiarFactor - negativeSimilarity * 2.2;
+    let score =
+        affinity * affinityFactor + seedSimilarity * familiarFactor - negativeSimilarity * 2.2 - rejection.penalty;
+    if (rejection.penalty) reasons.push('учтены повторные «не подходит»');
     if (focused) {
         score += directionSimilarity * 1.2 + (activeLinks.length ? 2 : 0);
         if (activeLinks.length) reasons.push('связь с опорными записями этой волны');
@@ -238,6 +340,9 @@ function scoreTrack(
     const mood = moodEvidence(track, effectiveMood(controls, context));
     score += mood.score;
     if (mood.reason) reasons.push(mood.reason);
+    const inferredMoodScore = sessionMoodScore(track, context.sessionMood);
+    score += inferredMoodScore;
+    if (inferredMoodScore > 0 && context.sessionMood) reasons.unshift(sessionMoodReason[context.sessionMood.mood]);
     if (controls.language && controls.language !== 'any') {
         const evidence = languageEvidence(track);
         if (evidence.language === controls.language) {
@@ -323,10 +428,16 @@ export function recommend(
 ): Recommendation[] {
     const profile = suppliedProfile || buildProfile(events, context.now);
     const reactions = context.sessionReactions || recentReactions(events, context.now);
+    const inferredMood = context.trackSeed
+        ? undefined
+        : inferSessionMood(controls, { ...context, sessionReactions: reactions });
+    const activeReferences = (context.discoverySeeds || []).filter(
+        (track) => sessionMoodScore(track, inferredMood) > -1.5,
+    );
     const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
     const intent = {
-        activeReferences: context.discoverySeeds || [],
-        activeIds: new Set((context.discoverySeeds || []).map((track) => track.id)),
+        activeReferences,
+        activeIds: new Set(activeReferences.map((track) => track.id)),
         rejected,
         references: profile.trustedSeeds.length ? profile.trustedSeeds : profile.positiveSeeds,
         referenceIds: new Set(
@@ -344,6 +455,7 @@ export function recommend(
     context = {
         ...context,
         sessionReactions: reactions,
+        sessionMood: inferredMood,
         preferenceSignals: context.preferenceSignals || recentPreference(reactions, context.now),
         anchor: context.anchor && !rejected.has(context.anchor.id) ? context.anchor : undefined,
     };
@@ -366,23 +478,49 @@ export function recommend(
         if (candidate.id && candidate.artist && !unique.has(candidate.id)) unique.set(candidate.id, candidate);
     const knownRecordings = profile.knownRecordings;
     const blockedRecordings = new Set(profile.dislikedRecordings);
+    const blockedApiIds = new Set<number>();
+    if (context.trackSeed) {
+        recentIds.add(context.trackSeed.id);
+        if (context.trackSeed.apiId) blockedApiIds.add(context.trackSeed.apiId);
+        for (const key of recordingAliases(context.trackSeed)) blockedRecordings.add(key);
+    }
+    const knownApiIds = new Set(context.knownLikedApiIds);
+    for (const { track } of events) {
+        if (!track.apiId) continue;
+        if (recentIds.has(track.id)) blockedApiIds.add(track.apiId);
+        if (profile.heardIds.has(track.id) || profile.likedIds.has(track.id)) knownApiIds.add(track.apiId);
+    }
     for (const id of recentIds) {
         for (const key of profile.recordingsById.get(id) || []) blockedRecordings.add(key);
         const reserved = unique.get(id);
-        if (reserved) blockedRecordings.add(recordingKey(reserved));
+        if (!reserved) continue;
+        if (reserved.apiId) blockedApiIds.add(reserved.apiId);
+        for (const key of recordingAliases(reserved)) blockedRecordings.add(key);
     }
+    const aliases = new Map<Track, string[]>();
+    const keysOf = (track: Track): string[] => {
+        const cached = aliases.get(track);
+        if (cached) return cached;
+        const keys = recordingAliases(track);
+        aliases.set(track, keys);
+        return keys;
+    };
+    const known = (track: Track) =>
+        profile.heardIds.has(track.id) ||
+        profile.likedIds.has(track.id) ||
+        knownApiIds.has(track.apiId || 0) ||
+        keysOf(track).some((key) => knownRecordings.has(key));
     const unseen = [...unique.values()].filter((track) => {
-        const key = recordingKey(track);
-        if (profile.dislikedIds.has(track.id) || recentIds.has(track.id) || blockedRecordings.has(key)) return false;
-        if (favoriteMode && !favorites.has(track.id) && !context.knownLikedApiIds?.has(track.apiId || 0)) return false;
         if (
-            ['new', 'popular'].includes(controls.discovery) &&
-            (profile.heardIds.has(track.id) ||
-                profile.likedIds.has(track.id) ||
-                context.knownLikedApiIds?.has(track.apiId || 0) ||
-                knownRecordings.has(key))
+            explicitlyRejected(track, profile) ||
+            rejectedSource(track, profile, context.trackSeed?.id) ||
+            recentIds.has(track.id) ||
+            blockedApiIds.has(track.apiId || 0) ||
+            keysOf(track).some((alias) => blockedRecordings.has(alias))
         )
             return false;
+        if (favoriteMode && !favorites.has(track.id) && !context.knownLikedApiIds?.has(track.apiId || 0)) return false;
+        if (['new', 'popular'].includes(controls.discovery) && known(track)) return false;
         return true;
     });
     const requestedGenre = normalize(controls.genre || '');
@@ -407,6 +545,7 @@ export function recommend(
         ...profile.negativeSeeds,
         ...reactions.map((event) => event.track),
         ...(context.recentTracks || []),
+        ...(context.trackSeed ? [context.trackSeed] : []),
     ]);
     const trustedArtists = new Set(intent.references.map((track) => artistIdentity(track.artist)));
     const artistCache = new Map<string, string>();
@@ -431,37 +570,53 @@ export function recommend(
         if (!recentIndexes.has(name)) recentIndexes.set(name, index);
     });
     const recordings = new Map<string, Recommendation>();
+    const selectedSeed = context.trackSeed;
+    const trackWaveReferences = selectedSeed
+        ? intent.references
+              .filter(
+                  (reference) =>
+                      reference.id !== selectedSeed.id &&
+                      (!selectedSeed.apiId || reference.apiId !== selectedSeed.apiId),
+              )
+              .slice(0, 16)
+        : [];
+    const styles = new WeakMap<Track, Track>();
+    const styleOf = (track: Track) => {
+        const cached = styles.get(track);
+        if (cached) return cached;
+        const style = seedMetadata(track);
+        styles.set(track, style);
+        return style;
+    };
+    const compareStyles = (left: Track, right: Track) => compare(styleOf(left), styleOf(right));
     for (const track of pool) {
-        const item = scoreTrack(
-            track,
-            profile,
-            controls,
-            context,
-            compare,
-            recentIndexes.get(artistOf(track)) ?? -1,
-            intent,
-        );
+        const recentArtist = recentIndexes.get(artistOf(track)) ?? -1;
+        const item = selectedSeed
+            ? scoreFromTrack(track, selectedSeed, profile, compareStyles, recentArtist, context, trackWaveReferences)
+            : scoreTrack(track, profile, controls, context, compare, recentArtist, intent);
         if (!item) continue;
         const key = recordingKey(track);
         const previous = recordings.get(key);
-        if (!previous || item.score > previous.score) recordings.set(key, item);
+        const tier = (item.trackWaveTier || 0) - (previous?.trackWaveTier || 0);
+        if (!previous || tier > 0 || (tier === 0 && item.score > previous.score)) recordings.set(key, item);
     }
     const scored = [...recordings.values()];
     const chosen: Recommendation[] = [];
-    const usedArtists = new Set(recent.slice(0, 2));
+    const usedArtists = new Set(recent.slice(0, 8));
+    const recentFailures = reactions
+        .filter((event) => context.now - event.at < 10 * 60000)
+        .slice(-3)
+        .filter((event) => event.kind === 'dislike' || (event.kind === 'skip' && sessionWeight(event) <= -0.6));
+    const familiarEvery = recentFailures.length >= 2 ? 2 : 3;
     while (scored.length && chosen.length < limit) {
-        const highestQuality = Math.max(...scored.map((entry) => entry.quality ?? entry.score));
-        const qualified = scored.filter((entry) => (entry.quality ?? entry.score) >= highestQuality - 1.8);
+        const highestTier = Math.max(...scored.map((entry) => entry.trackWaveTier || 0));
+        const rankedTier = highestTier ? scored.filter((entry) => entry.trackWaveTier === highestTier) : scored;
+        const highestQuality = Math.max(...rankedTier.map((entry) => entry.quality ?? entry.score));
+        const qualified = rankedTier.filter((entry) => (entry.quality ?? entry.score) >= highestQuality - 1.8);
         let group = qualified;
-        if (controls.discovery === 'balanced') {
-            const wantKnown = (chosen.length + (context.sequenceOffset || 0)) % 3 === 2;
-            const mixed = qualified.filter((entry) => {
-                const known =
-                    profile.heardIds.has(entry.track.id) ||
-                    context.knownLikedApiIds?.has(entry.track.apiId || 0) ||
-                    knownRecordings.has(recordingKey(entry.track));
-                return known === wantKnown;
-            });
+        if (controls.discovery === 'balanced' && !context.trackSeed) {
+            const wantKnown = (chosen.length + (context.sequenceOffset || 0)) % familiarEvery === familiarEvery - 1;
+            const mixed = qualified.filter((entry) => known(entry.track) === wantKnown);
             if (mixed.length) group = mixed;
         }
         const highest = Math.max(...group.map((e) => e.score));
@@ -514,7 +669,16 @@ export function recommend(
                 best = adjusted;
             }
         }
-        scored.splice(scored.indexOf(next), 1);
+        const selectedKeys = keysOf(next.track);
+        for (let index = scored.length - 1; index >= 0; index--) {
+            const { track } = scored[index];
+            if (
+                scored[index] === next ||
+                (track.apiId && track.apiId === next.track.apiId) ||
+                keysOf(track).some((key) => selectedKeys.includes(key))
+            )
+                scored.splice(index, 1);
+        }
         chosen.push(next);
         usedArtists.add(artistOf(next.track));
     }

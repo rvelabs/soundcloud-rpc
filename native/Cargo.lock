@@ -3557,7 +3557,7 @@ dependencies = [
 
 [[package]]
 name = "soundcloud-native"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "adblock",
  "base64 0.22.1",

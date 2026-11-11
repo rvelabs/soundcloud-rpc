@@ -80,6 +80,7 @@ function fixture() {
         operation: QueueRequest['operation'],
         slugs: string[],
         expires = Date.now() + 5000,
+        replacement?: QueueRequest['replacement'],
     ): Promise<QueueResult> =>
         runInNewContext(`(${nativeQueueModel.toString()})(request,()=>exports)`, {
             request: {
@@ -87,6 +88,7 @@ function fixture() {
                 urls: slugs.map((slug) => 'https://soundcloud.com/artist/' + slug),
                 ticket: 't' + serial++,
                 expires,
+                replacement,
             },
             exports,
             window,
@@ -104,12 +106,63 @@ function fixture() {
         window,
         Sound,
         writes: () => writes,
+        advance: () => manager.setCurrentItem(queue.models[1]),
         setThrow: () => {
             throwAfterAdd = true;
         },
     };
 }
 describe('native model queue adapter', () => {
+    const url = (slug: string) => 'https://soundcloud.com/artist/' + slug;
+    const replace = (expected: string[], remove: string[]) => ({
+        current: url('one'),
+        expected: expected.map(url),
+        remove: remove.map(url),
+    });
+    it('keeps the existing queue until a new replacement is confirmed', async () => {
+        const f = fixture();
+        await f.run('play', ['one']);
+        await f.run('add', ['two']);
+        await f.run('add', ['three']);
+        const plan = replace(['two', 'three'], ['two', 'three']);
+        expect((await f.run('add', ['blocked'], undefined, plan)).state).toBe('unavailable');
+        expect((await f.run('list', [])).urls).toEqual([url('two'), url('three')]);
+        expect(await f.run('add', ['fresh'], undefined, plan)).toEqual({ state: 'done', urls: [url('fresh')] });
+        expect(f.queue.models.map((item) => item.sound.slug)).toEqual(['one', 'fresh']);
+    });
+    it('promotes a ready replacement without resolving it again', async () => {
+        const f = fixture();
+        await f.run('play', ['one']);
+        await f.run('add', ['two']);
+        await f.run('add', ['three']);
+        f.Sound.resolve = async () => {
+            throw Error('No network');
+        };
+        expect(await f.run('add', ['three'], undefined, replace(['two', 'three'], ['two']))).toEqual({
+            state: 'done',
+            urls: [url('three')],
+        });
+    });
+    it('aborts a replacement if playback or manual Next Up changes while resolving it', async () => {
+        for (const change of ['manual', 'advance']) {
+            const f = fixture();
+            await f.run('play', ['one']);
+            await f.run('add', ['two']);
+            let resolve!: (sound: InstanceType<typeof f.Sound>) => void;
+            f.Sound.resolve = () =>
+                new Promise((done) => {
+                    resolve = done;
+                });
+            const pending = f.run('add', ['fresh'], undefined, replace(['two'], ['two']));
+            if (change === 'manual') f.queue.models.push({ sound: new f.Sound('manual'), explicit: true });
+            else f.advance();
+            resolve(new f.Sound('fresh'));
+            expect((await pending).state).toBe('cancelled');
+            expect(f.queue.models.map((item) => item.sound.slug)).toEqual(
+                change === 'manual' ? ['one', 'two', 'manual'] : ['one', 'two'],
+            );
+        }
+    });
     it('starts and queues tracks without DOM, deduplicates them, and preserves current playback on removal', async () => {
         const f = fixture();
         expect((await f.run('play', ['one'])).state).toBe('done');

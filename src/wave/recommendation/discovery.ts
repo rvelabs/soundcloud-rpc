@@ -5,6 +5,7 @@ import { tokensOf, hasMusicalMetadata } from './profile';
 import { moodEvidence } from './preferences';
 import type { Track } from './types';
 import { catalogSimilarity } from './similarity';
+import { sessionMoodScore } from './sessionMood';
 export function discoverySeeds(
     profile: TasteProfile,
     controls: Controls,
@@ -21,6 +22,7 @@ export function discoverySeeds(
         references.some((seed) => seed.id === track.id || seedCompare(track, seed) >= 0.12) ||
         !hasMusicalMetadata(track);
     const rejected = new Set(reactions.filter((event) => sessionWeight(event) < 0).map((event) => event.track.id));
+    const fitsSession = (track: Track) => sessionMoodScore(track, context?.sessionMood) >= 0;
     const sessionAffinity = (track: Track) => {
         const tokens = tokensOf(track);
         return (
@@ -32,7 +34,10 @@ export function discoverySeeds(
         .filter(
             (event) =>
                 sessionWeight(event) > 0 &&
-                (!profile.trustedSeeds.length || event.origin !== 'wave' || profile.likedIds.has(event.track.id)),
+                (!profile.trustedSeeds.length ||
+                    event.origin !== 'wave' ||
+                    profile.likedIds.has(event.track.id) ||
+                    sessionMoodScore(event.track, context?.sessionMood) >= 1.5),
         )
         .slice()
         .reverse();
@@ -75,6 +80,7 @@ export function discoverySeeds(
                 (profile.likedIds.has(track.id) ? 2 : 0) +
                 support(track) * 1.5 +
                 moodEvidence(track, controls.mood).score +
+                sessionMoodScore(track, context?.sessionMood) +
                 Math.max(-1, Math.min(1.5, sessionAffinity(track))) -
                 order / 1000,
         }))
@@ -99,7 +105,7 @@ export function discoverySeeds(
     const start = (turn * 2) % distinct.length;
     const rotated = [...distinct.slice(start), ...distinct.slice(0, start)];
     const eligible = new Map(sources.map((track) => [track.id, track]));
-    const current = currentAnchor && eligible.get(currentAnchor.id);
+    const current = currentAnchor && fitsSession(currentAnchor) && eligible.get(currentAnchor.id);
     const selected: Track[] = current ? [current] : [];
     const add = (track: Track) => {
         if (!selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)))
@@ -108,7 +114,10 @@ export function discoverySeeds(
     const recent = recentPositive
         .map((event) => eligible.get(event.track.id))
         .find(
-            (track) => track && !selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)),
+            (track) =>
+                track &&
+                fitsSession(track) &&
+                !selected.some((item) => artistIdentity(item.artist) === artistIdentity(track.artist)),
         );
     if (recent) add(recent);
     if (!selected.length) add(primary[turn % primary.length] || rotated[0]);

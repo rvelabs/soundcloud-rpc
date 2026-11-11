@@ -2,10 +2,10 @@ import type { DataStore } from '../../storage/asyncDataStore';
 import type { WaveCandidate, WaveControls } from '../waveEngine';
 import { RecommendationSession } from './session';
 import { isDeepStrictEqual } from 'node:util';
-import { buildProfile, normalize } from './profile';
+import { buildProfile, normalize, retainFeedback } from './profile';
 import type { Controls, Feedback, FeedbackKind, SoundFeatures, Track } from './types';
 type Store = DataStore;
-type Discovery = (seeds: Track[]) => Promise<WaveCandidate[]>;
+type Discovery = (seeds: Track[], advance?: boolean) => Promise<WaveCandidate[]>;
 const kinds = new Set<FeedbackKind>(['like', 'unlike', 'dislike', 'play', 'skip', 'complete']);
 export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Track {
     return {
@@ -22,6 +22,8 @@ export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Tra
         catalogChecked: Boolean(candidate.catalogCheckedAt && Date.now() - candidate.catalogCheckedAt < 30 * 60000),
         queryHint: candidate.sourceQuery,
         relatedTo: candidate.relatedTo,
+        stationSeed: candidate.stationSeed,
+        stationRank: candidate.stationRank,
         source: candidate.source,
         features: {
             ...candidate.features,
@@ -85,13 +87,13 @@ export class SoundCloudRecommender {
         this.key = `waveFeedbackV1_${accountId}`;
         this.cacheKey = `waveCandidatesV2_${accountId}`;
         const saved = store.get(this.key);
-        this.feedbackEvents = Array.isArray(saved) ? saved.filter(validFeedback).slice(-5000) : [];
+        this.feedbackEvents = Array.isArray(saved) ? retainFeedback(saved.filter(validFeedback)) : [];
         this.migrateLegacy(accountId);
         this.session = new RecommendationSession(
             {
-                related: async (seeds) => {
+                related: async (seeds, advance) => {
                     const epoch = this.candidateEpoch;
-                    const found = await discover(seeds);
+                    const found = await discover(seeds, advance);
                     if (epoch !== this.candidateEpoch) return [];
                     this.addCandidates(found);
                     return found.flatMap((candidate) => {
@@ -189,12 +191,12 @@ export class SoundCloudRecommender {
             if (item.liked === true && !reactions.has(track.id))
                 this.feedbackEvents.push({ track, kind: 'like', at, origin: 'library' });
         }
-        this.feedbackEvents = this.feedbackEvents.sort((left, right) => left.at - right.at).slice(-5000);
+        this.feedbackEvents = retainFeedback(this.feedbackEvents.sort((left, right) => left.at - right.at));
         this.save();
         this.store.set(migrationKey, true);
     }
     private save(): void {
-        this.store.set(this.key, this.feedbackEvents.slice(-5000));
+        this.store.set(this.key, this.feedbackEvents);
     }
     enrichHistory(catalog: WaveCandidate[]): void {
         const metadata = new Map(catalog.filter((track) => track.metadataChecked).map((track) => [track.url, track]));
@@ -260,6 +262,10 @@ export class SoundCloudRecommender {
                 ? toTrack({ ...previous, ...candidate, relatedTo: candidate.relatedTo || previous?.relatedTo })
                 : undefined,
         );
+    }
+    setTrackSeed(candidate?: WaveCandidate): void {
+        this.candidateEpoch++;
+        this.session.setTrackSeed(candidate && toTrack(candidate));
     }
     addCandidates(tracks: WaveCandidate[], persist = true): void {
         if (persist) this.seedLikes(tracks.filter((track) => track.liked === true));
@@ -339,7 +345,7 @@ export class SoundCloudRecommender {
         if (!events.length) return;
         this.feedbackRevision++;
         this.feedbackEvents.push(...events);
-        this.feedbackEvents = this.feedbackEvents.slice(-5000);
+        this.feedbackEvents = retainFeedback(this.feedbackEvents);
         for (const event of events) this.session.feedback(event);
         this.save();
     }
@@ -361,15 +367,15 @@ export class SoundCloudRecommender {
             ...(origin ? { origin } : {}),
         };
         this.feedbackEvents.push(event);
-        if (this.feedbackEvents.length > 5000) this.feedbackEvents.splice(0, this.feedbackEvents.length - 5000);
+        this.feedbackEvents = retainFeedback(this.feedbackEvents);
         this.session.feedback(event);
         this.feedbackRevision++;
         this.save();
     }
-    rank(limit = 10): WaveCandidate[] {
+    rank(limit = 10, reconsider: readonly string[] = []): WaveCandidate[] {
         return this.session
-            .rank(limit)
-            .map(({ track, score, reasons, evidence, selection }): WaveCandidate | undefined => {
+            .rank(limit, reconsider)
+            .map(({ track, score, reasons, evidence, selection, trackWaveTier }): WaveCandidate | undefined => {
                 const candidate = this.candidates.get(track.id);
                 return candidate
                     ? {
@@ -378,6 +384,7 @@ export class SoundCloudRecommender {
                           recommendationEvidence: evidence,
                           selectionEvidence: selection,
                           recommendationScore: score,
+                          trackWaveTier,
                       }
                     : undefined;
             })
@@ -412,8 +419,8 @@ export class SoundCloudRecommender {
     release(candidate: WaveCandidate): void {
         this.session.release(candidate.url);
     }
-    async refresh(): Promise<WaveCandidate[]> {
-        await this.session.refresh();
+    async refresh(advance = false): Promise<WaveCandidate[]> {
+        await this.session.refresh(advance);
         return this.rank();
     }
     async refreshIfNeeded(): Promise<boolean> {
@@ -455,6 +462,7 @@ export class SoundCloudRecommender {
     }
     diagnostics(): object {
         return {
+            sessionMood: this.session.listeningMood(),
             activeRoots: this.session
                 .discoveryRoots()
                 .map(({ id, title, artist, genre }) => ({ id, title, artist, genre })),

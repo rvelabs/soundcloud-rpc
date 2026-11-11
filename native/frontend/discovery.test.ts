@@ -301,6 +301,31 @@ describe('native discovery integration', () => {
         discovery.dispose();
     });
 
+    it('merges the early second page with the selected track station and hydrates station IDs once', async () => {
+        const { discovery, request } = setup(
+            (operation, fields) => {
+                if (operation === 'tracks') return fields.ids.map(track);
+                if (fields.path === '/stations/soundcloud%3Atrack-stations%3A1/tracks')
+                    return { collection: [{ id: 1 }, { track: { id: 4 } }, { track: track(3) }] };
+                return fields.params.cursor
+                    ? { collection: [track(3)] }
+                    : {
+                          collection: [track(2)],
+                          next_href: 'https://api-v2.soundcloud.com/tracks/1/related?cursor=second',
+                      };
+            },
+            () => 1,
+            () => 1000,
+        );
+        await discovery.related([seed]);
+        expect(await discovery.related([seed], undefined, true)).toEqual([
+            expect.objectContaining({ apiId: 3, relatedTo: [seed.id], stationSeed: seed.id, stationRank: 1 }),
+            expect.objectContaining({ apiId: 4, stationSeed: seed.id, stationRank: 0 }),
+        ]);
+        expect((await discovery.related([seed], undefined, true)).map((item) => item.apiId)).toEqual([3, 4]);
+        expect(request).toHaveBeenCalledTimes(4);
+    });
+
     it('combines subscriptions, history and co-occurrence without adding homepage trends to a personal direction', async () => {
         const { discovery, request } = setup((operation, fields) => {
             if (operation === 'tracks') return fields.ids.map(track);

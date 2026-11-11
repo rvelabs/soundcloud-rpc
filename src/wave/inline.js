@@ -174,6 +174,9 @@
     let waveError = false;
     let playing = false;
     let candidate = null;
+    let trackSeed;
+    const playingStatus = () =>
+        trackSeed ? t('Волна по треку «{title}»', { title: trackSeed }) : t('Следующий трек готовится заранее');
     const importer = window.playlistImporter;
     let importBusy = false;
     let importScanning = false;
@@ -549,9 +552,11 @@
             controls[button.dataset.setting] = button.dataset.value;
             renderControls();
             api.controls(controls);
-            $('.cw-status').textContent = active
-                ? t('Подберём следующие треки с этой настройкой')
-                : t('Настройка применится при запуске волны');
+            $('.cw-status').textContent = trackSeed
+                ? t('Настройка сохранена для «Моей волны»')
+                : active
+                  ? t('Подберём следующие треки с этой настройкой')
+                  : t('Настройка применится при запуске волны');
             return;
         }
         const command = button.dataset.command;
@@ -985,6 +990,10 @@
             importMessage(`${t(state.detail || 'Импорт')}${state.total ? ` · ${state.completed}/${state.total}` : ''}`);
         });
     api.on('active', updateActive);
+    api.on('track-seed', (title) => {
+        trackSeed = title;
+        if (active && title) $('.cw-status').textContent = playingStatus();
+    });
     api.on('track', updateTrack);
     api.on('candidate', (item) => {
         candidate = item;
@@ -1007,7 +1016,9 @@
             state === 'loading'
                 ? t('Ищем вашу музыку…')
                 : state === 'playing'
-                  ? String(t(message || t('Следующий трек готовится заранее')))
+                  ? message
+                      ? String(t(message))
+                      : playingStatus()
                   : String(t(message || 'Не удалось запустить волну'));
     });
     let audioStatus;
@@ -1043,9 +1054,7 @@
             updateImportProgress(lastImportProgress.phase, lastImportProgress.completed, lastImportProgress.total);
         $('.cw-kicker').textContent = t('МОЯ ВОЛНА · учтено {count} прослушиваний', { count: heardCount });
         $('.cw-start span').textContent = t(waveError ? 'Повторить подбор' : active ? 'Волна включена' : 'Слушать');
-        $('.cw-status').textContent = t(
-            active ? 'Следующий трек готовится заранее' : 'Рекомендации SoundCloud + ваш локальный вкус',
-        );
+        $('.cw-status').textContent = active ? playingStatus() : t('Рекомендации SoundCloud + ваш локальный вкус');
     };
     uiLanguage.querySelector('select').addEventListener('change', async (event) => {
         const value = event.target.value;
@@ -1060,12 +1069,14 @@
     void api.ready().then((state) => {
         if (!state) return;
         heardCount = state.stats?.heard || 0;
+        trackSeed = state.trackSeed;
         renderAnalysis(state.analysis);
         applyInterfaceLanguage(state.interfaceLanguage || interfaceLanguage);
         renderExclusions(state.excludedArtists || []);
         controls = { ...controls, ...state.controls };
         renderControls();
         updateActive(state.active);
+        if (state.active && trackSeed) $('.cw-status').textContent = playingStatus();
         if (state.candidate) candidate = state.candidate;
         renderExplanation(candidate);
         if (state.track) updateTrack(state.track);

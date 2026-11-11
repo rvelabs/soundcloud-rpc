@@ -1,5 +1,5 @@
 import { installNativePlayerMonitor, nativePlayerCommand } from '../../src/soundcloud/nativePlayerBridge';
-import { nativeQueueModel } from '../../src/soundcloud/nativeQueueBridge';
+import { nativeQueueModel, type QueueRequest } from '../../src/soundcloud/nativeQueueBridge';
 import { RecommendationSession } from '../../src/wave/recommendation/session';
 import { normalizeEqualizer, equalizerPresets, equalizerFrequencies } from '../../src/audio/equalizerSettings';
 import { installEqualizerEngine } from '../../src/audio/equalizerEngine';
@@ -14,6 +14,8 @@ import speedPlugin from 'soundcloud-builtin-plugin';
 import { checkAudio } from './audioCheck';
 import { PlaylistRequestError } from './playlistErrors';
 import { checkAdblock } from './adblockCheck';
+import { SoundCloudRecommender } from '../../src/wave/recommendation/soundcloudAdapter';
+import { installTrackWaveMenu } from './trackWaveMenu';
 
 const assert = (value: unknown, message: string) => {
     if (!value) throw new Error(message);
@@ -206,18 +208,27 @@ async function test() {
         },
     );
     assert(unbind, 'native SDK monitor starts');
-    const call = (operation: 'play' | 'add' | 'list' | 'remove', ids: number[]) =>
+    const trackUrl = (id: number) => `https://soundcloud.com/test/track-${id}`;
+    const call = (operation: QueueRequest['operation'], ids: number[], replacement?: QueueRequest['replacement']) =>
         nativeQueueModel(
             {
                 operation,
-                urls: ids.map((id) => `https://soundcloud.com/test/track-${id}`),
+                urls: ids.map(trackUrl),
                 ticket: crypto.randomUUID(),
                 expires: Date.now() + 10000,
+                replacement,
             },
             () => exports,
         );
     assert((await call('play', [1])).state === 'done', 'native play accepted');
-    for (const id of [2, 3, 4, 5]) assert((await call('add', [id])).state === 'done', 'next-up commit ' + id);
+    for (const id of [2, 3]) assert((await call('add', [id])).state === 'done', 'next-up commit ' + id);
+    const review = await call('add', [3], {
+        current: trackUrl(1),
+        expected: [trackUrl(2), trackUrl(3)],
+        remove: [trackUrl(2)],
+    });
+    assert(review.state === 'done' && review.urls?.[0] === trackUrl(3), 'next-up review changes the successor');
+    for (const id of [2, 4, 5]) assert((await call('add', [id])).state === 'done', 'next-up commit ' + id);
     const deadline = performance.now() + 12000;
     while (seen.size < 5 && performance.now() < deadline) await wait(100);
     assert(
@@ -234,6 +245,8 @@ async function test() {
                 queue: queue.models.map((item) => item.sound.id),
             }),
     );
+    assert([...seen][1] === trackUrl(3), 'revised successor plays at the natural transition');
+    checks.push('background-revised-next-up');
     checks.push('five-natural-background-tracks');
     assert((await call('play', [6])).state === 'done', 'replay after queue end');
     await wait(150);
@@ -317,6 +330,91 @@ async function test() {
     ]);
     assert(session.rank(1)[0]?.track.id === 'related', 'shared taste relevance preserved');
     checks.push('recommendation-parity');
+    const selection = (id: number) => ({
+        url: trackUrl(id),
+        apiId: id,
+        title: 'Track ' + id,
+        artist: 'Artist ' + id,
+        genre: 'Hip-hop & Rap',
+        sourceRank: 0,
+    });
+    const selected = selection(21);
+    const model = new SoundCloudRecommender(profile, 'track-wave-smoke', async ([seed], advance) =>
+        advance
+            ? [{ ...selection(23), tags: ['boombap'], stationSeed: seed.id, stationRank: 0 }]
+            : [
+                  { ...selection(22), relatedTo: [seed.id] },
+                  { ...selection(24), tags: ['sigilkore'], relatedTo: [seed.id] },
+              ],
+    );
+    Object.assign(wave, {
+        recommender: model,
+        initialize: async () => {},
+        candidates: new Map([[selected.url, selected]]),
+    });
+    installNativeStyles();
+    const card = document.createElement('article');
+    card.className = 'audibleTile playableTile';
+    const title = document.createElement('a');
+    title.href = selected.url;
+    title.className = 'audibleTile__audibleHeading playableTile__heading';
+    const more = document.createElement('button');
+    more.className = 'sc-button-more';
+    const menu = document.createElement('div');
+    menu.className = 'dropdownMenu';
+    menu.id = 'dropdown-button-fixture';
+    const stationRow = document.createElement('div');
+    stationRow.className = 'moreActions__group';
+    const station = document.createElement('a');
+    station.className = 'sc-button-startstation';
+    station.textContent = 'Estación';
+    station.href = '#station';
+    stationRow.append(station);
+    menu.append(stationRow);
+    const otherMenu = menu.cloneNode(true) as HTMLElement;
+    otherMenu.id = 'dropdown-button-other';
+    document.body.append(otherMenu);
+    more.setAttribute('aria-haspopup', 'true');
+    more.setAttribute('aria-owns', menu.id);
+    more.onclick = () => {
+        if (menu.isConnected) menu.remove();
+        else document.body.append(menu);
+    };
+    card.append(title, more);
+    document.body.append(card);
+    let trackWaveStart: Promise<void> | undefined;
+    const removeMenu = installTrackWaveMenu(
+        (url) => (trackWaveStart = wave.start(url)),
+        (value) => value,
+    );
+    more.click();
+    await wait(0);
+    const trackWaveButton = station.nextElementSibling as HTMLButtonElement | null;
+    assert(trackWaveButton?.textContent === 'Волна по треку', 'track wave follows Station in the official menu');
+    assert(
+        !otherMenu.querySelector('.sc-track-wave-action'),
+        'track wave uses only the overlay owned by the clicked tile',
+    );
+    trackWaveButton!.click();
+    await trackWaveStart;
+    assert(!menu.isConnected && current?.id === 21, 'track wave plays the selected card and closes its menu');
+    const trackWaveDeadline = performance.now() + 800;
+    let successors = (await call('list', [])).urls || [];
+    while (successors.length < 2 && performance.now() < trackWaveDeadline) {
+        await wait(15);
+        successors = (await call('list', [])).urls || [];
+    }
+    assert(
+        successors.length === 2 && [22, 23].map(trackUrl).every((url) => successors.includes(url)),
+        'track wave with sparse metadata preloads anchored successors: ' + successors.join(','),
+    );
+    wave.stop();
+    media.pause();
+    removeMenu();
+    otherMenu.remove();
+    card.remove();
+    checks.push('track-menu-starts-selected-wave');
+    checks.push('track-wave-sparse-seed-queues-station-and-related');
     installEqualizerEngine();
     assert(equalizerPresets.length >= 30, 'preset library');
     assert(
@@ -331,7 +429,7 @@ async function test() {
     const stylesBefore = document.adoptedStyleSheets.length;
     installNativeStyles();
     installNativeStyles();
-    assert(document.adoptedStyleSheets.length === stylesBefore + 1, 'stylesheet installation is idempotent');
+    assert(document.adoptedStyleSheets.length === stylesBefore, 'stylesheet installation is idempotent');
     (window as any).waveInline = {
         ready: async () => wave.ready(),
         on: (channel: string, listener: (...args: unknown[]) => void) => wave.events.on(channel, listener),

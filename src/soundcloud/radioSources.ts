@@ -47,6 +47,7 @@ export class RadioSources {
     private reactions = new Map<number, boolean>();
     private personalState?: { owner: number; at: number; cursor?: string | null; pages: number; offset: number };
     private extras = new Map<string, { at: number; tracks: ApiTrack[] }>();
+    private stations = new Map<number, { at: number; tracks: ApiTrack[] }>();
     constructor(
         private read: RadioReader,
         private batch: (ids: number[], background?: boolean) => Promise<ApiTrack[] | null>,
@@ -60,6 +61,7 @@ export class RadioSources {
         this.reactions.clear();
         this.personalState = undefined;
         this.extras.clear();
+        this.stations.clear();
     }
     diagnostics(): object {
         return {
@@ -70,6 +72,7 @@ export class RadioSources {
             likesComplete: this.library?.likes.next === null,
             blocksComplete: this.library?.blocked.next === null,
             extraSources: this.extras.size,
+            stationSeeds: this.stations.size,
             historyPages: this.personalState?.pages || 0,
         };
     }
@@ -209,6 +212,44 @@ export class RadioSources {
         });
         while (this.cursors.size > 80) this.cursors.delete(this.cursors.keys().next().value!);
         return page.items.slice(0, 24);
+    }
+    async station(seed: number): Promise<ApiTrack[]> {
+        const hit = this.stations.get(seed);
+        if (hit && this.now() - hit.at < (hit.tracks.length ? 5 * 60000 : 60000)) return hit.tracks;
+        const revision = this.revision();
+        const urn = encodeURIComponent('soundcloud:track-stations:' + seed);
+        const decode = (entry: unknown) => {
+            const value = apiObject(entry);
+            const item = value?.track ?? value?.sound ?? entry;
+            const id = apiObject(item)?.id ?? item;
+            return apiId(id) ? { id, track: parseApiTrack(item) } : null;
+        };
+        const page = await this.read(
+            `/stations/${urn}/tracks`,
+            { limit: '24' },
+            (value) => (Array.isArray(value) ? parsePage({ collection: value }, decode) : parsePage(value, decode)),
+            undefined,
+            false,
+            false,
+        );
+        if (revision !== this.revision()) return [];
+        const items = [
+            ...new Map(
+                (page?.items || [])
+                    .filter((entry) => entry.id !== seed)
+                    .slice(0, 24)
+                    .map((entry) => [entry.id, entry]),
+            ).values(),
+        ];
+        const missing = items.filter(({ track }) => !track).map(({ id }) => id);
+        const hydrated = new Map(
+            (missing.length ? (await this.batch(missing, false)) || [] : []).map((track) => [track.id, track]),
+        );
+        if (revision !== this.revision()) return [];
+        const tracks = items.flatMap(({ id, track }) => track || hydrated.get(id) || []);
+        this.stations.set(seed, { at: this.now(), tracks });
+        if (this.stations.size > 40) this.stations.delete(this.stations.keys().next().value!);
+        return tracks;
     }
     private async playlist(ref: Reference): Promise<number[] | null> {
         return this.read(

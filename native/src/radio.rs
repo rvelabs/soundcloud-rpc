@@ -13,6 +13,9 @@ pub fn validate(path: &str, params: &BTreeMap<String, String>) -> Result<(), Str
         | ["", "mixed-selections"]
         | ["", "stream"] => true,
         ["", "tracks", track, "related" | "playlists_without_albums"] => id(track),
+        ["", "stations", urn, "tracks"] => urn
+            .strip_prefix("soundcloud%3Atrack-stations%3A")
+            .is_some_and(id),
         ["", "users", owner, "playlists" | "toptracks"] => id(owner),
         ["", "playlists", playlist] => id(playlist),
         ["", "system-playlists", urn] => urn
@@ -67,6 +70,7 @@ mod tests {
             "/mixed-selections",
             "/stream",
             "/tracks/7/related",
+            "/stations/soundcloud%3Atrack-stations%3A7/tracks",
             "/tracks/7/playlists_without_albums",
             "/playlists/12",
             "/users/2/playlists",
@@ -86,6 +90,8 @@ mod tests {
             "/me/emails",
             "/tracks/0/related",
             "/tracks/01/related",
+            "/stations/soundcloud%3Atrack-stations%3A07/tracks",
+            "/stations/soundcloud%3Auser-stations%3A7/tracks",
             "/users/1/playlists?x=y",
             "/playlists/1/../2",
             "/system-playlists/soundcloud%3Asystem-playlists%3A..%2Fme",

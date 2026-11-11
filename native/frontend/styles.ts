@@ -12,6 +12,10 @@ export function installNativeStyles(): void {
         #native-update-notice{position:fixed;right:24px;top:68px;z-index:2147483000;display:flex;gap:12px;align-items:center;padding:12px 16px;max-width:calc(100vw - 48px);border:1px solid #ffffff22;border-radius:10px;background:#252525;color:#fff;box-shadow:0 8px 32px #0005;font:13px/1.4 system-ui}
         #native-update-notice button{border:0;background:transparent;color:inherit;cursor:pointer;font:inherit;padding:4px}
         #native-update-notice button:first-child{color:#ff8040;text-align:left}
+        .dropdownMenu .sc-track-wave-action,.sc-track-wave-action{display:flex;align-items:center;gap:7px;width:100%;min-height:30px;padding:5px 12px;border:0;background:transparent;color:inherit;text-align:left;white-space:nowrap;cursor:pointer;font:inherit}
+        .sc-track-wave-action::before{content:'';width:14px;height:14px;flex:none;background:linear-gradient(currentColor,currentColor) 0 50%/2px 4px,linear-gradient(currentColor,currentColor) 4px 50%/2px 9px,linear-gradient(currentColor,currentColor) 8px 50%/2px 13px,linear-gradient(currentColor,currentColor) 12px 50%/2px 6px;background-repeat:no-repeat}
+        .dropdownMenu .sc-track-wave-action:hover,.sc-track-wave-action:focus-visible{background:color-mix(in srgb,currentColor 10%,transparent)}
+        .sc-track-wave-notice{position:fixed;bottom:64px;left:50%;translate:-50% 0;z-index:2147483000;max-width:min(400px,90vw);padding:12px 16px;border:1px solid #ffffff22;border-radius:8px;background:#252525;color:#fff;font:13px/1.4 system-ui;box-shadow:0 4px 16px #0005}
     `,
         );
     if (!document.adoptedStyleSheets.includes(stylesheet))

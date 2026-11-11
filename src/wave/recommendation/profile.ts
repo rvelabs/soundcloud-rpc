@@ -1,9 +1,11 @@
 import type { Feedback, SoundFeatures, Track } from './types';
+import { parseSoundCloudTitle } from '../../utils/trackParser';
 export interface TasteProfile {
     tokens: Map<string, number>;
     styles: Map<string, number>;
     likedIds: Set<string>;
     dislikedIds: Set<string>;
+    dislikedApiIds: Set<number>;
     heardIds: Set<string>;
     positiveSeeds: Track[];
     trustedSeeds: Track[];
@@ -189,6 +191,33 @@ export function recordingKey(track: Track): string {
         return `${clean(track.artist)}|${clean(track.title)}`;
     });
 }
+export function recordingAliases(track: Track): string[] {
+    const parsed = parseSoundCloudTitle(track.title);
+    return [
+        ...new Set([
+            recordingKey(track),
+            ...(parsed.artist ? [recordingKey({ ...track, artist: parsed.artist, title: parsed.track })] : []),
+        ]),
+    ];
+}
+export function explicitlyRejected(track: Track, profile: TasteProfile): boolean {
+    return (
+        profile.dislikedIds.has(track.id) ||
+        profile.dislikedApiIds.has(track.apiId || 0) ||
+        recordingAliases(track).some((key) => profile.dislikedRecordings.has(key))
+    );
+}
+export function retainFeedback(events: Feedback[], limit = 5000): Feedback[] {
+    if (events.length <= limit) return events;
+    const latest = new Map<string, Feedback>();
+    for (const event of events)
+        if (['like', 'unlike', 'dislike'].includes(event.kind)) latest.set(event.track.id, event);
+    const protectedEvents = new Set(
+        [...latest.values()].filter((event) => event.kind === 'dislike').slice(-Math.floor(limit / 2)),
+    );
+    const recent = events.filter((event) => !protectedEvents.has(event)).slice(-(limit - protectedEvents.size));
+    return [...protectedEvents, ...recent].sort((a, b) => a.at - b.at);
+}
 export function measuredBpm(features?: SoundFeatures): number | undefined {
     const bpm = features?.bpm,
         confidence = features?.bpmConfidence;
@@ -225,6 +254,7 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
         styles: new Map(),
         likedIds: new Set(),
         dislikedIds: new Set(),
+        dislikedApiIds: new Set(),
         heardIds: new Set(),
         positiveSeeds: [],
         trustedSeeds: [],
@@ -267,8 +297,9 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
             recordings = new Set();
             profile.recordingsById.set(item.track.id, recordings);
         }
-        recordings.add(recordingKey(item.track));
-        if (['like', 'unlike', 'dislike'].includes(item.kind)) explicit.set(item.track.id, item);
+        for (const key of recordingAliases(item.track)) recordings.add(key);
+        if (['like', 'unlike', 'dislike'].includes(item.kind))
+            explicit.set(item.track.apiId ? 'api:' + item.track.apiId : item.track.id, item);
         else {
             profile.heardIds.add(item.track.id);
             if (
@@ -285,7 +316,10 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
             profile.likedIds.add(item.track.id);
             trustedIds.add(item.track.id);
         }
-        if (item.kind === 'dislike') profile.dislikedIds.add(item.track.id);
+        if (item.kind === 'dislike') {
+            profile.dislikedIds.add(item.track.id);
+            if (item.track.apiId) profile.dislikedApiIds.add(item.track.apiId);
+        }
         add(item);
         const entry = tracks.get(item.track.id)!;
         const explicitWeight = feedbackWeight(item) * 2 ** (-Math.max(0, now - item.at) / 86400000 / 90);
@@ -293,9 +327,11 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
         if (item.kind === 'like') entry.weight = Math.max(explicitWeight, entry.weight);
     }
     for (const [id, recordings] of profile.recordingsById) {
+        if (profile.dislikedApiIds.has(tracks.get(id)?.track.apiId || 0)) profile.dislikedIds.add(id);
         if (profile.heardIds.has(id) || profile.likedIds.has(id) || profile.dislikedIds.has(id))
             for (const key of recordings) profile.knownRecordings.add(key);
-        if (profile.dislikedIds.has(id)) for (const key of recordings) profile.dislikedRecordings.add(key);
+        if (profile.dislikedIds.has(id) || profile.dislikedApiIds.has(tracks.get(id)?.track.apiId || 0))
+            for (const key of recordings) profile.dislikedRecordings.add(key);
     }
     const sums = { energy: 0, bass: 0, brightness: 0 },
         counts = { energy: 0, bass: 0, brightness: 0 };
@@ -318,9 +354,10 @@ export function buildProfile(events: Feedback[], now: number): TasteProfile {
     }
     for (const key of ['energy', 'bass', 'brightness'] as const)
         if (counts[key]) profile.sound[key] = sums[key] / counts[key];
-    profile.positiveSeeds = profile.positiveSeeds.slice(-80);
+    profile.positiveSeeds = profile.positiveSeeds.filter((track) => !explicitlyRejected(track, profile)).slice(-80);
     const neighborhoods = new Map<string, Track[]>();
     for (const track of profile.trustedSeeds.slice().reverse()) {
+        if (explicitlyRejected(track, profile)) continue;
         const key =
             normalize(track.genre || '') ||
             tokensOf(track)

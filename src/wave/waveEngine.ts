@@ -17,6 +17,8 @@ export interface WaveCandidate {
     liked?: boolean;
     sourceQuery?: string;
     relatedTo?: string[];
+    stationSeed?: string;
+    stationRank?: number;
     source?: 'related' | 'personal' | 'collection' | 'home' | 'following' | 'artist';
     metadataChecked?: boolean;
     catalogCheckedAt?: number;
@@ -25,6 +27,7 @@ export interface WaveCandidate {
     recommendationEvidence?: import('./recommendation/evidence').PreferenceEvidence[];
     selectionEvidence?: import('./recommendation/types').Recommendation['selection'];
     recommendationScore?: number;
+    trackWaveTier?: number;
     durationSeconds?: number;
     audioRevision?: string;
     features?: SoundFeatures;

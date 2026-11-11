@@ -108,6 +108,21 @@ describe('live listening direction', () => {
         ).toContain(old.id);
     });
 
+    it('reconsiders reserved tracks after a burst of quick skips and chooses another supported direction', () => {
+        const session = new RecommendationSession({ related: async () => [] }, () => now);
+        const ambient = track('ambient-next');
+        const jungle = track('jungle-next', 'jungle');
+        const history = [...[0, 1, 2].map((id) => track('ambient-favorite-' + id)), track('jungle-favorite', 'jungle')];
+        session.loadFeedback(history.map((seed) => feedback(seed, 'like', now - 86400000)));
+        session.addCandidates([ambient, jungle]);
+        session.reserve(ambient.id);
+        session.accept(ambient.id);
+        expect(session.rank(1, [ambient.id])[0].track.id).toBe(ambient.id);
+        for (let index = 0; index < 3; index++) session.feedback(feedback(track('skip-' + index), 'skip', now, 0.04));
+        expect(session.rank(1, [ambient.id])[0].track.id).toBe(jungle.id);
+        expect(session.profile().likedIds.has(history[0].id)).toBe(true);
+    });
+
     it('looks beyond different artists in the same style when the listener likes several styles', () => {
         const seeds = [track('ambient-1'), track('ambient-2'), track('ambient-3'), track('jungle', 'jungle')];
         const result = discoverySeeds(

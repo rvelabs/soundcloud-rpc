@@ -3,7 +3,7 @@ import type { Track } from './recommendation/types';
 import type { WaveCandidate } from './waveEngine';
 
 export class RelatedDiscovery {
-    private cache = new Map<string, { at: number; tracks: WaveCandidate[] }>();
+    private cache = new Map<string, { at: number; advancedAt?: number; tracks: WaveCandidate[] }>();
     private pending = new Map<string, Promise<WaveCandidate[]>>();
     private loads = 0;
     private hits = 0;
@@ -26,11 +26,13 @@ export class RelatedDiscovery {
         private now = Date.now,
         private parallel = false,
     ) {}
-    private async loadSeed(seed: Track, isActive: () => boolean): Promise<WaveCandidate[]> {
+    private async loadSeed(seed: Track, isActive: () => boolean, advance: boolean): Promise<WaveCandidate[]> {
         if (!isActive() || !trackPath(seed.id)) return [];
         const cached = this.cache.get(seed.id);
+        const now = this.now();
+        const early = advance && Boolean(cached?.tracks.length) && now - (cached?.advancedAt ?? -Infinity) >= 60000;
         let tracks =
-            cached && this.now() >= cached.at && this.now() - cached.at < (cached.tracks.length ? 60000 : 15000)
+            !early && cached && now >= cached.at && now - cached.at < (cached.tracks.length ? 60000 : 15000)
                 ? cached.tracks
                 : undefined;
         if (tracks) {
@@ -51,22 +53,27 @@ export class RelatedDiscovery {
         } finally {
             if (this.pending.get(seed.id) === task) this.pending.delete(seed.id);
         }
-        if (isActive()) this.cache.set(seed.id, { at: this.now(), tracks });
+        if (isActive())
+            this.cache.set(seed.id, {
+                at: this.now(),
+                advancedAt: cached?.tracks.length ? now : cached?.advancedAt,
+                tracks: advance && cached?.tracks.length && !tracks.length ? cached.tracks : tracks,
+            });
         if (this.cache.size > 80) this.cache.delete(this.cache.keys().next().value!);
         return tracks;
     }
-    async discover(seeds: Track[], isActive = () => true): Promise<WaveCandidate[]> {
+    async discover(seeds: Track[], isActive = () => true, advance = false): Promise<WaveCandidate[]> {
         const merged = new Map<string, WaveCandidate>();
         const started = this.now();
         this.lastSeeds = seeds.slice(0, 3).map((seed) => seed.id);
         const seedIds = new Set(seeds.map((seed) => seed.id));
         const selected = seeds.slice(0, 3);
         const parallel = this.parallel
-            ? await Promise.all(selected.map((seed) => this.loadSeed(seed, isActive)))
+            ? await Promise.all(selected.map((seed) => this.loadSeed(seed, isActive, advance)))
             : undefined;
         for (const [index, seed] of selected.entries()) {
             if (!isActive()) return [];
-            const tracks = parallel ? parallel[index] : await this.loadSeed(seed, isActive);
+            const tracks = parallel ? parallel[index] : await this.loadSeed(seed, isActive, advance);
             if (!isActive()) return [];
             for (const track of tracks) {
                 if (!trackPath(track.url) || seedIds.has(track.url)) continue;
