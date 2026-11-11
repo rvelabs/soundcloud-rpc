@@ -2,7 +2,7 @@
 
 **Your SoundCloud library, a personal radio, and playlists from other services — in one Windows app.**
 
-The current Windows release is **0.2.12**, built with **Rust + WebView2**. It keeps the SoundCloud player and adds
+The current Windows release is **0.2.13**, built with **Rust + WebView2**. It keeps the SoundCloud player and adds
 personal radio, playlist import, an equalizer and desktop integrations. The previous Electron build remains available in
 [release 0.32.2](https://github.com/rvelabs/soundcloud-rpc/releases/tag/v0.32.2).
 
@@ -13,8 +13,8 @@ personal radio, playlist import, an equalizer and desktop integrations. The prev
 ## Why install it?
 
 - **My Wave** finds music related to tracks you enjoy, learns from your reactions and prepares the next tracks while you
-  listen. Choose a mood, activity or music language. A static background avoids continuous animation; music keeps
-  playing when the app is minimized.
+  listen. Choose a mood, activity or music language, or start **Wave from Track** in a track’s menu. Music keeps playing
+  when the app is minimized, and a static background keeps resource use low.
 - **Playlist import** brings public Spotify, Yandex Music and YouTube Music playlists to SoundCloud. Review matches and
   save the found part even when some tracks are unavailable, and resume saved checks after restarting. YouTube
   continuations and Spotify's scrolling track list are read automatically, up to 500 tracks. Import a CSV/TXT/TSV track

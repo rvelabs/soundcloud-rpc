@@ -6,7 +6,7 @@
         navWave: 'My Wave',
         navFeatures: 'Features',
         navDownload: 'Download',
-        releaseNote: 'A new chapter for My Wave',
+        releaseNote: 'Wave from Track',
         heroTitle: 'More music.<br><em>Fewer repeats.</em>',
         heroDescription:
             'The SoundCloud you know — with personal radio, playlist import and your own sound. A free desktop client for Windows.',
@@ -88,7 +88,7 @@
             'Windows 10 or 11, x64, WebView2 and a SoundCloud account. The build uses Rust + WebView2. The installer replaces Electron and imports supported history and audio cache; sign in again after the switch. Profiles survive updates. There is no trusted publisher signature yet, so Windows may show a warning.',
         downloadKicker: 'YOUR NEXT FAVORITE IS ALREADY OUT THERE',
         downloadTitle: 'Keep the music going?',
-        downloadNote: '0.2.12 · Windows x64 · Free',
+        downloadNote: '0.2.13 · Windows x64 · Free',
         sourceCode: 'Source code',
         footerNote: 'An independent project. SoundCloud and other names belong to their respective owners.',
         feedback: 'Feedback',
