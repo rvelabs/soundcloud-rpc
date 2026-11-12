@@ -7,10 +7,9 @@ const statusText = (state) => {
     const phase = state.ended ? 'Очередь закончилась' : state.playing ? 'Играет' : 'Пауза';
     return `${phase} · ${state.index + 1}/${state.count} · ${state.title}`;
 };
-let pending = false;
-async function update(action) {
-    if (pending) return;
-    pending = true;
+let pending = 0;
+let actions = Promise.resolve();
+async function runAction(action) {
     try {
         const result = await invoke(action);
         if (action === 'openCatalog') return;
@@ -22,8 +21,13 @@ async function update(action) {
     } catch (error) {
         status.textContent = String(error);
     } finally {
-        pending = false;
+        pending--;
     }
+}
+function update(action) {
+    if (action === 'status' && pending > 0) return;
+    pending++;
+    actions = actions.then(() => runAction(action));
 }
 document.getElementById('catalog').addEventListener('click', () => void update('openCatalog'));
 document.getElementById('start').addEventListener('click', () => void update('startFixture'));
