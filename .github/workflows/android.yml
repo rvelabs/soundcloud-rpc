@@ -31,12 +31,15 @@ jobs:
                   cache: gradle
             - uses: dtolnay/rust-toolchain@stable
               with:
-                  targets: x86_64-linux-android
+                  targets: x86_64-linux-android,aarch64-linux-android
+            - uses: android-actions/setup-android@v3
+              with:
+                  packages: ''
             - run: |
-                  (set +o pipefail; yes | sdkmanager --licenses)
                   sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;$NDK_VERSION" "emulator" "system-images;android-36;google_apis;x86_64"
                   echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
             - run: npm ci
+            - run: chmod +x gen/android/gradlew
             - run: npm run android:build -- --target x86_64
             - name: Test queue with the display off
               run: |
@@ -49,6 +52,13 @@ jobs:
                   timeout 180 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
                   adb shell wm dismiss-keyguard
                   bash gen/android/gradlew -p gen/android :app:connectedX86_64DebugAndroidTest -x :app:rustBuildX86_64Debug
+            - name: Build the phone APK
+              run: npm run android:build -- --target aarch64
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: soundcloud-android-arm64
+                  path: mobile/gen/android/app/build/outputs/apk/arm64/debug/*.apk
+                  if-no-files-found: error
             - uses: actions/upload-artifact@v4
               if: always()
               with:
