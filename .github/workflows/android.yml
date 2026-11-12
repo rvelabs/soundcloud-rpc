@@ -40,7 +40,8 @@ jobs:
                   echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
             - run: npm ci
             - run: chmod +x gen/android/gradlew
-            - run: npm run android:build -- --target x86_64
+            - id: build_emulator
+              run: npm run android:build -- --target x86_64
             - name: Test queue with the display off
               run: |
                   sudo chmod a+rw /dev/kvm
@@ -56,8 +57,11 @@ jobs:
                   adb shell wm dismiss-keyguard
                   bash gen/android/gradlew -p gen/android :app:connectedX86_64DebugAndroidTest -x :app:rustBuildX86_64Debug
             - name: Build the phone APK
+              id: build_phone
+              if: ${{ !cancelled() && steps.build_emulator.outcome == 'success' }}
               run: npm run android:build -- --target aarch64
             - uses: actions/upload-artifact@v4
+              if: ${{ !cancelled() && steps.build_phone.outcome == 'success' }}
               with:
                   name: soundcloud-android-arm64
                   path: mobile/gen/android/app/build/outputs/apk/arm64/debug/*.apk
