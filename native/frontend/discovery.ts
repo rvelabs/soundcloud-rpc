@@ -264,6 +264,7 @@ export class Discovery {
         seeds: Track[],
         onHydrated?: (items: WaveCandidate[]) => void,
         advance = false,
+        useStation = advance,
     ): Promise<WaveCandidate[]> {
         if (this.aborted.signal.aborted) return [];
         const revision = this.revision();
@@ -289,7 +290,7 @@ export class Discovery {
         const root = this.seeds[0];
         const [related, station] = await Promise.all([
             this.relatedDiscovery.discover(this.seeds, current, advance),
-            advance && root?.apiId ? this.sources.station(root.apiId) : [],
+            useStation && root?.apiId ? this.sources.station(root.apiId, advance) : [],
         ]);
         if (!current()) return [];
         const candidates = new Map(related.map((track) => [track.url, track]));

@@ -24,6 +24,7 @@ export function toTrack(candidate: WaveCandidate, features?: SoundFeatures): Tra
         relatedTo: candidate.relatedTo,
         stationSeed: candidate.stationSeed,
         stationRank: candidate.stationRank,
+        sample: candidate.sample,
         source: candidate.source,
         features: {
             ...candidate.features,
@@ -254,6 +255,13 @@ export class SoundCloudRecommender {
     }
     accepts(candidate: WaveCandidate): boolean {
         return this.session.accepts(toTrack(candidate));
+    }
+    canSample(candidate: WaveCandidate): boolean {
+        return this.accepts(candidate) && !this.feedbackEvents.some(({ kind, at, track }) =>
+            ['play', 'complete', 'skip'].includes(kind) &&
+            this.now() - at < 86400000 &&
+            (track.id === candidate.url || (track.apiId && track.apiId === candidate.apiId)),
+        );
     }
     setAnchor(candidate?: WaveCandidate): void {
         const previous = candidate && this.candidates.get(candidate.url);

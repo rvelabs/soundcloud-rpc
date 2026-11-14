@@ -531,6 +531,20 @@ fn guard(window: &Webview, state: &State) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn wave_sample(
+    window: Webview,
+    state: tauri::State<'_, Arc<State>>,
+    url: String,
+    expected_owner: u64,
+) -> Result<Value, String> {
+    guard(&window, &state)?;
+    if !state.active.load(Ordering::Acquire) {
+        return Ok(Value::Null);
+    }
+    state.catalog.wave_sample(url, expected_owner).await
+}
+
+#[tauri::command]
 async fn catalog_request(
     window: Webview,
     state: tauri::State<'_, Arc<State>>,
@@ -956,6 +970,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             catalog_request,
+            wave_sample,
             profile_load,
             profile_save,
             profile_flush,

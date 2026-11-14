@@ -1,6 +1,6 @@
 import type { DataStore } from '../storage/asyncDataStore';
 import type { TrackInfo } from '../types';
-import type { SoundFeatures } from './recommendation/types';
+import type { SoundFeatures, TrackSample } from './recommendation/types';
 export interface WaveCandidate {
     url: string;
     title: string;
@@ -31,6 +31,7 @@ export interface WaveCandidate {
     durationSeconds?: number;
     audioRevision?: string;
     features?: SoundFeatures;
+    sample?: TrackSample;
 }
 export interface AudioFeatures {
     energy: number;

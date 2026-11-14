@@ -11,6 +11,8 @@ export const waveEnglish: Record<string, string> = {
     'Настройка сохранена для «Моей волны»': 'Setting saved for My Wave',
     'подбор по выбранному треку': 'based on your selected track',
     'похожие жанр и теги': 'similar genre and tags',
+    'близкие ритм и тембр по аудиофрагменту': 'similar rhythm and timbre in the audio sample',
+    'близкие ритм и динамика по форме волны': 'similar rhythm and dynamics in the waveform',
     'похожее звучание по аудиоанализу': 'similar sound from audio analysis',
     'SoundCloud не нашёл выбранный трек.': 'SoundCloud could not find the selected track.',
     'Не удалось включить выбранный трек в SoundCloud.': 'Could not play the selected track in SoundCloud.',

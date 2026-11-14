@@ -148,6 +148,7 @@ impl Store {
         let mut value = previous.as_object().cloned().unwrap_or_default();
         for prefix in [
             "waveAudioAnalysisV1_",
+            "waveTrackSamplesV1_",
             "waveFeedbackV1_",
             "waveCandidatesV2_",
             "waveHistory_",

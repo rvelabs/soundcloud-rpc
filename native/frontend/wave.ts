@@ -12,6 +12,7 @@ import type { WaveCandidate, WaveControls } from '../../src/wave/waveEngine';
 import type { Feedback, Track } from '../../src/wave/recommendation/types';
 import { Events, Profile, api, invoke } from './bridge';
 import { AudioAnalysisCache } from '../../src/wave/audioAnalysisCache';
+import { TrackSamples } from './trackSamples';
 import { ListeningEvidence } from '../../src/wave/listeningEvidence';
 import { playbackRate } from './playbackRate';
 import type { LibrarySignals } from '../../src/soundcloud/radioSources';
@@ -48,6 +49,8 @@ export class Wave {
     private enriching?: Promise<void>;
     private lastEnrichment = -Infinity;
     private analysis?: AudioAnalysisCache;
+    private samples?: TrackSamples;
+    private sampleBudget = 0;
     private sample = { path: '', seconds: 0, count: 0, energy: 0, bass: 0, brightness: 0 };
     private current?: Snapshot;
     private trackSeed?: WaveCandidate;
@@ -143,7 +146,8 @@ export class Wave {
     }
 
     private remember(items: WaveCandidate[]): void {
-        items = items.map((item) => this.analysis?.enrich(item) || item);
+        items = items.map((item) => this.analysis?.enrich(item) || item)
+            .map((item) => this.samples?.enrich(item) || item);
         for (const item of items) this.candidates.set(item.url, item);
         while (this.candidates.size > 600) this.candidates.delete(this.candidates.keys().next().value!);
         this.recommender?.addCandidates(items);
@@ -160,10 +164,11 @@ export class Wave {
                 if (valid()) this.remember(items);
             },
             advance,
+            Boolean(selected),
         );
         if (!valid()) return [];
         this.remember(found);
-        return found;
+        return found.map((item) => this.candidates.get(item.url) || item);
     }
 
     private enrich(): void {
@@ -257,6 +262,7 @@ export class Wave {
         const journal = this.profile.get('waveDecisionTraceV1_' + user.id);
         this.decisions = Array.isArray(journal) ? journal.slice(-40) : [];
         this.analysis = new AudioAnalysisCache(this.profile, String(user.id));
+        this.samples = new TrackSamples(this.profile, user.id);
         if (!this.controlsSelected)
             this.controls = { ...defaultControls, ...((this.profile.get('controls') as object) || {}) };
         else this.profile.set('controls', this.controls);
@@ -306,6 +312,7 @@ export class Wave {
             seed = known?.apiId ? known : raw && candidate(raw, 'personal');
             if (!seed) throw new Error('SoundCloud не нашёл выбранный трек.');
             seed = this.analysis?.enrich(seed) || seed;
+            seed = this.samples?.enrich(seed) || seed;
         }
         const generation = ++this.sessionGeneration;
         this.cancelQueue();
@@ -316,6 +323,7 @@ export class Wave {
         }
         this.queued.clear();
         this.trackSeed = seed;
+        this.sampleBudget = 9;
         this.trackWaveRefresh = undefined;
         model.setTrackSeed(seed);
         this.events.emit('track-seed', seed?.title);
@@ -535,6 +543,7 @@ export class Wave {
         this.reviewedRevision = revision;
 
         let ranked = this.queued.size < 2 ? model.rank(10) : [];
+        if (this.trackSeed && this.queued.size + ranked.length < 2) this.sampleTrackWave(model, generation);
         if (!this.trackSeed && !this.queued.size && !ranked.length && Date.now() - this.lastRefresh >= 15000) {
             this.lastRefresh = Date.now();
             await model.refresh();
@@ -590,10 +599,40 @@ export class Wave {
             'state',
             'playing',
             this.trackSeed && !this.queued.size
-                ? this.trackWaveRefresh
+                ? this.trackWaveRefresh || this.samples?.running
                     ? 'Подбираем продолжение по выбранному треку…'
                     : 'Пока не нашли достаточно похожих треков'
                 : undefined,
+        );
+    }
+
+    private sampleTrackWave(model: SoundCloudRecommender, generation: number): void {
+        const seed = this.trackSeed;
+        if (!seed || !this.samples || !this.sampleBudget) return;
+        const valid = () => this.active && this.sessionGeneration === generation && this.recommender === model;
+        const priority = (track: WaveCandidate) =>
+            Number(track.stationSeed === seed.url && Boolean(track.relatedTo?.includes(seed.url))) * 2 +
+            Number(track.stationSeed === seed.url);
+        const candidates = [...this.candidates.values()]
+            .filter((track) =>
+                track.url !== seed.url &&
+                track.playability === 'available' &&
+                !this.queued.has(track.url) &&
+                (track.stationSeed === seed.url || track.relatedTo?.includes(seed.url)) &&
+                model.canSample(track),
+            )
+            .sort((a, b) => priority(b) - priority(a) || a.sourceRank - b.sourceRank);
+        if (!candidates.length) return;
+        this.sampleBudget -= this.samples.start(
+            [this.candidates.get(seed.url) || seed, ...candidates],
+            this.sampleBudget,
+            valid,
+            (track) => {
+                this.remember([track]);
+                this.queueRevision++;
+                void this.refill().catch((error) => this.error(error, false));
+            },
+            () => void this.refill().catch((error) => this.error(error, false)),
         );
     }
 
@@ -726,6 +765,7 @@ export class Wave {
         this.initializeRetryAt = 0;
         this.profile = undefined;
         this.analysis = undefined;
+        this.samples = undefined;
         this.current = undefined;
         this.currentOrigin = undefined;
         this.candidates.clear();

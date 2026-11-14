@@ -16,6 +16,7 @@ export interface Track {
     genre?: string;
     tags?: string[];
     features?: SoundFeatures;
+    sample?: TrackSample;
     language?: string;
     playbackCount?: number;
     catalogChecked?: boolean;
@@ -78,4 +79,10 @@ export interface Context {
     sessionReactions?: Feedback[];
     sessionMood?: import('./sessionMood').SessionMood;
     recentTracks?: Track[];
+}
+export interface TrackSample {
+    rhythm: number[];
+    dynamics: number[];
+    spectrum?: number[];
+    envelope?: Omit<TrackSample, 'envelope' | 'spectrum'>;
 }

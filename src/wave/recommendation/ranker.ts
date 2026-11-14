@@ -33,6 +33,7 @@ import { catalogSimilarity } from './similarity';
 import { parseSoundCloudTitle } from '../../utils/trackParser';
 import { rejectedSource, rejectionEvidence } from './rejections';
 import { inferSessionMood, sessionMoodReason, sessionMoodScore } from './sessionMood';
+import { trackSampleSimilarity } from './trackSample';
 const genericGenres = new Set(['hiphop rap', 'hiphop', 'rap', 'pop', 'rock', 'electronic', 'dance', 'alternative']);
 const genericStyle = (token: string) => genericGenres.has(token) || tasteTokenWeight(token) < 1;
 const genreKey = (genre?: string) => {
@@ -62,13 +63,14 @@ function scoreFromTrack(
     const candidateGenre = genreKey(track.genre);
     const sharedGenre = Boolean(genre && genre === candidateGenre);
     const compatibleGenre = sharedGenre || !genre || !candidateGenre;
+    const sampled = compatibleGenre ? trackSampleSimilarity(track, seed) : undefined;
     const sameGenre = sharedGenre && genre.split(' ').some((token) => !genericStyle(token));
     const styleMatch = sameGenre || metadata >= 0.32;
     const stationRank = track.stationSeed === seed.id ? (track.stationRank ?? Infinity) : Infinity;
     const stationMatch = compatibleGenre && stationRank < (linked ? 24 : 10);
     const sparseMatch =
         linked && compatibleGenre && !candidateStyle.tags?.length && (track.sourceRank ?? Infinity) < 12;
-    if (!styleMatch && !(linked && sharedGenre) && !stationMatch && !sparseMatch) return null;
+    if (sampled === undefined && !styleMatch && !(linked && sharedGenre) && !stationMatch && !sparseMatch) return null;
     const profileSimilarity = Math.max(0, ...tasteReferences.map((reference) => compare(track, reference)));
     const sound = measuredSoundSimilarity(track, seed);
     const fromBpm = measuredBpm(seed.features),
@@ -85,7 +87,7 @@ function scoreFromTrack(
     const similarAudio =
         sound !== undefined && sound >= 0.86 && (tempoGap === undefined ? similarEnergy : tempoGap <= 0.22);
     const independentMatch = linked && sharedGenre && (profileSimilarity >= 0.45 || similarAudio);
-    const strong = styleMatch || independentMatch;
+    const strong = styleMatch || independentMatch || sampled !== undefined;
     if (!strong) {
         const audioMismatch =
             sound !== undefined &&
@@ -105,6 +107,7 @@ function scoreFromTrack(
         metadata * 5 +
         Number(sameGenre) +
         Number(linked) * 2 +
+        (sampled ?? 0) * 4 +
         (stationMatch ? 1.2 / Math.sqrt(1 + stationRank) + 0.9 : 0) +
         profileSimilarity * 1.2 +
         (sound === undefined ? 0 : (sound - 0.5) * 3) +
@@ -120,6 +123,11 @@ function scoreFromTrack(
         reasons: [
             'подбор по выбранному треку',
             ...(styleMatch ? ['похожие жанр и теги'] : []),
+            ...(sampled !== undefined
+                ? [track.sample?.spectrum && seed.sample?.spectrum
+                    ? 'близкие ритм и тембр по аудиофрагменту'
+                    : 'близкие ритм и динамика по форме волны']
+                : []),
             ...(independentMatch && profileSimilarity >= 0.45 ? ['совпадение жанра и тегов с историей'] : []),
             ...(!strong && stationMatch ? ['из станции по выбранному треку'] : []),
             ...(!strong && !stationMatch ? ['из похожих треков SoundCloud · мало данных о звучании'] : []),

@@ -89,6 +89,53 @@ const frame = (id: number, elapsed = '0:00') => ({
     isLiked: false,
 });
 
+it('fills an empty track wave after the background rhythm check and reuses the saved result', async () => {
+    let finishCandidate!: (payload: unknown) => void;
+    const stationTrack = (id: number) => ({
+        ...raw(id),
+        genre: '',
+        tag_list: 'unshared',
+        media: { transcodings: [{ format: { protocol: 'hls' } }] },
+    });
+    const waveform = Array.from({ length: 1200 }, (_, index) => (index % 20 < 3 ? 12 : 2));
+    const old = host.invoke.getMockImplementation()!;
+    host.invoke.mockImplementation(async (command, args) => {
+        if (command === 'wave_sample')
+            return args.url === frame(2).url
+                ? { waveform, duration: 30 }
+                : new Promise((resolve) => {
+                      finishCandidate = resolve;
+                  });
+        if (command === 'catalog_request') {
+            const { operation, path } = args.request;
+            if (operation === 'resolve') return { ...raw(2), genre: 'jungle' };
+            if (path?.endsWith('/related') || path?.startsWith('/stations/'))
+                return { collection: [stationTrack(4)] };
+        }
+        return old(command, args);
+    });
+    const wave = new Wave();
+    const state = wave as unknown as Internals;
+    let upcoming: string[] = [];
+    state.queue = vi.fn<Internals['queue']>(async (operation, urls) => {
+        if (operation === 'add') upcoming.push(...urls);
+        if (operation === 'remove') upcoming = upcoming.filter((url) => !urls.includes(url));
+        return { state: 'done', urls: operation === 'list' ? [...upcoming] : undefined };
+    });
+    await wave.start(frame(2).url);
+    await settle();
+    expect(finishCandidate).toBeTypeOf('function');
+    finishCandidate({ waveform, duration: 30 });
+    await settle();
+    expect(upcoming).toEqual([frame(4).url]);
+    expect(saved.waveTrackSamplesV1_7).toHaveLength(2);
+    await wave.start(frame(2).url);
+    await settle();
+    expect(upcoming).toEqual([frame(4).url]);
+    expect(host.invoke.mock.calls.filter(([command]) => command === 'wave_sample')).toHaveLength(2);
+    await wave.dispose();
+});
+
 it('imports a positive heart from the first hydrated snapshot once, without inventing a live reaction', async () => {
     const wave = new Wave(),
         state = wave as unknown as Internals;

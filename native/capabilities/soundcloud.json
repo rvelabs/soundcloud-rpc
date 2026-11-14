@@ -9,6 +9,7 @@
     },
     "permissions": [
         "allow-catalog-request",
+        "allow-wave-sample",
         "allow-profile-load",
         "allow-profile-save",
         "allow-profile-flush",

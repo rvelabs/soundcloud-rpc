@@ -47,7 +47,7 @@ export class RadioSources {
     private reactions = new Map<number, boolean>();
     private personalState?: { owner: number; at: number; cursor?: string | null; pages: number; offset: number };
     private extras = new Map<string, { at: number; tracks: ApiTrack[] }>();
-    private stations = new Map<number, { at: number; tracks: ApiTrack[] }>();
+    private stations = new Map<number, { at: number; next: string | null; pages: number; tracks: ApiTrack[] }>();
     constructor(
         private read: RadioReader,
         private batch: (ids: number[], background?: boolean) => Promise<ApiTrack[] | null>,
@@ -213,11 +213,30 @@ export class RadioSources {
         while (this.cursors.size > 80) this.cursors.delete(this.cursors.keys().next().value!);
         return page.items.slice(0, 24);
     }
-    async station(seed: number): Promise<ApiTrack[]> {
+    async station(seed: number, advance = false): Promise<ApiTrack[]> {
         const hit = this.stations.get(seed);
-        if (hit && this.now() - hit.at < (hit.tracks.length ? 5 * 60000 : 60000)) return hit.tracks;
+        const warm = hit && this.now() - hit.at < (hit.tracks.length ? 10 * 60000 : 60000) ? hit : undefined;
+        if (warm && (!advance || !warm.next || warm.pages >= 3 || this.now() - warm.at < 15000)) return warm.tracks;
         const revision = this.revision();
         const urn = encodeURIComponent('soundcloud:track-stations:' + seed);
+        const path = `/stations/${urn}/tracks`;
+        let params: Record<string, string> = { limit: '24', linked_partitioning: '1' };
+        if (warm?.next) {
+            try {
+                const next = new URL(warm.next);
+                if (next.origin !== 'https://api-v2.soundcloud.com' || next.pathname !== path ||
+                    next.username || next.password || next.href.length > 6000)
+                    throw new Error('Invalid station continuation');
+                params = {
+                    ...params,
+                    ...Object.fromEntries([...next.searchParams].filter(([key]) => key === 'cursor' || key === 'offset')),
+                };
+                if (!params.cursor && !params.offset) throw new Error('Missing station continuation');
+            } catch {
+                warm.next = null;
+                return warm.tracks;
+            }
+        }
         const decode = (entry: unknown) => {
             const value = apiObject(entry);
             const item = value?.track ?? value?.sound ?? entry;
@@ -225,14 +244,18 @@ export class RadioSources {
             return apiId(id) ? { id, track: parseApiTrack(item) } : null;
         };
         const page = await this.read(
-            `/stations/${urn}/tracks`,
-            { limit: '24' },
+            path,
+            params,
             (value) => (Array.isArray(value) ? parsePage({ collection: value }, decode) : parsePage(value, decode)),
             undefined,
             false,
             false,
         );
         if (revision !== this.revision()) return [];
+        if (!page && warm) {
+            warm.at = this.now();
+            return warm.tracks;
+        }
         const items = [
             ...new Map(
                 (page?.items || [])
@@ -246,8 +269,17 @@ export class RadioSources {
             (missing.length ? (await this.batch(missing, false)) || [] : []).map((track) => [track.id, track]),
         );
         if (revision !== this.revision()) return [];
-        const tracks = items.flatMap(({ id, track }) => track || hydrated.get(id) || []);
-        this.stations.set(seed, { at: this.now(), tracks });
+        const combined = [
+            ...(warm?.tracks || []),
+            ...items.flatMap(({ id, track }) => track || hydrated.get(id) || []),
+        ];
+        const tracks = [...new Map(combined.map((track) => [track.id, track])).values()];
+        this.stations.set(seed, {
+            at: this.now(),
+            next: page?.next && page.next !== warm?.next ? page.next : null,
+            pages: (warm?.pages || 0) + 1,
+            tracks,
+        });
         if (this.stations.size > 40) this.stations.delete(this.stations.keys().next().value!);
         return tracks;
     }

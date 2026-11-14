@@ -1,3 +1,4 @@
+use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -218,6 +219,18 @@ pub struct Catalog {
     background: Arc<Semaphore>,
     cooldown: Mutex<Option<Instant>>,
     created_playlists: Mutex<HashMap<u64, u64>>,
+    sampling: Semaphore,
+}
+
+fn sample_url(value: &str, host_ok: impl FnOnce(&str) -> bool) -> Option<Url> {
+    let url = Url::parse(value).ok()?;
+    (url.scheme() == "https"
+        && url.host_str().is_some_and(host_ok)
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none())
+    .then_some(url)
 }
 
 impl Catalog {
@@ -239,7 +252,125 @@ impl Catalog {
             background: Arc::new(Semaphore::new(8)),
             cooldown: Mutex::new(None),
             created_playlists: Mutex::new(HashMap::new()),
+            sampling: Semaphore::new(1),
         })
+    }
+
+    pub async fn wave_sample(&self, url: String, owner: u64) -> Result<Value, String> {
+        let Ok(_permit) = self.sampling.try_acquire() else {
+            return Err("Another audio sample is being loaded".into());
+        };
+        let track = self
+            .execute_scoped(Operation::Resolve { url }, true, Some(owner))
+            .await?;
+        let context = self.context.lock().unwrap().clone();
+        if context.owner != owner
+            || track["sharing"] != "public"
+            || track["streamable"] != true
+            || !matches!(track["policy"].as_str(), Some("ALLOW" | "MONETIZE"))
+        {
+            return Ok(Value::Null);
+        }
+        let sample = tokio::time::timeout(
+            Duration::from_secs(9),
+            self.read_wave_sample(&track, &context),
+        )
+        .await
+        .unwrap_or(Value::Null);
+        if self.context.lock().unwrap().revision != context.revision {
+            return Ok(Value::Null);
+        }
+        Ok(sample)
+    }
+
+    async fn read_wave_sample(&self, track: &Value, context: &Context) -> Value {
+        let audio = self
+            .read_preview(track, context)
+            .await
+            .map(|bytes| STANDARD.encode(bytes));
+        let Some(waveform) = track["waveform_url"]
+            .as_str()
+            .and_then(|value| sample_url(value, |host| host == "wave.sndcdn.com"))
+            .filter(|url| url.path().ends_with(".json") && url.query().is_none())
+        else {
+            return audio.map_or(Value::Null, |audio| json!({"audio": audio}));
+        };
+        let Ok(response) = self
+            .client
+            .get(waveform)
+            .send()
+            .await
+            .and_then(|r| r.error_for_status())
+        else {
+            return audio.map_or(Value::Null, |audio| json!({"audio": audio}));
+        };
+        let Ok(waveform) = crate::http::json(response, 48_000).await else {
+            return audio.map_or(Value::Null, |audio| json!({"audio": audio}));
+        };
+        let Some(samples) = waveform["samples"].as_array().filter(|samples| {
+            (128..=4096).contains(&samples.len())
+                && samples
+                    .iter()
+                    .all(|sample| sample.as_u64().is_some_and(|v| v <= 1024))
+        }) else {
+            return audio.map_or(Value::Null, |audio| json!({"audio": audio}));
+        };
+        json!({"audio": audio, "waveform": samples, "duration": track["duration"].as_f64().map(|value| value / 1000.0)})
+    }
+
+    async fn read_preview(&self, track: &Value, context: &Context) -> Option<Vec<u8>> {
+        let preview = track["media"]["transcodings"]
+            .as_array()?
+            .iter()
+            .find(|item| {
+                item["snipped"] == true
+                    && item["format"]["protocol"] == "progressive"
+                    && item["duration"]
+                        .as_u64()
+                        .is_some_and(|ms| (6_000..=35_000).contains(&ms))
+            })?;
+        let mut endpoint = sample_url(preview["url"].as_str()?, |host| {
+            host == "api-v2.soundcloud.com"
+        })?;
+        if !endpoint.path().starts_with("/media/")
+            || !endpoint.path().ends_with("/preview/progressive")
+        {
+            return None;
+        }
+        endpoint.set_query(None);
+        endpoint
+            .query_pairs_mut()
+            .append_pair("client_id", &context.client);
+        let response = self
+            .client
+            .get(endpoint)
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?;
+        let location = crate::http::json(response, 8_000).await.ok()?;
+        let media = sample_url(location["url"].as_str()?, |host| {
+            host.ends_with(".sndcdn.com")
+        })?;
+        let response = self
+            .client
+            .get(media)
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?;
+        if !response
+            .headers()
+            .get("content-type")?
+            .to_str()
+            .ok()?
+            .starts_with("audio/")
+        {
+            return None;
+        }
+        crate::http::bytes(response, 768_000).await.ok()
     }
 
     pub fn observe(&self, address: &str, authorization: &str) {
