@@ -1,12 +1,12 @@
 {
-  "version": "0.2.13",
+  "version": "0.2.14",
   "native": true,
-  "notes": "«Волна по треку», настроение сессии и меньше повторов. / Wave from Track, session mood and fewer repeats.",
-  "pub_date": "2026-11-11T19:45:32.129Z",
+  "notes": "Фоновый анализ звучания в «Волне по треку». / Background audio matching in Wave from Track.",
+  "pub_date": "2026-11-14T17:54:26.130Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcjF1WW81SXRQKzNJeTZCQVI2K0JqdnhRbTNndmNxUC9rY2ZDUSs0OGpSN1VuSHhWOVlWeWZWRkVJUEZVNFFSeDY2VHlqVEdCS3BlQnAwOFVLZzhBRGdoY1BaK0RqVGdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0NDI2MzMxCWZpbGU6U291bmRDbG91ZF8wLjIuMTNfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMi4xMwpRZHNlSlQ2Wi9Sa3lZdkY4Y0p6MldJTVFIUUJJcTduMkVabUJZU3dFaVkxam1QTXd6YXlYcko0TVZBMlFHYTdiYW1xaWRkVGh0ODZnZ1hpY29oNlFEQT09Cg==",
-      "url": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.13/SoundCloud-0.2.13-x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcjF1WW81SXRQKzN0SldIT21xYXBiSlEzSXVXbGNtNXFOYXpjU1dOcnZRMEt2ci9SZFpxL2s2cGxkN1BlZGdVTURvS3hPVkMxR2ptd0lLUXdCdnRaSURzTkZBTUZvb2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Njc4ODY1CWZpbGU6U291bmRDbG91ZF8wLjIuMTRfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMi4xNAoyZnkvanprTU13Y3FEOWY2MFFMUDE3bFRKWmlFQjdBbVlWNTdqVEUvVjVpd2ljc000TWU4bGVaTVR4NnJRNmJrZmxBWDdRTjRrMEJoRXJKNGJaZ0NBUT09Cg==",
+      "url": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.14/SoundCloud-0.2.14-x64-setup.exe"
     }
   }
 }
