@@ -1,12 +1,12 @@
 {
-  "version": "0.2.14",
+  "version": "0.2.15",
   "native": true,
-  "notes": "Фоновый анализ звучания в «Волне по треку». / Background audio matching in Wave from Track.",
-  "pub_date": "2026-11-14T17:54:26.130Z",
+  "notes": "Снижено потребление памяти WebView2. / Reduced WebView2 memory usage.",
+  "pub_date": "2026-11-18T05:35:33.002Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcjF1WW81SXRQKzN0SldIT21xYXBiSlEzSXVXbGNtNXFOYXpjU1dOcnZRMEt2ci9SZFpxL2s2cGxkN1BlZGdVTURvS3hPVkMxR2ptd0lLUXdCdnRaSURzTkZBTUZvb2dFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0Njc4ODY1CWZpbGU6U291bmRDbG91ZF8wLjIuMTRfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMi4xNAoyZnkvanprTU13Y3FEOWY2MFFMUDE3bFRKWmlFQjdBbVlWNTdqVEUvVjVpd2ljc000TWU4bGVaTVR4NnJRNmJrZmxBWDdRTjRrMEJoRXJKNGJaZ0NBUT09Cg==",
-      "url": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.14/SoundCloud-0.2.14-x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcjF1WW81SXRQKzhhajFPcnZDVlloN1VDeWVtVTcvOTVQVzR2VUJrSnNJcnJvRGlUcWhSdk8xdFkvYzJvNFA1SXdGQnU0ZysyUnRzcXVwZll4cDRMcndjZElSMHF2a1FVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0OTgwMTMyCWZpbGU6U291bmRDbG91ZF8wLjIuMTVfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjAuMi4xNQp3K0VmdGtlUmVwVzdTSXlQVWh2TTRPN3NYOHJDeXpzdis5RVhBaVVUdXdHcUpBUWZiZE9VeURYc3NUV093b0J4SFU0blNPRE4xQzR6WGdVSnlTb05Edz09Cg==",
+      "url": "https://github.com/rvelabs/soundcloud-rpc/releases/download/native-v0.2.15/SoundCloud-0.2.15-x64-setup.exe"
     }
   }
 }
