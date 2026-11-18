@@ -882,6 +882,7 @@ async fn smoke_result(
     report["nativeWindowVisible"] = json!(window.window().is_visible().map_err(|e| e.to_string())?);
     report["nativeWindowMinimized"] =
         json!(window.window().is_minimized().map_err(|e| e.to_string())?);
+    report["webviewMemoryTarget"] = json!(webview::read_memory_target(&window).await);
     std::fs::write(
         state.profile.join("smoke-result.json"),
         serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?,
@@ -1030,6 +1031,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let network = network::Network::new(store.clone(), connection.clone());
         let relay_port = if !smoke && !account_check { tauri::async_runtime::block_on(network.route()) } else { None };
         let proxy = relay_port.map(|port| format!("http://127.0.0.1:{port}"));
+        let webview_directory = profile.join("WebView2");
+        let mut browser_args = "--autoplay-policy=no-user-gesture-required --disable-background-timer-throttling".to_string();
+        if let Some(port) = relay_port { browser_args.push_str(&format!(" --proxy-pac-url=http://127.0.0.1:{port}/proxy.pac")); }
+        let settings_panel = settings_panel::Panel::new(webview_directory.clone(), browser_args.clone());
         let catalog = Arc::new(Catalog::new(proxy.as_deref())?);
         let presence = presence::Presence::new(serde_json::from_value(store.get("settings-discord")).unwrap_or_default(), !smoke);
         let listening = listening::Listening::new(account_report.as_deref().unwrap_or(&profile), store.clone())?;
@@ -1038,15 +1043,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let updates = updates::Updates::new(store.clone());
         let client_preferences:preferences::Preferences=serde_json::from_value(store.get("settings-client")).unwrap_or_default();
         let adblock = adblock::AdBlock::new(account_report.as_deref().unwrap_or(&profile), client_preferences.ad_blocker)?;
-        let state = Arc::new(State { adblock:adblock.clone(),taskbar:Arc::new(taskbar::Taskbar::default()),settings_panel:settings_panel::Panel::default(),accounts, catalog: catalog.clone(), store: store.clone(), active: AtomicBool::new(false), monitor: AtomicBool::new(false), discovery_deadline: AtomicU64::new(120000), wake: Notify::new(), started: Instant::now(), smoke, probe, profile: profile.clone(), connection: std::sync::Mutex::new(connection), relay_port, source_client: source::client()?, source_requests: requests::Requests::default(), spotify: spotify::Imports::default(), presence, listening, extensions: extensions.clone(), updates: updates.clone(), network: network.clone(), worker_setup: worker_setup::Setup::new(account_report.as_deref().unwrap_or(&profile))?, account_report: account_report.clone() });
+        let state = Arc::new(State { adblock:adblock.clone(),taskbar:Arc::new(taskbar::Taskbar::default()),settings_panel,accounts, catalog: catalog.clone(), store: store.clone(), active: AtomicBool::new(false), monitor: AtomicBool::new(false), discovery_deadline: AtomicU64::new(120000), wake: Notify::new(), started: Instant::now(), smoke, probe, profile: profile.clone(), connection: std::sync::Mutex::new(connection), relay_port, source_client: source::client()?, source_requests: requests::Requests::default(), spotify: spotify::Imports::default(), presence, listening, extensions: extensions.clone(), updates: updates.clone(), network: network.clone(), worker_setup: worker_setup::Setup::new(account_report.as_deref().unwrap_or(&profile))?, account_report: account_report.clone() });
         app.manage(state.clone());
         if !smoke && !probe && !account_check { updates.start(app.handle().clone()); }
         let url = if smoke { WebviewUrl::App("smoke.html".into()) } else { WebviewUrl::External("about:blank".parse()?) };
-        let mut browser_args = "--autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows".to_string();
-        if let Some(port) = relay_port { browser_args.push_str(&format!(" --proxy-pac-url=http://127.0.0.1:{port}/proxy.pac")); }
         let mut window_builder = WebviewWindowBuilder::new(app, if smoke { "smoke" } else { "main" }, url)
             .title("SoundCloud").inner_size(1280.0, 850.0).min_inner_size(800.0, 600.0)
-            .data_directory(profile.join("WebView2"))
+            .data_directory(webview_directory)
             .additional_browser_args(&browser_args)
             .on_navigation({ let state = state.clone(); move |url| {
                 if url.scheme()=="https" && url.host_str()==Some("soundcloud.com") {state.network.navigation(url);state.monitor.store(false,Ordering::Release);state.discovery_deadline.store(state.started.elapsed().as_millis() as u64 + 120000,Ordering::Release);state.wake.notify_one();}
@@ -1068,6 +1071,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if smoke { window.minimize()?; window.hide()?; }
         if account_check { window.minimize()?; window.hide()?; }
         window.as_ref().show()?;
+        webview::manage_memory(&window);
         if !probe && !account_check && let Err(error) = state.taskbar.install(&window, app.handle().clone()) { eprintln!("{error}"); }
         webview::observe(&window, catalog, adblock.clone(), smoke)?;
         if !smoke && !probe && !account_check { tauri::async_runtime::spawn(async move { let _ = adblock.refresh(false).await; }); }

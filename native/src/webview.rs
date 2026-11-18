@@ -1,6 +1,7 @@
 use crate::catalog::Catalog;
 use std::sync::Arc;
-use tauri::WebviewWindow;
+use std::time::Duration;
+use tauri::{Webview, WebviewWindow, WindowEvent};
 use webview2_com::{
     AcceleratorKeyPressedEventHandler, Microsoft::Web::WebView2::Win32::*,
     WebResourceRequestedEventHandler, take_pwstr,
@@ -9,6 +10,85 @@ use windows::{
     Win32::UI::Shell::SHCreateMemStream,
     core::{HSTRING, Interface, PWSTR, w},
 };
+
+fn memory_target(low: bool) -> COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL {
+    if low {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+    } else {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+    }
+}
+
+pub fn set_memory_target(view: &Webview, low: bool) {
+    let _ = view.with_webview(move |view| unsafe {
+        // Older WebView2 runtimes can continue using their default memory policy.
+        if let Ok(core) = view
+            .controller()
+            .CoreWebView2()
+            .and_then(|core| core.cast::<ICoreWebView2_19>())
+        {
+            let _ = core.SetMemoryUsageTargetLevel(memory_target(low));
+        }
+    });
+}
+
+pub fn manage_memory(window: &WebviewWindow) {
+    let (focus, mut changes) = tokio::sync::watch::channel(window.is_focused().unwrap_or(true));
+    window.on_window_event(move |event| {
+        if let WindowEvent::Focused(focused) = event {
+            focus.send_if_modified(|current| {
+                let changed = *current != *focused;
+                *current = *focused;
+                changed
+            });
+        }
+    });
+    let view = window.as_ref().clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let focused = *changes.borrow_and_update();
+            if !focused {
+                // Avoid paging the renderer out on brief focus changes.
+                tokio::select! {
+                    result = changes.changed() => {
+                        if result.is_err() { break; }
+                        continue;
+                    }
+                    _ = tokio::time::sleep(Duration::from_secs(10)) => {}
+                }
+                if *changes.borrow() {
+                    continue;
+                }
+            }
+            set_memory_target(&view, !focused);
+            if changes.changed().await.is_err() {
+                break;
+            }
+        }
+    });
+}
+
+pub async fn read_memory_target(view: &Webview) -> Option<&'static str> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    view.with_webview(move |view| unsafe {
+        let target = (|| {
+            let core = view
+                .controller()
+                .CoreWebView2()?
+                .cast::<ICoreWebView2_19>()?;
+            let mut level = memory_target(false);
+            core.MemoryUsageTargetLevel(&mut level)?;
+            Ok::<_, windows::core::Error>(level == memory_target(true))
+        })();
+        let _ = send.send(target.ok());
+    })
+    .ok()?;
+    let low = tokio::time::timeout(Duration::from_secs(2), receive)
+        .await
+        .ok()?
+        .ok()??;
+    Some(if low { "low" } else { "normal" })
+}
 
 fn response(
     environment: &ICoreWebView2Environment,

@@ -1,12 +1,14 @@
 use serde_json::{Value, json};
+use std::path::PathBuf;
 use std::sync::{
     Mutex,
     atomic::{AtomicBool, Ordering},
 };
 use tauri::{Manager, PhysicalPosition, PhysicalSize, Rect, WebviewBuilder, WebviewUrl};
 
-#[derive(Default)]
 pub struct Panel {
+    webview_directory: PathBuf,
+    browser_args: String,
     visible: AtomicBool,
     operation: tokio::sync::Mutex<()>,
     last_bounds: Mutex<Option<[u32; 4]>>,
@@ -28,6 +30,16 @@ fn geometry(width: u32, height: u32, scale: f64) -> [u32; 4] {
     ]
 }
 impl Panel {
+    pub fn new(webview_directory: PathBuf, browser_args: String) -> Self {
+        Self {
+            webview_directory,
+            browser_args,
+            visible: AtomicBool::new(false),
+            operation: tokio::sync::Mutex::new(()),
+            last_bounds: Mutex::new(None),
+        }
+    }
+
     fn parent(app: &tauri::AppHandle) -> Result<tauri::Window, String> {
         app.get_window("main")
             .or_else(|| app.get_window("smoke"))
@@ -86,6 +98,8 @@ impl Panel {
                 .add_child(
                     WebviewBuilder::new("settings", WebviewUrl::App("settings.html".into()))
                         .focused(false)
+                        .data_directory(self.webview_directory.clone())
+                        .additional_browser_args(&self.browser_args)
                         .initialization_script(format!("window.__SC_SETTINGS_TEST={smoke};"))
                         .on_navigation(|url| {
                             url.host_str() == Some("tauri.localhost")
@@ -103,6 +117,7 @@ impl Panel {
             .get_webview("settings")
             .ok_or("Settings panel unavailable")?;
         view.show().map_err(|_| "Could not show settings")?;
+        crate::webview::set_memory_target(&view, false);
         self.visible.store(true, Ordering::Release);
         if !app.state::<std::sync::Arc<crate::State>>().smoke {
             let _ = view.set_focus();
@@ -112,6 +127,7 @@ impl Panel {
     fn hide_locked(&self, app: &tauri::AppHandle) -> Result<(), String> {
         if let Some(view) = app.get_webview("settings") {
             view.hide().map_err(|_| "Could not hide settings")?;
+            crate::webview::set_memory_target(&view, true);
         }
         self.visible.store(false, Ordering::Release);
         if let Some(view) = app.get_webview("main") {
