@@ -9,6 +9,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.sqrt
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicReference
 
 /** Samples a bounded 30 seconds from PCM buffers already decoded by ExoPlayer. */
 class AudioAnalysis : BaseAudioProcessor() {
@@ -17,11 +18,11 @@ class AudioAnalysis : BaseAudioProcessor() {
     private var bass = 0.0
     private var treble = 0.0
     private var low = 0.0
-    @Volatile private var ready: JSONObject? = null
+    private val ready = AtomicReference<JSONObject?>(null)
     @Volatile private var resetRequested = true
 
     fun resetTrack() { resetRequested = true }
-    fun take(): JSONObject? = ready.also { ready = null }
+    fun take(): JSONObject? = ready.getAndSet(null)
 
     override fun onConfigure(input: AudioFormat): AudioFormat {
         if (input.encoding != C.ENCODING_PCM_16BIT) return AudioFormat.NOT_SET
@@ -32,7 +33,7 @@ class AudioAnalysis : BaseAudioProcessor() {
         val output = replaceOutputBuffer(input.remaining())
         if (resetRequested) {
             samples = 0; total = 0.0; bass = 0.0; treble = 0.0; low = 0.0
-            ready = null; resetRequested = false
+            ready.set(null); resetRequested = false
         }
         if (samples < inputAudioFormat.sampleRate.toLong() * 30) {
             val view = input.duplicate().order(ByteOrder.LITTLE_ENDIAN)
@@ -50,9 +51,9 @@ class AudioAnalysis : BaseAudioProcessor() {
             }
             if (samples >= inputAudioFormat.sampleRate.toLong() * 30 && total > 0.0001) {
                 val spectrum = (bass + treble).coerceAtLeast(0.0001)
-                ready = JSONObject().put("energy", sqrt(total / samples).coerceIn(0.0, 1.0))
+                ready.set(JSONObject().put("energy", sqrt(total / samples).coerceIn(0.0, 1.0))
                     .put("bass", bass / spectrum).put("brightness", treble / spectrum)
-                    .put("sampleSeconds", 30).put("source", "android-pcm-v1")
+                    .put("sampleSeconds", 30).put("source", "android-pcm-v1"))
             }
         }
         output.put(input).flip()

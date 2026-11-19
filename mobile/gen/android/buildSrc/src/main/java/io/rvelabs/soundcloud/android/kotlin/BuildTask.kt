@@ -26,18 +26,13 @@ abstract class BuildTask : DefaultTask() {
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
         val root = File(projectDir, rootDirRel).canonicalFile
-        val cli = File(root, "node_modules/@tauri-apps/cli/tauri.js")
-        if (!cli.isFile) throw GradleException("Install the Android frontend dependencies with npm ci in mobile")
+        val cli = File(root.parentFile, "scripts/build-android.cjs")
+        if (!cli.isFile) throw GradleException("Android build script is missing")
 
         execOperations.exec {
             workingDir(root)
             executable("node")
-            args(cli.absolutePath, "android", "android-studio-script")
-            if (logger.isEnabled(LogLevel.DEBUG)) {
-                args("-vv")
-            } else if (logger.isEnabled(LogLevel.INFO)) {
-                args("-v")
-            }
+            args(cli.absolutePath, "--native-only")
             if (release) {
                 args("--release")
             }

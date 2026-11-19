@@ -5,6 +5,8 @@ pub fn save(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 pub fn load(path: &Path) -> Result<Option<Vec<u8>>, String> {
-    if !path.exists() { return Ok(None); }
+    if !path.exists() {
+        return Ok(None);
+    }
     crate::host::secret(path, None).map(Some)
 }

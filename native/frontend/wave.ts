@@ -147,7 +147,8 @@ export class Wave {
     }
 
     private remember(items: WaveCandidate[]): void {
-        items = items.map((item) => this.analysis?.enrich(item) || item)
+        items = items
+            .map((item) => this.analysis?.enrich(item) || item)
             .map((item) => this.samples?.enrich(item) || item);
         for (const item of items) this.candidates.set(item.url, item);
         while (this.candidates.size > 600) this.candidates.delete(this.candidates.keys().next().value!);
@@ -449,12 +450,21 @@ export class Wave {
                 try {
                     return await Promise.race([
                         nativeQueueModel(
-                            { operation, urls, ticket, expires: Date.now() + ((window as any).__androidBridgeInstalled ? 20000 : 4500), replacement },
+                            {
+                                operation,
+                                urls,
+                                ticket,
+                                expires: Date.now() + ((window as any).__androidBridgeInstalled ? 20000 : 4500),
+                                replacement,
+                            },
                             nativeRuntimeExports,
                         ).catch((): QueueResult => ({ state: 'uncertain' })),
                         cancelled,
                         new Promise<QueueResult>((resolve) => {
-                            timer = setTimeout(() => resolve({ state: 'uncertain' }), (window as any).__androidBridgeInstalled ? 21000 : 5000);
+                            timer = setTimeout(
+                                () => resolve({ state: 'uncertain' }),
+                                (window as any).__androidBridgeInstalled ? 21000 : 5000,
+                            );
                         }),
                     ]);
                 } finally {
@@ -615,12 +625,13 @@ export class Wave {
             Number(track.stationSeed === seed.url && Boolean(track.relatedTo?.includes(seed.url))) * 2 +
             Number(track.stationSeed === seed.url);
         const candidates = [...this.candidates.values()]
-            .filter((track) =>
-                track.url !== seed.url &&
-                track.playability === 'available' &&
-                !this.queued.has(track.url) &&
-                (track.stationSeed === seed.url || track.relatedTo?.includes(seed.url)) &&
-                model.canSample(track),
+            .filter(
+                (track) =>
+                    track.url !== seed.url &&
+                    track.playability === 'available' &&
+                    !this.queued.has(track.url) &&
+                    (track.stationSeed === seed.url || track.relatedTo?.includes(seed.url)) &&
+                    model.canSample(track),
             )
             .sort((a, b) => priority(b) - priority(a) || a.sourceRank - b.sourceRank);
         if (!candidates.length) return;
@@ -874,7 +885,12 @@ export class Wave {
         try {
             if ((window as any).__androidBridgeInstalled) {
                 const frame = (window as any).__androidCurrentTrack;
-                return Boolean(frame?.url?.startsWith('https://soundcloud.com/') && !frame.error);
+                return Boolean(
+                    frame?.url?.startsWith('https://soundcloud.com/') &&
+                        !frame.error &&
+                        !frame.suppressed &&
+                        (frame.wantsPlayback === true || frame.ended === true),
+                );
             }
             const manager = nativeRuntimeExports().find(
                 (value: any) => typeof value?.getCurrentSound === 'function' && typeof value?.getQueue === 'function',

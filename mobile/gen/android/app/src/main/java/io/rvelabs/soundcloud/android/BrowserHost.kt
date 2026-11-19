@@ -20,11 +20,13 @@ import java.util.concurrent.*
 @SuppressLint("SetJavaScriptEnabled")
 @UnstableApi
 class BrowserHost(private val service: PlaybackService) {
+    var onLoading: ((Boolean) -> Unit)? = null
     private val context = MutableContextWrapper(service)
     val view = WebView(context)
     private val main = Handler(Looper.getMainLooper())
     private val spotify = SpotifySession(context)
     private val workers = ThreadPoolExecutor(2, 4, 30, TimeUnit.SECONDS, ArrayBlockingQueue(64))
+    private val playbackWorkers = ThreadPoolExecutor(1, 2, 30, TimeUnit.SECONDS, ArrayBlockingQueue(8))
     private val settings = SettingsPanel(context, this, workers)
     private var started = false
     private var fixture = false
@@ -69,7 +71,7 @@ class BrowserHost(private val service: PlaybackService) {
             fun answer(value: Any?, error: String? = null) {
                 val result = JSONObject().put("id", id)
                 if (error != null) result.put("error", error) else result.put("value", value ?: JSONObject.NULL)
-                reply.postMessage(result.toString())
+                runCatching { reply.postMessage(result.toString()) }
             }
             try { when (command) {
                 "android_control" -> {
@@ -82,7 +84,7 @@ class BrowserHost(private val service: PlaybackService) {
                 }
                 "android_queue_cancel" -> { service.queue.cancel(args.optString("ticket")); answer(null) }
                 "android_equalizer" -> answer(service.applyEqualizer(args))
-                "android_settings" -> { settings.show(); answer(null) }
+                "android_settings" -> { openSettings(); answer(null) }
                 "spotify_state" -> spotify.state(args.getString("id")) { answer(it) }
                 "spotify_show" -> { spotify.show(args.getString("id")); answer(null) }
                 "spotify_close" -> { spotify.close(args.getString("id")); answer(null) }
@@ -91,7 +93,7 @@ class BrowserHost(private val service: PlaybackService) {
                     if (uri.scheme == "https") open(uri)
                     answer(null)
                 }
-                else -> work({ answer(null, it) }) {
+                else -> work({ answer(null, it) }, priority = command == "android_queue") {
                     runCatching {
                         if (command == "spotify_open") {
                             val user = RustBridge.call("catalog_request", JSONObject().put("request", JSONObject().put("operation", "me"))
@@ -140,14 +142,22 @@ class BrowserHost(private val service: PlaybackService) {
                 return true
             }
             override fun onPageStarted(webView: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                onLoading?.invoke(true)
                 source = url
                 if (Uri.parse(url).host == "soundcloud.com") {
+                    if (Uri.parse(url).path == "/sign-out") { service.player.stop(); service.player.clearMediaItems() }
                     if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) evaluate(bootstrap)
                     work { runCatching { RustBridge.call("navigation", JSONObject().put("url", url)) } }
                 }
             }
             override fun onPageFinished(webView: WebView, url: String) {
-                if (Uri.parse(url).host == "soundcloud.com") { evaluate(bootstrap + "\n" + injected); pushPlayback() }
+                if (Uri.parse(url).host == "soundcloud.com") {
+                    evaluate(bootstrap + "\n" + injected); pushPlayback()
+                    view.evaluateJavascript("Boolean(document.getElementById('android-open-settings'))") { result -> onLoading?.invoke(result != "true") }
+                }
+            }
+            override fun onReceivedError(webView: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) onLoading?.invoke(true)
             }
             override fun shouldInterceptRequest(webView: WebView, request: WebResourceRequest): WebResourceResponse? {
                 if (BuildConfig.DEBUG && fixture && request.url.toString() == "https://soundcloud.com/__android_fixture") {
@@ -172,8 +182,8 @@ class BrowserHost(private val service: PlaybackService) {
         }
     }
 
-    private fun work(onFailure: (String) -> Unit = {}, task: () -> Unit) {
-        try { workers.execute(task) }
+    private fun work(onFailure: (String) -> Unit = {}, priority: Boolean = false, task: () -> Unit) {
+        try { (if (priority) playbackWorkers else workers).execute(task) }
         catch (_: RejectedExecutionException) { main.post { onFailure("Приложение занято. Попробуй ещё раз.") } }
     }
     fun start(testFixture: Boolean) {
@@ -223,6 +233,9 @@ class BrowserHost(private val service: PlaybackService) {
             .put("artwork", player.mediaMetadata.artworkUri?.toString() ?: "")
             .put("url", player.currentMediaItem?.mediaId ?: "").put("isPlaying", player.isPlaying).put("isLiked", false)
             .put("elapsed", seconds(player.currentPosition)).put("duration", seconds(player.duration))
+            .put("wantsPlayback", player.playWhenReady).put("ended", player.playbackState == Player.STATE_ENDED)
+            .put("suppressed", player.playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE)
+            .put("playbackRate", player.playbackParameters.speed.toDouble())
         player.playerError?.let { frame.put("error", it.errorCodeName) }
         evaluate("window.__androidPlayback?.($frame)")
     }
@@ -232,6 +245,7 @@ class BrowserHost(private val service: PlaybackService) {
         container.addView(view, FrameLayout.LayoutParams(-1, -1))
     }
     fun detach(container: FrameLayout) {
+        onLoading = null
         settings.close()
         spotify.close()
         if (view.parent === container) container.removeView(view)
@@ -246,6 +260,12 @@ class BrowserHost(private val service: PlaybackService) {
         runCatching { service.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
     fun openExternal(url: String) { val uri = Uri.parse(url); if (uri.scheme == "https" && uri.userInfo == null) open(uri) }
+    fun openSettings() {
+        work {
+            runCatching { RustBridge.initialize(service.filesDir.absolutePath) }
+                .onSuccess { main.post { settings.show() } }
+        }
+    }
     fun setSpeed(rate: Double) { service.player.setPlaybackSpeed(rate.coerceIn(0.5, 2.0).toFloat()) }
     fun reload() { service.player.stop(); service.player.clearMediaItems(); view.reload() }
     private fun startFixture() {
@@ -261,6 +281,11 @@ class BrowserHost(private val service: PlaybackService) {
         view.stopLoading()
         (view.parent as? ViewGroup)?.removeView(view)
         view.destroy()
+        work { runCatching {
+            RustBridge.call("listening_update", JSONObject().put("track", JSONObject.NULL))
+            RustBridge.call("flush")
+        } }
         workers.shutdown()
+        playbackWorkers.shutdown()
     }
 }

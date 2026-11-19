@@ -87,6 +87,8 @@ export interface TrackSample {
     envelope?: Omit<TrackSample, 'envelope' | 'spectrum'>;
 }
 
-export function measuredAudio(features: SoundFeatures | undefined): features is SoundFeatures & { source: 'media-element-v1' | 'android-pcm-v1' } {
+export function measuredAudio(
+    features: SoundFeatures | undefined,
+): features is SoundFeatures & { source: 'media-element-v1' | 'android-pcm-v1' } {
     return features?.source === 'media-element-v1' || features?.source === 'android-pcm-v1';
 }

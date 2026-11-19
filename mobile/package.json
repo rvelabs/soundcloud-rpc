@@ -3,12 +3,13 @@
     "version": "0.2.15",
     "private": true,
     "scripts": {
-        "android:build": "tauri android build --ci --debug --apk",
-        "assets": "node ../scripts/build-mobile.cjs",
-        "preandroid:build": "npm run assets"
+        "android:build": "node ../scripts/build-android.cjs",
+        "assets": "node ../scripts/build-mobile.cjs"
     },
     "devDependencies": {
-        "@tauri-apps/cli": "2.12.4",
         "playwright-core": "^1.65.1"
+    },
+    "dependencies": {
+        "soundcloud-rpc": "file:.."
     }
 }

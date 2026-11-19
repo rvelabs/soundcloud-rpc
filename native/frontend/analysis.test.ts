@@ -9,6 +9,28 @@ afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
 });
+it('does not advance an Android queue over a manual pause, focus suppression or playback error', () => {
+    const page = Object.assign(new EventTarget(), {
+        __androidBridgeInstalled: true,
+        __androidCurrentTrack: { url: 'https://soundcloud.com/test/tone', wantsPlayback: true } as Record<
+            string,
+            unknown
+        >,
+    });
+    vi.stubGlobal('window', page);
+    vi.stubGlobal('document', new EventTarget());
+    const wave = new Wave() as unknown as { canAdvance: () => boolean };
+    expect(wave.canAdvance()).toBe(true);
+    page.__androidCurrentTrack.wantsPlayback = false;
+    expect(wave.canAdvance()).toBe(false);
+    page.__androidCurrentTrack.ended = true;
+    expect(wave.canAdvance()).toBe(true);
+    page.__androidCurrentTrack.suppressed = true;
+    expect(wave.canAdvance()).toBe(false);
+    page.__androidCurrentTrack.suppressed = false;
+    page.__androidCurrentTrack.error = 'NETWORK';
+    expect(wave.canAdvance()).toBe(false);
+});
 it('gates audio analysis during adverts without resetting an unchanged measurement', () => {
     vi.stubGlobal('window', new EventTarget());
     vi.stubGlobal('document', new EventTarget());

@@ -77,7 +77,7 @@ export function measuredSoundSimilarity(a: Track, b: Track): number | undefined 
             const value = track.features?.[key as 'bass' | 'brightness'];
             return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
         });
-    if (!valid(a) || !valid(b)) return;
+    if (!valid(a) || !valid(b) || a.features?.source !== b.features?.source) return;
     const distance =
         (Math.abs(a.features!.bass! - b.features!.bass!) +
             Math.abs(a.features!.brightness! - b.features!.brightness!)) /

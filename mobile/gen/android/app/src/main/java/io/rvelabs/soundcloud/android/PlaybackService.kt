@@ -87,7 +87,13 @@ class PlaybackService : MediaSessionService() {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 equalizer?.release()
                 equalizer = runCatching { Equalizer(0, audioSessionId) }.getOrNull()
-                applyEqualizer(eqSettings)
+                val status = applyEqualizer(eqSettings)
+                browser.evaluate("window.__androidEqualizerStatus?.($status)")
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) {
+                    browser.evaluate("window.dispatchEvent(new Event('__soundcloudWaveManualPause'))")
+                }
             }
         })
         handler.post(tick)
@@ -115,8 +121,8 @@ class PlaybackService : MediaSessionService() {
                 effect.setBandLevel(band.toShort(), (gain * 100).toInt().coerceIn(min, max).toShort())
                 headroom = maxOf(headroom, gain)
             }
-            player.volume = (10.0.pow((value.optDouble("preamp", 0.0).coerceIn(-18.0, 0.0) -
-                if (enabled) headroom.coerceAtLeast(0.0) else 0.0) / 20)).coerceIn(0.0, 1.0).toFloat()
+            player.volume = if (enabled) 10.0.pow((value.optDouble("preamp", 0.0).coerceIn(-18.0, 0.0) -
+                headroom.coerceAtLeast(0.0)) / 20).coerceIn(0.0, 1.0).toFloat() else 1.0f
             JSONObject().put("status", if (enabled) "active" else "off").put("headroomDb", headroom)
                 .put("nativeBands", effect.numberOfBands.toInt())
         }.getOrElse { JSONObject().put("status", "unavailable").put("reason", "native-effect") }

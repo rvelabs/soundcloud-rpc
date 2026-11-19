@@ -6,6 +6,9 @@ import android.content.*
 import android.os.Bundle
 import android.os.IBinder
 import android.widget.FrameLayout
+import android.widget.Button
+import android.view.Gravity
+import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -19,6 +22,7 @@ open class MainActivity : AppCompatActivity() {
     private lateinit var container: FrameLayout
     private var host: BrowserHost? = null
     private var bound = false
+    private lateinit var settingsButton: Button
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         fileCallback?.onReceiveValue(uri?.let { arrayOf(it) })
@@ -35,7 +39,20 @@ open class MainActivity : AppCompatActivity() {
             val browser = (binder as PlaybackService.LocalBinder).service.browser
             host = browser
             browser.attach(this@MainActivity, container)
+            if (::settingsButton.isInitialized) container.removeView(settingsButton)
+            settingsButton = Button(this@MainActivity).apply {
+                text = "⚙"
+                contentDescription = "SoundCloud settings"
+                setTextColor(0xffff773d.toInt())
+                setOnClickListener { browser.openSettings() }
+            }
+            val size = (48 * resources.displayMetrics.density).toInt()
+            container.addView(settingsButton, FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.END))
+            browser.onLoading = { loading -> settingsButton.visibility = if (loading) View.VISIBLE else View.GONE }
             browser.start(BuildConfig.DEBUG && intent.getBooleanExtra("fixture", false))
+            browser.view.evaluateJavascript("Boolean(document.getElementById('android-open-settings'))") { result ->
+                settingsButton.visibility = if (result == "true") View.GONE else View.VISIBLE
+            }
         }
         override fun onServiceDisconnected(name: ComponentName) { host = null }
     }

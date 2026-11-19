@@ -24,6 +24,7 @@ open class RustPlugin : Plugin<Project> {
         val archList = (findProperty("archList") as? String)?.split(',') ?: defaultArchList
 
         val targetsList = (findProperty("targetList") as? String)?.split(',') ?: listOf("aarch64", "armv7", "i686", "x86_64")
+        val prebuilt = findProperty("rustPrebuilt") == "true"
 
         extensions.configure<ApplicationExtension> {
             @Suppress("UnstableApiUsage")
@@ -73,6 +74,7 @@ open class RustPlugin : Plugin<Project> {
                         projectDir = project.projectDir.path
                         target = targetName
                         release = profile == "release"
+                        onlyIf { !prebuilt }
                     }
 
                     buildTask.dependsOn(targetBuildTask)
