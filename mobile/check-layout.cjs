@@ -109,6 +109,32 @@ fs.mkdirSync(output, { recursive: true });
             await settingsPage.screenshot({ path: path.join(output, `${width}x${height}-settings.png`) });
             await page.screenshot({ path: path.join(output, `${width}x${height}.png`) });
             await settingsPage.locator('.android-close').click();
+            await page.bringToFront();
+            for (const [open, dialog, close] of [
+                ['[data-command=settings-open]', '.cw-settings-dialog', '[data-command=settings-close]'],
+                ['[data-command=import-open]', '.cw-import-dialog', '[data-command=import-close]'],
+                ['#sc-equalizer .toggle', '#sc-equalizer .panel', '#sc-equalizer .close'],
+            ]) {
+                await page.locator(open).click();
+                const panel = page.locator(dialog);
+                await panel.waitFor({ state: 'visible' });
+                await panel.evaluate(async (node) => {
+                    await Promise.all(node.getAnimations().map((animation) => animation.finished.catch(() => {})));
+                });
+                const bounds = await panel.boundingBox();
+                assert(
+                    bounds &&
+                        bounds.x >= -1 &&
+                        bounds.y >= -1 &&
+                        bounds.x + bounds.width <= width + 1 &&
+                        bounds.y + bounds.height <= height + 1,
+                    `${dialog} escaped ${width}×${height}: ${JSON.stringify(bounds)}`,
+                );
+                const overflow = await panel.evaluate((node) => node.scrollWidth > node.clientWidth + 1);
+                assert(!overflow, `${dialog} content overflows at ${width}`);
+                await page.locator(close).click();
+                await panel.waitFor({ state: 'hidden' });
+            }
             results.push({ width, height, success: true });
         }
         assert.deepEqual(errors, [], 'Frontend runtime errors');

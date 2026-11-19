@@ -191,7 +191,10 @@ class BrowserHost(private val service: PlaybackService) {
         started = true
         fixture = testFixture
         work {
-            runCatching { RustBridge.initialize(service.filesDir.absolutePath) }.onSuccess { config -> main.post {
+            runCatching { RustBridge.initialize(service.filesDir.absolutePath) }.onSuccess { config ->
+                val preferences = RustBridge.call("client_options") as JSONObject
+                main.post {
+                applyTextZoom(preferences.optDouble("zoom", 1.0))
                 val load = Runnable { view.loadUrl(if (fixture) "https://soundcloud.com/__android_fixture" else "https://soundcloud.com/") }
                 val port = config.optInt("port")
                 service.proxyPort = port
@@ -267,6 +270,7 @@ class BrowserHost(private val service: PlaybackService) {
         }
     }
     fun setSpeed(rate: Double) { service.player.setPlaybackSpeed(rate.coerceIn(0.5, 2.0).toFloat()) }
+    fun applyTextZoom(zoom: Double) { view.settings.textZoom = (zoom.coerceIn(0.75, 1.5) * 100).toInt() }
     fun reload() { service.player.stop(); service.player.clearMediaItems(); view.reload() }
     private fun startFixture() {
         val items = (1..3).map { index ->

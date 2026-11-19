@@ -289,3 +289,50 @@ select:focus-visible {
     background: transparent;
     touch-action: pan-y;
 }
+
+/* Keep the site's own search form usable instead of creating a second router. */
+.header__inner {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    height: auto !important;
+}
+.header__left {
+    flex: 1 0 100%;
+    width: 100% !important;
+}
+.header__middle {
+    display: block !important;
+    position: relative !important;
+    float: none !important;
+    flex: 1 0 100%;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 12px 8px !important;
+}
+.header__middle form,
+.headerSearch {
+    width: 100% !important;
+    margin: 0 !important;
+}
+.headerSearch__input {
+    width: 100% !important;
+    min-height: 40px !important;
+}
+.header {
+    height: auto !important;
+}
+html:has(.header__middle) #content {
+    padding-top: 100px !important;
+}
+html[data-theme='light'] body {
+    background: #f5f5f5 !important;
+    color: #222;
+}
+html[data-theme='light'] #android-player {
+    background: #f0f0f0f5;
+    border-color: #ccc;
+}
+html[data-theme='light'] #android-player button,
+html[data-theme='light'] #android-track-title {
+    color: #222;
+}

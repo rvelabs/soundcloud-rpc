@@ -8,8 +8,5 @@
     },
     "devDependencies": {
         "playwright-core": "^1.65.1"
-    },
-    "dependencies": {
-        "soundcloud-rpc": "file:.."
     }
 }

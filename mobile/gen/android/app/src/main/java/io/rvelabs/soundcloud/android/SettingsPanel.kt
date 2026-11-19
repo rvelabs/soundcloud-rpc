@@ -62,6 +62,7 @@ class SettingsPanel(private val context: MutableContextWrapper, private val host
                         worker.execute {
                             runCatching { RustBridge.call(command, args) }.onSuccess {
                                 answer(it)
+                                if (command == "client_options" && it is JSONObject) view.post { host.applyTextZoom(it.optDouble("zoom", 1.0)) }
                                 if (command == "client_options" || command == "listening_options") view.post { host.evaluate("void window.__soundcloudNative?.settingsChanged()") }
                             }.onFailure { answer(null, it.message ?: "Settings operation failed") }
                         }

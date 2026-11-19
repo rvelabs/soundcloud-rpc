@@ -37,6 +37,13 @@ jobs:
             - uses: dtolnay/rust-toolchain@stable
               with:
                   targets: ${{ matrix.target }}-linux-android
+            - uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      mobile/target
+                  key: android-rust-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('mobile/Cargo.lock', 'rust/validation-rs/Cargo.lock') }}
             - uses: android-actions/setup-android@v3
               with:
                   packages: ''
@@ -50,7 +57,17 @@ jobs:
             - run: npm ci --no-audit --no-fund
             - run: node ../node_modules/typescript/bin/tsc -p tsconfig.json --pretty false
             - run: chmod +x gen/android/gradlew
-            - run: npm run android:build -- --target ${{ matrix.target }} --split-per-abi
+            - name: Build APK
+              run: |
+                  for attempt in 1 2 3; do
+                    set +e
+                    npm run android:build -- --target ${{ matrix.target }} --split-per-abi 2>&1 | tee "$RUNNER_TEMP/android-build.log"
+                    result=${PIPESTATUS[0]}
+                    set -e
+                    if [ "$result" = 0 ]; then break; fi
+                    if [ "$attempt" = 3 ] || ! grep -Eq 'Received status code (429|502|503)' "$RUNNER_TEMP/android-build.log"; then exit "$result"; fi
+                    sleep 20
+                  done
             - name: Android static checks
               if: matrix.target == 'aarch64'
               run: bash gen/android/gradlew -p gen/android :app:lintArm64Debug -PrustPrebuilt=true -ParchList=arm64 -PtargetList=aarch64
@@ -65,7 +82,7 @@ jobs:
                   "$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx soundcloud-ci
                   "$ANDROID_HOME/emulator/emulator" -avd soundcloud-ci -no-window -no-audio -no-snapshot -gpu swiftshader > "$RUNNER_TEMP/soundcloud-emulator.log" 2>&1 &
                   emulator_pid=$!
-                  trap 'timeout 8 adb logcat -d > "$RUNNER_TEMP/soundcloud-logcat.log" 2>&1 || true; adb emu kill >/dev/null 2>&1 || kill "$emulator_pid" 2>/dev/null || true' EXIT
+                  trap 'timeout 8 adb logcat -d > "$RUNNER_TEMP/soundcloud-logcat.log" 2>&1 || true; adb pull /sdcard/Android/data/io.rvelabs.soundcloud.android/files/diagnostics "$RUNNER_TEMP/android-diagnostics" >/dev/null 2>&1 || true; adb emu kill >/dev/null 2>&1 || kill "$emulator_pid" 2>/dev/null || true' EXIT
                   timeout 180 bash -c 'until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r")" = 1 ]; do kill -0 "$1" || exit 1; sleep 2; done' -- "$emulator_pid"
                   adb shell wm dismiss-keyguard
                   bash gen/android/gradlew -p gen/android :app:connectedX86_64DebugAndroidTest -PrustPrebuilt=true -ParchList=x86_64 -PtargetList=x86_64
@@ -87,3 +104,4 @@ jobs:
                       mobile/gen/android/app/build/outputs/androidTest-results/
                       ${{ runner.temp }}/soundcloud-emulator.log
                       ${{ runner.temp }}/soundcloud-logcat.log
+                      ${{ runner.temp }}/android-diagnostics/

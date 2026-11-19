@@ -20,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.TimeUnit
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class BackgroundPlaybackTest {
@@ -29,7 +30,12 @@ class BackgroundPlaybackTest {
         val context = instrumentation.targetContext
         val device = UiDevice.getInstance(instrumentation)
         context.startActivity(Intent(context, MainActivity::class.java).putExtra("fixture", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        val start = device.wait(Until.findObject(By.text("▶ Запустить три тестовых трека")), 40_000)
+        val start = device.wait(Until.findObject(By.textContains("Запустить три тестовых трека")), 40_000)
+        if (start == null) {
+            val directory = File(context.getExternalFilesDir(null), "diagnostics").also { it.mkdirs() }
+            device.takeScreenshot(File(directory, "background-start.png"))
+            device.dumpWindowHierarchy(File(directory, "background-start.xml"))
+        }
         assertNotNull("The local Android interface did not render", start)
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val future = MediaController.Builder(context, token).setApplicationLooper(Looper.getMainLooper()).buildAsync()

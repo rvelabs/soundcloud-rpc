@@ -75,6 +75,12 @@ class AndroidCoreTest {
         RustBridge.initialize(context.filesDir.absolutePath)
         val status = RustBridge.call("native_diagnostics") as JSONObject
         assertEquals("0.2.15", status.getString("version"))
+        val settingsFile = File(context.filesDir, "native-connection.dat")
+        RustBridge.call("connection_save", JSONObject().put("mode", "off").put("endpoint", "").put("key", ""))
+        assertTrue("Rust must persist through the Java Keystore bridge", settingsFile.exists())
+        assertFalse(String(settingsFile.readBytes()).contains("endpoint"))
+        assertEquals("off", (RustBridge.call("connection_load") as JSONObject).getString("mode"))
+        settingsFile.delete()
         val file = File(context.cacheDir, "keystore-test.dat")
         try {
             val secret = "test-fixture-not-a-real-key".toByteArray()

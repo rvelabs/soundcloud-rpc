@@ -38,6 +38,9 @@ async function openSettings() {
         const client = document.querySelector<HTMLElement>('.settings-section[data-pane=client]');
         if (client) {
             client.hidden = false;
+            for (const label of client.querySelectorAll('label')) {
+                if (/Кнопки навигации|Navigation controls/.test(label.textContent || '')) label.remove();
+            }
             dialog.append(client);
         }
         const profile = new Profile('settings');
