@@ -1,3 +1,4 @@
+import { measuredAudio } from '../../src/wave/recommendation/types';
 import { SoundCloudRecommender } from '../../src/wave/recommendation/soundcloudAdapter';
 import { nativeRuntimeExports } from '../../src/soundcloud/nativeRuntime';
 import {
@@ -448,12 +449,12 @@ export class Wave {
                 try {
                     return await Promise.race([
                         nativeQueueModel(
-                            { operation, urls, ticket, expires: Date.now() + 4500, replacement },
+                            { operation, urls, ticket, expires: Date.now() + ((window as any).__androidBridgeInstalled ? 20000 : 4500), replacement },
                             nativeRuntimeExports,
                         ).catch((): QueueResult => ({ state: 'uncertain' })),
                         cancelled,
                         new Promise<QueueResult>((resolve) => {
-                            timer = setTimeout(() => resolve({ state: 'uncertain' }), 5000);
+                            timer = setTimeout(() => resolve({ state: 'uncertain' }), (window as any).__androidBridgeInstalled ? 21000 : 5000);
                         }),
                     ]);
                 } finally {
@@ -871,6 +872,10 @@ export class Wave {
     }
     private canAdvance(): boolean {
         try {
+            if ((window as any).__androidBridgeInstalled) {
+                const frame = (window as any).__androidCurrentTrack;
+                return Boolean(frame?.url?.startsWith('https://soundcloud.com/') && !frame.error);
+            }
             const manager = nativeRuntimeExports().find(
                 (value: any) => typeof value?.getCurrentSound === 'function' && typeof value?.getQueue === 'function',
             ) as any;
@@ -989,7 +994,7 @@ export class Wave {
         if (
             !this.recommender ||
             !track ||
-            input?.source !== 'media-element-v1' ||
+            !['media-element-v1', 'android-pcm-v1'].includes(input?.source || '') ||
             input.path !== new URL(track.url).pathname ||
             typeof input.sampleSeconds !== 'number' ||
             input.sampleSeconds < 0 ||
@@ -1003,13 +1008,14 @@ export class Wave {
             this.sample = { path: input.path, seconds: 0, count: 0, energy: 0, bass: 0, brightness: 0 };
         if (input.sampleSeconds <= this.sample.seconds) return;
         this.sample.seconds = input.sampleSeconds;
-        this.sample.count++;
-        this.sample.energy += input.energy!;
-        this.sample.bass += input.bass!;
-        this.sample.brightness += input.treble!;
+        const weight = input.source === 'android-pcm-v1' ? input.sampleSeconds - this.sample.count : 1;
+        this.sample.count += weight;
+        this.sample.energy += input.energy! * weight;
+        this.sample.bass += input.bass! * weight;
+        this.sample.brightness += input.treble! * weight;
         if (input.sampleSeconds < 30 || this.sample.count < 30) return;
         const features = {
-            source: 'media-element-v1' as const,
+            source: input.source as 'media-element-v1' | 'android-pcm-v1',
             sampleSeconds: Math.min(input.sampleSeconds, this.sample.count),
             energy: this.sample.energy / this.sample.count,
             bass: this.sample.bass / this.sample.count,
@@ -1026,7 +1032,7 @@ export class Wave {
         this.events.emit('candidate', this.candidates.get(track.url));
         this.analysisState();
         this.audioStatus({ phase: 'ready', path: input.path, sampleSeconds: features.sampleSeconds });
-        if (this.active && track.features?.source !== 'media-element-v1') {
+        if (this.active && !measuredAudio(track.features)) {
             this.queueRevision++;
             void this.refill().catch((error) => this.error(error));
         }

@@ -1,3 +1,4 @@
+import { measuredAudio } from './types';
 import type { DataStore } from '../../storage/asyncDataStore';
 import type { WaveCandidate, WaveControls } from '../waveEngine';
 import { RecommendationSession } from './session';
@@ -476,9 +477,9 @@ export class SoundCloudRecommender {
                 .map(({ id, title, artist, genre }) => ({ id, title, artist, genre })),
             candidates: this.candidates.size,
             measuredCandidates: [...this.candidates.values()].filter(
-                (track) => track.features?.source === 'media-element-v1',
+                (track) => measuredAudio(track.features),
             ).length,
-            measuredFeedback: this.feedbackEvents.filter((event) => event.track.features?.source === 'media-element-v1')
+            measuredFeedback: this.feedbackEvents.filter((event) => measuredAudio(event.track.features))
                 .length,
             similarity: this.session.similarityDiagnostics(),
             feedback: this.feedbackEvents.length,

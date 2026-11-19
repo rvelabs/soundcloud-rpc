@@ -1,0 +1,4 @@
+{
+    "extends": "../native/tsconfig.json",
+    "include": ["frontend/**/*.ts", "../native/frontend/legacy.d.ts"]
+}

@@ -1,3 +1,4 @@
+import { measuredAudio } from './types';
 import { measuredBpm, tokensOf } from './profile';
 import { effectiveMood, languageEvidence, moodEvidence } from './preferences';
 import type { Context, Controls, Track } from './types';
@@ -28,7 +29,7 @@ export function preferenceEvidence(track: Track, controls: Controls, context: Co
     }
     if (controls.tone !== 'any') {
         const audio =
-            track.features?.source === 'media-element-v1' &&
+            measuredAudio(track.features) &&
             (track.features.sampleSeconds || 0) >= 8 &&
             track.features.bass !== undefined &&
             track.features.brightness !== undefined;

@@ -36,7 +36,7 @@ it('gates audio analysis during adverts without resetting an unchanged measureme
     state.analysisState();
     expect((window as unknown as { __waveMediaEndState: { active: boolean } }).__waveMediaEndState.active).toBe(true);
 });
-it('updates the heard count while playing and applies measured audio to persisted taste feedback', () => {
+it.each(['media-element-v1', 'android-pcm-v1'])('updates heard count and persists measured %s audio', (source) => {
     vi.useFakeTimers();
     vi.setSystemTime(100000);
     vi.stubGlobal('window', new EventTarget());
@@ -85,10 +85,10 @@ it('updates the heard count while playing and applies measured audio to persiste
     }
     expect(recommender.stats().heard).toBe(1);
     expect(stats[stats.length - 1]).toMatchObject({ heard: 1 });
-    for (let second = 1; second <= 30; second++)
+    for (let second = source === 'android-pcm-v1' ? 30 : 1; second <= 30; second++)
         wave.audio({
             path: '/test/tone',
-            source: 'media-element-v1',
+            source,
             sampleSeconds: second,
             energy: 0.2,
             bass: 0.6,
@@ -101,7 +101,7 @@ it('updates the heard count while playing and applies measured audio to persiste
     expect(
         events
             .filter((event) => event.track.id === candidate.url)
-            .every((event) => event.track.features?.source === 'media-element-v1'),
+            .every((event) => event.track.features?.source === source),
     ).toBe(true);
     expect(new SoundCloudRecommender(store, '7', async () => []).stats().heard).toBe(1);
 });

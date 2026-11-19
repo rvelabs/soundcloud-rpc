@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <title>SoundCloud</title>
+        <link rel="stylesheet" href="app.css" />
+        <script src="app.js" defer></script>
+    </head>
+    <body>
+        <main>
+            <h1>SoundCloud</h1>
+            <button id="catalog" type="button">Открыть SoundCloud</button>
+            <section aria-labelledby="playback-heading">
+                <h2 id="playback-heading">Проверка фонового плеера</h2>
+                <p id="status" role="status">Плеер остановлен</p>
+                <button id="start" type="button">Запустить тестовую очередь</button>
+                <div class="controls" aria-label="Управление воспроизведением">
+                    <button data-action="previous" type="button" disabled>Назад</button>
+                    <button data-action="play" type="button" disabled>Играть</button>
+                    <button data-action="pause" type="button" disabled>Пауза</button>
+                    <button data-action="next" type="button" disabled>Дальше</button>
+                    <button data-action="stop" type="button" disabled>Стоп</button>
+                </div>
+            </section>
+        </main>
+    </body>
+</html>

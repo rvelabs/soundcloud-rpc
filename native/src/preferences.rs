@@ -36,6 +36,7 @@ impl Preferences {
         Ok(())
     }
 }
+#[cfg(not(target_os = "android"))]
 #[derive(Serialize, Deserialize)]
 struct Placement {
     width: f64,
@@ -44,6 +45,7 @@ struct Placement {
     y: f64,
     maximized: bool,
 }
+#[cfg(not(target_os = "android"))]
 pub fn remember(window: &tauri::Window, store: &crate::storage::Store) {
     if window.is_minimized().unwrap_or(true) {
         return;
@@ -78,6 +80,7 @@ pub fn remember(window: &tauri::Window, store: &crate::storage::Store) {
         }
     }
 }
+#[cfg(not(target_os = "android"))]
 pub fn restore(window: &tauri::Window, store: &crate::storage::Store) {
     let Ok(value) = serde_json::from_value::<Placement>(store.get("settings-window")) else {
         return;

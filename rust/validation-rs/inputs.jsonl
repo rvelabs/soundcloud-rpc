@@ -1,0 +1,11 @@
+{"fn":"cleanTrackString","args":["  Исполнитель — трек 🎵  ",300]}
+{"fn":"cleanTrackString","args":["A😀B",2]}
+{"fn":"cleanTrackString","args":["\u0000\u007f\u0085Музыка\ufeff",100]}
+{"fn":"cleanTrackUrl","args":["HTTPS://SOUNDCLOUD.COM:443/artist/track"]}
+{"fn":"cleanTrackUrl","args":["https://soundcloud.com/artist/трек?si=abc"]}
+{"fn":"cleanTrackUrl","args":["javascript:alert(1)"]}
+{"fn":"cleanTrackUrl","args":["https://example.com/a/../b?x=1#fragment"]}
+{"fn":"validateTrackInfo","args":[{"title":"Трек 🎵","author":"Исполнитель","url":"https://soundcloud.com/artist/track","artwork":"https://i1.sndcdn.com/a.jpg","elapsed":"1:20","duration":"3:59","isPlaying":true,"isLiked":true}]}
+{"fn":"validateTrackInfo","args":[{"title":null,"author":99,"url":"http://soundcloud.com/artist/track","isPlaying":1}]}
+{"fn":"validateTrackUpdatePayload","args":[{"data":{"title":"Track","url":"https://soundcloud.com/artist/track"},"reason":"seek-change"}]}
+{"fn":"validateTrackUpdatePayload","args":[{"data":{"title":"Track"},"reason":"unexpected"}]}

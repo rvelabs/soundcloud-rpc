@@ -1,3 +1,4 @@
+import { measuredAudio } from './types';
 import type { Context, Controls, Track } from './types';
 import { normalize } from './profile';
 export type Mood = Controls['mood'];
@@ -120,7 +121,7 @@ export function moodEvidence(
             conflict: opposite && !match,
             reason: match
                 ? 'настроение по тегам'
-                : track.features?.source === 'media-element-v1'
+                : measuredAudio(track.features)
                   ? 'громкость аудиосигнала'
                   : undefined,
         };

@@ -1,3 +1,4 @@
+import { measuredAudio } from './recommendation/types';
 import type { DataStore } from '../storage/asyncDataStore';
 import type { SoundFeatures } from './recommendation/types';
 import type { WaveCandidate } from './waveEngine';
@@ -27,7 +28,7 @@ export class AudioAnalysisCache {
                 Number.isFinite(entry.at) &&
                 this.now() >= entry.at &&
                 this.now() - entry.at < lifetime &&
-                entry.features?.source === 'media-element-v1' &&
+                measuredAudio(entry.features) &&
                 Number.isFinite(entry.features.sampleSeconds) &&
                 entry.features.sampleSeconds! >= 30 &&
                 entry.features.sampleSeconds! <= 93 &&

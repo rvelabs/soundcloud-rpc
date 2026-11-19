@@ -1,5 +1,5 @@
 export interface SoundFeatures {
-    source?: 'media-element-v1' | 'metadata' | 'legacy';
+    source?: 'android-pcm-v1' | 'media-element-v1' | 'metadata' | 'legacy';
     sampleSeconds?: number;
     energy?: number;
     bass?: number;
@@ -85,4 +85,8 @@ export interface TrackSample {
     dynamics: number[];
     spectrum?: number[];
     envelope?: Omit<TrackSample, 'envelope' | 'spectrum'>;
+}
+
+export function measuredAudio(features: SoundFeatures | undefined): features is SoundFeatures & { source: 'media-element-v1' | 'android-pcm-v1' } {
+    return features?.source === 'media-element-v1' || features?.source === 'android-pcm-v1';
 }

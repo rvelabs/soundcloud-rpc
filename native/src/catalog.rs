@@ -234,6 +234,44 @@ fn sample_url(value: &str, host_ok: impl FnOnce(&str) -> bool) -> Option<Url> {
 }
 
 impl Catalog {
+    #[cfg(target_os = "android")]
+    pub async fn playback(&self, url: String, owner: Option<u64>) -> Result<Value, String> {
+        let track = self.execute_scoped(Operation::Resolve { url }, false, owner).await?;
+        if track["streamable"] != true || !matches!(track["policy"].as_str(), Some("ALLOW" | "MONETIZE")) {
+            return Err("SoundCloud ограничил воспроизведение этого трека.".into());
+        }
+        let context = self.context.lock().unwrap().clone();
+        let transcodings = track["media"]["transcodings"].as_array()
+            .ok_or("SoundCloud не предоставил аудиопоток.")?;
+        let selected = transcodings.iter().find(|item|
+            item["snipped"] != true && item["format"]["protocol"] == "hls"
+            && item["format"]["mime_type"].as_str().is_some_and(|mime| mime.contains("aac") || mime.contains("mpeg"))
+        ).or_else(|| transcodings.iter().find(|item| item["snipped"] != true && item["format"]["protocol"] == "progressive"))
+            .ok_or("Нет доступного формата аудиопотока.")?;
+        let mut endpoint = sample_url(selected["url"].as_str().unwrap_or(""), |host| host == "api-v2.soundcloud.com")
+            .filter(|url| url.path().starts_with("/media/")).ok_or("Недопустимый адрес аудиопотока.")?;
+        endpoint.query_pairs_mut().append_pair("client_id", &context.client);
+        if let Some(authorization) = track["track_authorization"].as_str() {
+            endpoint.query_pairs_mut().append_pair("track_authorization", authorization);
+        }
+        let mut request = self.client.get(endpoint);
+        if !context.authorization.is_empty() {
+            request = request.header("Authorization", &context.authorization);
+        }
+        let response = request.send().await.map_err(|_| "Не удалось получить аудиопоток.")?;
+        if !response.status().is_success() {
+            return Err(format!("SoundCloud stream HTTP {}", response.status().as_u16()));
+        }
+        let result = crate::http::json(response, 16_000).await?;
+        let uri = sample_url(result["url"].as_str().unwrap_or(""), |host|
+            host.ends_with(".sndcdn.com") || host.ends_with(".media-streaming.soundcloud.cloud")
+        ).ok_or("SoundCloud не подтвердил адрес медиасервера.")?;
+        if self.context.lock().unwrap().revision != context.revision {
+            return Err("Аккаунт SoundCloud изменился.".into());
+        }
+        Ok(json!({"stream":uri.as_str(), "track":track}))
+    }
+
     pub fn new(proxy: Option<&str>) -> Result<Self, String> {
         let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(12))

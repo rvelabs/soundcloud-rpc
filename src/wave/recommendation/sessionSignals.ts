@@ -1,3 +1,4 @@
+import { measuredAudio } from './types';
 import { measuredBpm, normalize, tokensOf } from './profile';
 import type { Feedback, Track } from './types';
 export const artistIdentity = (value: string): string =>
@@ -70,7 +71,7 @@ export function recentPreference(events: Feedback[], now: number): Map<string, n
 }
 export function measuredSoundSimilarity(a: Track, b: Track): number | undefined {
     const valid = (track: Track) =>
-        track.features?.source === 'media-element-v1' &&
+        measuredAudio(track.features) &&
         (track.features.sampleSeconds || 0) >= 30 &&
         ['bass', 'brightness'].every((key) => {
             const value = track.features?.[key as 'bass' | 'brightness'];

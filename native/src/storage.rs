@@ -35,12 +35,14 @@ impl Store {
     }
     pub fn open(directory: &Path) -> Result<Self, String> {
         fs::create_dir_all(directory).map_err(|e| e.to_string())?;
-        use std::os::windows::fs::OpenOptionsExt;
-        let lock = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .share_mode(0)
+        let mut options = fs::OpenOptions::new();
+        options.create(true).truncate(false).write(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(0);
+        }
+        let lock = options
             .open(directory.join("native.lock"))
             .map_err(|_| "This Native profile is already in use or cannot be locked".to_string())?;
         let path = directory.join("native-state.json");
@@ -189,7 +191,11 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .and_then(|_| file.sync_all())
         .map_err(|e| e.to_string())?;
     drop(file);
-    replace(&temporary, path).map_err(|e| e.to_string())
+    #[cfg(windows)]
+    let result = replace(&temporary, path);
+    #[cfg(not(windows))]
+    let result = fs::rename(&temporary, path);
+    result.map_err(|e| e.to_string())
 }
 
 #[cfg(windows)]

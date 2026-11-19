@@ -179,7 +179,7 @@ async function boot() {
         sendAudioFeatures: (value: unknown) => wave.audio(value),
         sendAudioAnalysisStatus: (value: unknown) => wave.audioStatus(value),
     };
-    installAudioFeatureCapture();
+    if (!page.__androidBridgeInstalled) installAudioFeatureCapture();
     await settings.load();
     await settingsChanged();
     page.__waveInitialLanguage = settings.get('language', 'auto');
