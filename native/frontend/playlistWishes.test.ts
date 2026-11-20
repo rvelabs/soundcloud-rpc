@@ -35,6 +35,22 @@ it('does not turn negated genres into positive requests or match words inside ar
     expect(fitsPlaylistWishes(track({ title: 'Bootstrap', tags: ['jungle'] }), noTrap, false)).toBe(true);
     expect(fitsPlaylistWishes(track({ tags: ['trap'] }), noTrap, false)).toBe(false);
 });
+it('recognizes the screenshot wording as instrumental music rather than an excluded word', () => {
+    for (const phrase of [
+        'спокойное, без голоса',
+        'спокойное, без голосов',
+        'спокойнее, без пения',
+        'calmer, without voice',
+        'calm, no singing',
+    ]) {
+        const wishes = parsePlaylistWishes(phrase);
+        expect(wishes).toMatchObject({ mood: 'calm', language: 'instrumental', exclude: [], unrecognized: [] });
+        expect(fitsPlaylistWishes(track({ genre: 'Ambient', tags: ['ambient', 'instrumental'] }), wishes, false)).toBe(
+            true,
+        );
+        expect(fitsPlaylistWishes(track({ language: 'en', tags: ['vocal'] }), wishes, false)).toBe(false);
+    }
+});
 it('supports quoted excluded artists and detects conflicting requests instead of guessing', () => {
     const wishes = parsePlaylistWishes('без «Bad Artist», jungle');
     expect(wishes).toMatchObject({ genre: 'jungle', exclude: ['bad artist'] });

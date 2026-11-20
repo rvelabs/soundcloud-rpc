@@ -88,13 +88,22 @@ const criteriaNames: Record<string, string> = {
     likes: 'предпочитать лайки',
     'only likes': 'только лайки',
 };
+const russianErrors: Record<string, string> = {
+    'SoundCloud did not confirm the selected track':
+        'Не удалось получить данные выбранного трека. Откройте его страницу и повторите подбор.',
+    'SoundCloud account changed': 'Аккаунт SoundCloud изменился. Запустите подбор заново.',
+    'Sign in to SoundCloud first': 'Сначала войдите в SoundCloud.',
+    'Playlist preparation timed out': 'SoundCloud не успел ответить. Повторите подбор.',
+    'SoundCloud did not confirm the new playlist':
+        'SoundCloud не подтвердил создание плейлиста. Проверьте библиотеку перед повторной попыткой.',
+};
 const style = `
 .sc-track-playlist-overlay{position:fixed;inset:0;z-index:2147483001;display:grid;place-items:center;background:#000a;padding:16px;box-sizing:border-box}
 .sc-track-playlist-panel{box-sizing:border-box;width:min(600px,100%);max-height:90dvh;overflow:auto;overflow-wrap:anywhere;padding:22px;border:1px solid #ffffff25;border-radius:14px;background:#1c1c1c;color:#eee;font:14px/1.5 system-ui;box-shadow:0 16px 64px #0008}
 .sc-track-playlist-panel [hidden]{display:none!important}.sc-track-playlist-results span{min-width:0}
 .sc-track-playlist-panel h2{margin:0;font-size:21px}.sc-track-playlist-panel p{margin:8px 0 14px;color:#aaa}.sc-track-playlist-panel label{display:block;margin-top:12px}
 .sc-track-playlist-panel input:not([type=checkbox]),.sc-track-playlist-panel textarea,.sc-track-playlist-panel select{box-sizing:border-box;width:100%;padding:9px 11px;background:#111;border:1px solid #ffffff30;border-radius:7px;color:#eee;font:inherit}
-.sc-track-playlist-panel textarea{min-height:76px;resize:vertical}.sc-track-playlist-row{display:flex;gap:12px}.sc-track-playlist-row>label{flex:1;min-width:0}
+.sc-track-playlist-panel textarea{height:84px;min-height:76px;max-height:160px;resize:vertical}.sc-track-playlist-row{display:flex;gap:12px}.sc-track-playlist-row>label{flex:1;min-width:0}
 .sc-track-playlist-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:18px}.sc-track-playlist-panel button{padding:9px 16px;background:#343434;border:1px solid #ffffff20;border-radius:20px;color:#eee;font:inherit;cursor:pointer}
 .sc-track-playlist-panel button[type=submit]{background:#f50;border-color:#f50;font-weight:600}.sc-track-playlist-panel button:disabled{opacity:.5;cursor:default}
 .sc-track-playlist-criteria{color:#c8c8c8;font-size:12px;margin-top:8px}.sc-track-playlist-results{max-height:32dvh;overflow:auto;overscroll-behavior:contain;margin-top:12px}
@@ -137,6 +146,10 @@ export class TrackPlaylist {
     get label(): string {
         return this.t.menu;
     }
+    private errorText(error: unknown): string {
+        const message = error instanceof Error ? error.message : String(error);
+        return this.russian() ? russianErrors[message] || message : message;
+    }
     private styles() {
         playlistStyles ??= new CSSStyleSheet();
         if (!playlistStyles.cssRules.length) playlistStyles.replaceSync(style);
@@ -166,7 +179,7 @@ export class TrackPlaylist {
                 button.disabled = true;
                 void keep()
                     .then(() => this.show(this.t.kept))
-                    .catch((error) => this.show(String(error)));
+                    .catch((error) => this.show(this.errorText(error)));
             };
             node.append(button);
         }
@@ -397,8 +410,7 @@ export class TrackPlaylist {
                         if (!value.tracks.length) selection = undefined;
                     })
                     .catch((error) => {
-                        if (!finished && !signal.aborted)
-                            status.textContent = error instanceof Error ? error.message : String(error);
+                        if (!finished && !signal.aborted) status.textContent = this.errorText(error);
                     })
                     .finally(() => {
                         pending = undefined;
@@ -455,7 +467,7 @@ export class TrackPlaylist {
             })().catch((error) => {
                 saving = false;
                 if (finished) return;
-                status.textContent = error instanceof Error ? error.message : String(error);
+                status.textContent = this.errorText(error);
                 submit.disabled = cancel.disabled = false;
                 wishes.disabled = count.disabled = expiry.disabled = title.disabled = false;
             });

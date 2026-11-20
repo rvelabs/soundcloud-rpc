@@ -65,6 +65,22 @@ it('prepares a private-playlist preview without writing preferences, changing qu
             .every((call) => (call as any)[2] === true && (call as any)[3] === 42),
     ).toBe(true);
 });
+it('uses restricted seed metadata as a reference while keeping unavailable result tracks out', async () => {
+    for (const restriction of [
+        { policy: 'BLOCK', streamable: false },
+        { policy: 'SNIP' },
+        { media: { transcodings: [{ format: { protocol: 'encrypted_hls' } }] } },
+    ]) {
+        const { dependencies, request } = setup({ related: [raw(2), raw(3, { policy: 'BLOCK' })] });
+        const base = request.getMockImplementation()!;
+        request.mockImplementation(async (operation, fields) =>
+            operation === 'resolve' ? { ...seed, ...restriction } : base(operation, fields),
+        );
+        const result = await selectTrackPlaylist(seed.permalink_url, '', 10, undefined, dependencies);
+        expect(result.tracks.map((track) => track.apiId)).toEqual([2]);
+        expect(request.mock.calls.some(([operation]) => operation === 'related')).toBe(true);
+    }
+});
 it('keeps the seed fixed, refuses other styles, and applies exclusions and explicit dislikes', async () => {
     const related = [raw(2), raw(3), raw(4), raw(5, { genre: 'Ambient', tag_list: 'drone ambient' }), raw(6)];
     const feedback = [{ at: Date.now(), kind: 'dislike', track: toTrack(candidate(raw(3))!) }];

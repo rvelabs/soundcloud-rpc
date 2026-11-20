@@ -38,7 +38,7 @@ export async function checkTrackPlaylist(): Promise<string[]> {
         if (operation !== 'me')
             assert(background && expectedOwner === 42, 'playlist reads and writes retain account scope');
         if (request.operation === 'me') return { id: 42 };
-        if (request.operation === 'resolve') return raw(1);
+        if (request.operation === 'resolve') return { ...raw(1), policy: 'BLOCK', streamable: false };
         if (request.operation === 'related') return { collection: [raw(2), raw(3)] };
         if (request.operation === 'radio' || request.operation === 'search' || request.operation === 'likes')
             return { collection: [], next_href: null };
@@ -75,7 +75,7 @@ export async function checkTrackPlaylist(): Promise<string[]> {
             assert(panel && panel.getAttribute('aria-modal') === 'true', 'track playlist accessible dialog');
             assert(!/claude|sonnet|haiku|opus|tokens/i.test(panel.textContent || ''), 'no paid model controls');
             const text = panel.querySelector('textarea')!;
-            text.value = russian ? 'без вокала, марсианский закат' : 'no vocals, martian sunset';
+            text.value = russian ? 'спокойное, без голоса, марсианский закат' : 'calm, no voice, martian sunset';
             text.dispatchEvent(new Event('input'));
             assert(
                 panel
@@ -83,6 +83,11 @@ export async function checkTrackPlaylist(): Promise<string[]> {
                     .textContent!.includes(russian ? 'марсианский' : 'martian'),
                 'unknown wishes visible',
             );
+            assert(
+                !panel.querySelector('.sc-track-playlist-criteria')!.textContent!.includes('−голоса'),
+                'voice wish is not an exclusion',
+            );
+            assert(text.getBoundingClientRect().height <= 160, 'wishes input starts compact');
             const selectors = panel.querySelectorAll('select');
             selectors[1].value = '12';
             for (const width of [320, 390, 600, 960]) {
@@ -130,6 +135,8 @@ export async function checkTrackPlaylist(): Promise<string[]> {
             'free-playlist-private-account-scoped-save',
             'free-playlist-opt-in-expiry-and-keep',
             'free-playlist-unknown-wishes-visible',
+            'free-playlist-restricted-seed-reference',
+            'free-playlist-voice-wish-and-compact-input',
         ];
     } finally {
         dispose?.();

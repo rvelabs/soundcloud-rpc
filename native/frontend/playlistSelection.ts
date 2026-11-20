@@ -113,8 +113,9 @@ export async function selectTrackPlaylist(
     const resolved = candidate(rawSeed);
     if (!resolved || resolved.url !== url.replace(/\/$/, ''))
         throw Error('SoundCloud did not confirm the selected track');
-    if (['blocked', 'preview', 'protected'].includes(resolved.playability || ''))
-        throw Error('The selected track is unavailable');
+    // The seed supplies a musical reference; it is neither played nor added to the playlist.
+    // Regional/preview/DRM playback flags must not prevent finding available alternatives.
+    // Actual result tracks still pass the engine's availability filters and final metadata check.
     const seed = enrich(resolved);
     const engine = new SoundCloudRecommender(store, String(owner), async () => [], now);
     engine.clearCandidates();

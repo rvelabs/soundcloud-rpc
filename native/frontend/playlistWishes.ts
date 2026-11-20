@@ -16,6 +16,7 @@ export interface PlaylistWishes {
     conflicts: string[];
 }
 
+const instrumentalWish = 'без (?:слов|вокала|голоса|голосов|пения)|(?:no|without) (?:vocals?|voices?|singing)';
 // A bounded vocabulary, not an LLM: unknown words are shown to the user, never sent to an AI service.
 const rules: Array<[keyof Pick<PlaylistWishes, 'mood' | 'tempo' | 'tone' | 'language' | 'genre'>, string, string]> = [
     ['mood', 'calm', 'спокойн[а-я]*|поспокойнее|расслаб[а-я]*|calm|calmer|relaxing|chill'],
@@ -28,7 +29,7 @@ const rules: Array<[keyof Pick<PlaylistWishes, 'mood' | 'tempo' | 'tone' | 'lang
     ['tone', 'bass', 'бас[а-я]*|bass|bassy'],
     ['tone', 'bright', 'ярк[а-я]*|поярче|bright|brighter'],
     ['tone', 'balanced', 'сбалансирован[а-я]*|balanced'],
-    ['language', 'instrumental', 'без (?:слов|вокала)|(?:no|without) vocals?|instrumental|инструментал[а-я]*'],
+    ['language', 'instrumental', instrumentalWish + '|instrumental|инструментал[а-я]*'],
     ['language', 'ru', 'на русском|русск[а-я]*|russian'],
     ['language', 'foreign', 'иностранн[а-я]*|зарубежн[а-я]*|foreign'],
     ['genre', 'drum and bass', 'drum ?(?:and|&|n) ?bass|dnb|драм(?: ?энд)? ?бейс'],
@@ -55,7 +56,7 @@ export function parsePlaylistWishes(input: string): PlaylistWishes {
     const result: PlaylistWishes = { likes: 'any', exclude: [], recognized: [], unrecognized: [], conflicts: [] };
     let rest = normalize(input.slice(0, 500));
     // Negations are removed before positive matching, so "без рэпа" never becomes "rap".
-    rest = rest.replace(boundary('без (?:слов|вокала)|(?:no|without) vocals?'), () => {
+    rest = rest.replace(boundary(instrumentalWish), () => {
         result.language = 'instrumental';
         result.recognized.push('instrumental');
         return ' ';
