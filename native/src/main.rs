@@ -991,7 +991,7 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().collect();
+    let args = together::launch_args(std::env::args().collect());
     if args.iter().any(|arg| arg == "--prepare-electron-migration") {
         let profile = args
             .windows(2)
@@ -1055,7 +1055,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if profile_override.is_none() && !smoke && !probe && !account_check {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(state) = app.try_state::<Arc<State>>() {
-                for arg in args.iter().filter(|value| value.starts_with("scwave:")) {
+                for arg in args.iter().filter(|value| together::is_deep_link(value)) {
                     let _ = state.together.open(arg);
                 }
             }

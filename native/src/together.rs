@@ -15,6 +15,19 @@ use url::Url;
 
 const PAGE: &str = "https://rvelabs.github.io/soundcloud-rpc/join/";
 const CONFIG: &str = "https://rvelabs.github.io/soundcloud-rpc/listen-together.json";
+pub fn is_deep_link(value: &str) -> bool {
+    value
+        .get(..7)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("scwave:"))
+}
+/// An external protocol launch is an invitation, never a maintenance command.
+pub fn launch_args(args: Vec<String>) -> Vec<String> {
+    if let Some(invite) = args.iter().skip(1).find(|arg| is_deep_link(arg)) {
+        vec![args.first().cloned().unwrap_or_default(), invite.clone()]
+    } else {
+        args
+    }
+}
 fn part(value: &str, length: usize) -> bool {
     value.len() == length
         && value
@@ -540,6 +553,19 @@ mod tests {
     use super::*;
     #[test]
     fn invitation_is_data_and_never_an_arbitrary_endpoint_or_launch_command() {
+        let launch = vec![
+            "SoundCloud.exe".into(),
+            "SCWAVE://join?room=x&invite=y".into(),
+            "--profile".into(),
+            "other-profile".into(),
+        ];
+        assert_eq!(launch_args(launch.clone()), launch[..2]);
+        let maintenance = vec![
+            "SoundCloud.exe".into(),
+            "--profile".into(),
+            "isolated-test".into(),
+        ];
+        assert_eq!(launch_args(maintenance.clone()), maintenance);
         let invite = Invite {
             room: "a".repeat(24),
             invite: "b".repeat(43),
