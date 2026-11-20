@@ -15,6 +15,7 @@ import { ListeningBridge } from './listening';
 import { TaskbarBridge } from './taskbar';
 import type { UpdateState } from './updateSettings';
 import { installTrackWaveMenu } from './trackWaveMenu';
+import { TrackPlaylist } from './trackPlaylist';
 
 async function boot() {
     if (window !== window.top || location.origin !== 'https://soundcloud.com') return;
@@ -221,15 +222,24 @@ async function boot() {
     const mount = async () => {
         installNativeStyles();
         installWaveUI();
+        const russian = () => {
+            const language = settings.get('language', 'auto');
+            return language === 'ru' || (language === 'auto' && /^ru\b/i.test(navigator.language));
+        };
+        const trackPlaylist = new TrackPlaylist(russian);
         const removeTrackWaveMenu = installTrackWaveMenu(
             (url) => wave.start(url),
-            (text) => {
-                const language = settings.get('language', 'auto');
-                const russian = language === 'ru' || (language === 'auto' && /^ru\b/i.test(navigator.language));
-                return translateWaveText(text, russian ? 'ru' : 'en', waveEnglish);
-            },
+            (text) => translateWaveText(text, russian() ? 'ru' : 'en', waveEnglish),
+            [
+                {
+                    label: trackPlaylist.label,
+                    className: 'sc-track-playlist-action',
+                    run: (url) => trackPlaylist.open(url),
+                },
+            ],
         );
         window.addEventListener('pagehide', removeTrackWaveMenu, { once: true });
+        window.addEventListener('pagehide', trackPlaylist.startSweeping(), { once: true });
         installEqualizerPanel({
             settings: eq,
             presets: equalizerPresets,

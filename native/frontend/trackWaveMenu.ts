@@ -32,11 +32,20 @@ function trackFromTrigger(trigger: HTMLElement): string | undefined {
     return undefined;
 }
 
+/** Extra entries shown under "Wave from track" in a track's "More" menu. */
+export interface TrackMenuAction {
+    label: string;
+    className?: string;
+    run: (url: string) => Promise<void>;
+}
+
 export function installTrackWaveMenu(
     start: (url: string) => Promise<void>,
     translate: (text: string) => string,
+    extras: TrackMenuAction[] = [],
 ): () => void {
     let item: HTMLElement | undefined;
+    let extraItems: HTMLElement[] = [];
     let observe: MutationObserver | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let notice: HTMLElement | undefined;
@@ -46,6 +55,8 @@ export function installTrackWaveMenu(
         clearTimeout(timeout);
         item?.remove();
         item = undefined;
+        extraItems.forEach((entry) => entry.remove());
+        extraItems = [];
     };
     const report = (message: string) => {
         notice?.remove();
@@ -115,6 +126,31 @@ export function installTrackWaveMenu(
                     report(error instanceof Error ? error.message : 'Не удалось запустить волну'),
                 );
             });
+            let anchor: HTMLElement = item!;
+            for (const extra of extras) {
+                const extraButton = document.createElement('button');
+                extraButton.type = 'button';
+                extraButton.className = `sc-button sc-track-wave-action ${extra.className || ''}`.trim();
+                extraButton.textContent = extra.label;
+                if (button.hasAttribute('role')) extraButton.setAttribute('role', 'menuitem');
+                let entry: HTMLElement = extraButton;
+                if (anchor.tagName === 'LI') {
+                    entry = document.createElement('li');
+                    entry.append(extraButton);
+                }
+                anchor.after(entry);
+                anchor = entry;
+                extraItems.push(entry);
+                extraButton.addEventListener('click', (action) => {
+                    action.preventDefault();
+                    action.stopPropagation();
+                    trigger.click();
+                    close();
+                    void extra
+                        .run(url)
+                        .catch((error) => report(error instanceof Error ? error.message : String(error)));
+                });
+            }
         };
         observe = new MutationObserver(insert);
         observe.observe(document.body, {

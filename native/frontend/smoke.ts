@@ -16,6 +16,7 @@ import { PlaylistRequestError } from './playlistErrors';
 import { checkAdblock } from './adblockCheck';
 import { SoundCloudRecommender } from '../../src/wave/recommendation/soundcloudAdapter';
 import { installTrackWaveMenu } from './trackWaveMenu';
+import { checkTrackPlaylist } from './playlistCheck';
 
 const assert = (value: unknown, message: string) => {
     if (!value) throw new Error(message);
@@ -58,6 +59,7 @@ async function test() {
     assert(saved.get('test') === 'persisted', 'native IPC persistence');
     checks.push('native-profile-ipc');
     checks.push('durable-profile-barrier');
+    checks.push(...(await checkTrackPlaylist()));
     checks.push(...(await checkAdblock()));
     const media = document.createElement('audio');
     media.muted = true;
@@ -383,10 +385,33 @@ async function test() {
     card.append(title, more);
     document.body.append(card);
     let trackWaveStart: Promise<void> | undefined;
+    let playlistSeed = '';
     const removeMenu = installTrackWaveMenu(
         (url) => (trackWaveStart = wave.start(url)),
         (value) => value,
+        [
+            {
+                label: 'Плейлист по треку',
+                className: 'sc-track-playlist-action',
+                run: async (url) => {
+                    playlistSeed = url;
+                },
+            },
+        ],
     );
+    more.click();
+    await wait(0);
+    const playlistButton = menu.querySelector<HTMLButtonElement>('.sc-track-playlist-action');
+    assert(
+        playlistButton?.textContent === 'Плейлист по треку',
+        'free playlist action appears in the clicked track menu',
+    );
+    playlistButton!.click();
+    assert(
+        playlistSeed === selected.url && !menu.isConnected,
+        'free playlist action receives the selected seed and closes the menu',
+    );
+    checks.push('free-playlist-menu-selected-track');
     more.click();
     await wait(0);
     const trackWaveButton = station.nextElementSibling as HTMLButtonElement | null;

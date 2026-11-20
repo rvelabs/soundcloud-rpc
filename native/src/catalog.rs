@@ -425,7 +425,8 @@ impl Catalog {
         let context = self.context.lock().unwrap();
         context.owner > 0
             && (key == format!("wave-{}", context.owner)
-                || key == format!("import-{}", context.owner))
+                || key == format!("import-{}", context.owner)
+                || key == format!("playlists-{}", context.owner))
     }
 
     pub async fn validate_profile(&self, key: &str) -> Result<(), String> {
@@ -757,9 +758,12 @@ mod tests {
         catalog.context.lock().unwrap().owner = 42;
         assert!(catalog.permits_profile("wave-42"));
         assert!(catalog.permits_profile("import-42"));
+        assert!(catalog.permits_profile("playlists-42"));
+        assert!(!catalog.permits_profile("playlists-43"));
         assert!(!catalog.permits_profile("wave-43"));
         catalog.reset();
         assert!(!catalog.permits_profile("import-42"));
+        assert!(!catalog.permits_profile("playlists-42"));
     }
 
     #[test]

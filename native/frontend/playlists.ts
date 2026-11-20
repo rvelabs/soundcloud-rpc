@@ -87,6 +87,58 @@ export async function updatePlaylist(id: number, title: string, tracks: number[]
     }
 }
 
+/**
+ * Deletes one of the user's playlists through SoundCloud's own page model (direct API writes can be
+ * bot-blocked). Refuses unless the signed-in account owns it. Returns false if it no longer exists.
+ */
+export async function deletePlaylist(
+    id: number,
+    expectedOwner: number,
+    request = api,
+    exports = nativeRuntimeExports,
+    expected?: { title: string; tracks: number[] },
+    canDelete = () => true,
+): Promise<boolean> {
+    if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(expectedOwner) || expectedOwner <= 0)
+        throw Error('Invalid playlist or account ID');
+    if ((await request('me')).id !== expectedOwner) throw Error('SoundCloud account changed');
+    let current: any;
+    try {
+        current = await request('playlist', { id });
+    } catch (error) {
+        if (/HTTP 404/.test(String(error))) return false;
+        throw error;
+    }
+    if ((current.playlist || current).user?.id !== expectedOwner)
+        throw Error('Playlist belongs to another SoundCloud account');
+    const playlist = current.playlist || current;
+    if (
+        expected &&
+        (playlist.id !== id ||
+            playlist.title !== expected.title ||
+            playlist.sharing !== 'private' ||
+            playlist.track_count !== expected.tracks.length ||
+            !Array.isArray(playlist.tracks) ||
+            playlist.tracks.length !== expected.tracks.length ||
+            playlist.tracks.some((track: any, index: number) => track?.id !== expected.tracks[index]))
+    )
+        return false;
+    const Model = exports().find(
+        (value: any) => value?.prototype?.resource_type === 'playlist' && typeof value.prototype.destroy === 'function',
+    ) as any;
+    if (!Model) throw Error('SoundCloud playlist model is unavailable; open Library and retry');
+    const model = new Model({ id });
+    model.hold?.();
+    try {
+        if ((await request('me')).id !== expectedOwner) throw Error('SoundCloud account changed');
+        if (!canDelete()) return false;
+        await Promise.resolve(model.destroy());
+        return true;
+    } finally {
+        model.release?.();
+    }
+}
+
 export async function cleanupCreatedPlaylist(id: number): Promise<void> {
     const cleanup = browserCreated.get(id);
     if (cleanup) {

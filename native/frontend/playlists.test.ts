@@ -1,5 +1,5 @@
 import { it, expect, vi } from 'vitest';
-import { createPlaylist, cleanupCreatedPlaylist } from './playlists';
+import { createPlaylist, cleanupCreatedPlaylist, deletePlaylist } from './playlists';
 import { PlaylistRequestError, playlistRequestError } from './playlistErrors';
 
 it('uses the native SoundCloud model only after a definite native HTTP 403, and cleans its own creation', async () => {
@@ -81,4 +81,91 @@ it('keeps missing responses and timeouts uncertain, and never confuses HTTP 4030
     );
     expect(error.detail).not.toContain('private');
     expect(error.detail).not.toContain('secret');
+});
+
+it('deletes an owned playlist through the page model and refuses foreign or missing ones', async () => {
+    const destroyed = vi.fn();
+    class Model {
+        constructor(private value: any) {}
+        async destroy() {
+            destroyed(this.value.id);
+        }
+    }
+    Object.assign(Model.prototype, { resource_type: 'playlist' });
+    const request: any = vi.fn(async (operation: string, fields: any) => {
+        if (operation === 'me') return { id: 42 };
+        if (fields?.id === 1) return { id: 1, user: { id: 42 } };
+        if (fields?.id === 2) return { playlist: { id: 2, user: { id: 7 } } };
+        throw Error('SoundCloud HTTP 404 (GET /playlists/3)');
+    });
+    expect(await deletePlaylist(1, 42, request, () => [Model])).toBe(true);
+    expect(destroyed).toHaveBeenCalledWith(1);
+    await expect(deletePlaylist(2, 42, request, () => [Model])).rejects.toThrow('another SoundCloud account');
+    expect(await deletePlaylist(3, 42, request, () => [Model])).toBe(false);
+    await expect(deletePlaylist(1, 99, request, () => [Model])).rejects.toThrow('account changed');
+    expect(destroyed).toHaveBeenCalledTimes(1);
+});
+
+it('keeps expired playlists that were renamed, edited, made public, or kept during verification', async () => {
+    const destroy = vi.fn(),
+        release = vi.fn();
+    class Model {
+        destroy = destroy;
+        release = release;
+    }
+    Object.assign(Model.prototype, { resource_type: 'playlist', destroy });
+    const original = {
+        id: 7,
+        title: 'Mix',
+        user: { id: 42 },
+        sharing: 'private',
+        track_count: 2,
+        tracks: [{ id: 1 }, { id: 2 }],
+    };
+    const expected = { title: 'Mix', tracks: [1, 2] };
+    for (const change of [
+        { title: 'Kept' },
+        { tracks: [{ id: 2 }, { id: 1 }] },
+        { sharing: 'public' },
+        { track_count: 3 },
+    ]) {
+        const request: any = async (operation: string) =>
+            operation === 'me' ? { id: 42 } : { ...original, ...change };
+        expect(await deletePlaylist(7, 42, request, () => [Model], expected)).toBe(false);
+    }
+    const request: any = async (operation: string) => (operation === 'me' ? { id: 42 } : original);
+    expect(
+        await deletePlaylist(
+            7,
+            42,
+            request,
+            () => [Model],
+            expected,
+            () => false,
+        ),
+    ).toBe(false);
+    expect(destroy).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(await deletePlaylist(7, 42, request, () => [Model], expected)).toBe(true);
+    expect(destroy).toHaveBeenCalledTimes(1);
+});
+
+it('rechecks the account immediately before deleting and rejects invalid ids without network calls', async () => {
+    const destroy = vi.fn(),
+        release = vi.fn();
+    class Model {
+        destroy = destroy;
+        release = release;
+    }
+    Object.assign(Model.prototype, { resource_type: 'playlist', destroy });
+    let count = 0;
+    const request: any = vi.fn(async (operation: string) =>
+        operation === 'me' ? { id: ++count === 1 ? 42 : 99 } : { user: { id: 42 } },
+    );
+    await expect(deletePlaylist(7, 42, request, () => [Model])).rejects.toThrow('account changed');
+    expect(destroy).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+    request.mockClear();
+    await expect(deletePlaylist(-1, 42, request, () => [Model])).rejects.toThrow('Invalid');
+    expect(request).not.toHaveBeenCalled();
 });
