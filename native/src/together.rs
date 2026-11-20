@@ -450,6 +450,7 @@ impl Together {
         let mut terminal = None;
         let mut playback = self.playback.subscribe();
         while self.epoch.load(Ordering::Acquire) == generation && Instant::now() < deadline {
+            let mut welcomed = false;
             let connected: Result<(), &'static str> = async {
                 let mut url=Url::parse(&format!("{}/v1/rooms/{}/socket",ticket.endpoint,ticket.invite.room)).map_err(|_|"connection")?;
                 let _=url.set_scheme(if url.scheme()=="http"{"ws"}else{"wss"});
@@ -487,7 +488,7 @@ impl Together {
                                 if kind=="ended" { return Err("ended"); }
                                 let mut state=self.state.lock().unwrap();
                                 if self.epoch.load(Ordering::Acquire)!=generation {return Err("ended");}
-                                if kind=="welcome" { state.phase=if value["active"]==true || ticket.hosting{"connected"}else{"waiting"}; state.participants=value["participants"].as_u64().unwrap_or(1);state.expires=value["expiresAt"].as_u64().unwrap_or(0);disconnected=Instant::now(); }
+                                if kind=="welcome" { welcomed=true; state.phase=if value["active"]==true || ticket.hosting{"connected"}else{"waiting"}; state.participants=value["participants"].as_u64().unwrap_or(1);state.expires=value["expiresAt"].as_u64().unwrap_or(0); }
                                 if kind=="participants" {state.participants=value["count"].as_u64().unwrap_or(1);}
                                 if kind=="host-away" { state.phase="waiting";if let Some(remote)=state.remote.as_mut(){remote.playback=remote.playback.advanced(remote.at.elapsed());remote.playback.playing=false;remote.at=Instant::now();} }
                                 if !ticket.hosting && (kind=="state" || kind=="welcome") && value["active"]==true && !value["state"].is_null() {
@@ -508,6 +509,10 @@ impl Together {
                     if self.epoch.load(Ordering::Acquire)!=generation { return Err("ended"); }
                 }
             }.await;
+            // Count the reconnect budget from a loss, not from the start of a long healthy session.
+            if welcomed {
+                disconnected = Instant::now();
+            }
             if self.epoch.load(Ordering::Acquire) != generation {
                 return;
             }

@@ -230,7 +230,7 @@ export function installTogetherSettings(ru: boolean): void {
     const section = document.createElement('section');
     section.dataset.pane = 'client';
     section.hidden = true;
-    section.className = 'preferences';
+    section.className = 'settings-section';
     const text = (russian: string, english: string) => (ru ? russian : english);
     section.innerHTML = `<h2>${text('Слушать вместе', 'Listen together')}</h2><p class="muted">${text('Пригласите друзей через Discord или ссылку. Музыкой управляет ведущий. Ручное переключение у слушателя завершает подключение.', 'Invite friends through Discord or a link. The host controls playback. Manual playback controls leave the session.')}</p><div class="buttons"><button type="button" id="together-host">${text('Разрешить слушать со мной', 'Let others listen with me')}</button><button type="button" id="together-copy" class="secondary" hidden>${text('Копировать приглашение', 'Copy invitation')}</button><button type="button" id="together-leave" class="secondary" hidden>${text('Завершить', 'Leave')}</button></div><label>${text('Ссылка-приглашение', 'Invitation link')}<input id="together-invite" type="text" maxlength="512" placeholder="https://rvelabs.github.io/soundcloud-rpc/join/#…"></label><button type="button" id="together-join" class="secondary">${text('Присоединиться', 'Join')}</button><p id="together-status" class="muted" role="status"></p>`;
     document.getElementById('discord-settings')!.after(section);
