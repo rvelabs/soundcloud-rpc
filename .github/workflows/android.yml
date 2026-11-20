@@ -4,7 +4,7 @@ on:
     workflow_dispatch:
     push:
         branches: [android-0.2.15]
-        paths: ['mobile/**', 'native/**', 'src/**', 'rust/**', 'scripts/build-mobile.cjs', '.github/workflows/android.yml']
+        paths: ['mobile/**', 'native/**', 'src/**', 'rust/**', 'scripts/build-mobile.cjs', 'scripts/build-android.cjs', 'package.json', 'package-lock.json', '.github/workflows/android.yml']
 
 permissions:
     contents: read

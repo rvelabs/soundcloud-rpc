@@ -1,5 +1,7 @@
 # SoundCloud for Android
 
+Verified build and test scope: [VALIDATION.md](VALIDATION.md).
+
 Android port based on Windows 0.2.15. Android 8.0+ (API 26), ARM64 phones. This branch is separate from the published
 Windows client.
 
