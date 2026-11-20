@@ -2,7 +2,7 @@
 
 **Your SoundCloud library, a personal radio, and playlists from other services — in one Windows app.**
 
-The current Windows release is **0.2.15**, built with **Rust + WebView2**. It keeps the SoundCloud player and adds
+The current Windows release is **0.2.16**, built with **Rust + WebView2**. It keeps the SoundCloud player and adds
 personal radio, playlist import, an equalizer and desktop integrations. The previous Electron build remains available in
 [release 0.32.2](https://github.com/rvelabs/soundcloud-rpc/releases/tag/v0.32.2).
 
@@ -24,6 +24,9 @@ personal radio, playlist import, an equalizer and desktop integrations. The prev
   streams may not support processing.
 - **Familiar SoundCloud controls**, plus Discord Rich Presence, Last.fm, themes and plugins. My Wave and playlist import
   and client settings support **English and Russian**, with an automatic language option.
+- **Listen together** syncs playback with friends. Start a session in **F1 → General → Listen together** and share the
+  invitation link, or let others join from your Discord activity.
+- **Playlist from Track** builds a playlist from a seed track and listening preferences without an AI subscription.
 
 ## Get started
 
