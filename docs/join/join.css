@@ -1,0 +1,118 @@
+:root {
+    color-scheme: dark;
+    font-family: Inter, system-ui, sans-serif;
+    background: #151515;
+    color: #eee8df;
+}
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
+    padding: 32px 20px;
+}
+main {
+    width: min(100%, 560px);
+}
+a {
+    color: inherit;
+    text-underline-offset: 4px;
+}
+.brand {
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    text-decoration: none;
+    font-weight: 750;
+}
+.brand span {
+    color: #918a81;
+}
+.symbol {
+    display: grid;
+    place-items: center;
+    width: 88px;
+    height: 88px;
+    margin: 56px 0 32px;
+    border-radius: 24px;
+    background: #ff5b101a;
+    color: #ff6d28;
+    font-size: 50px;
+    border: 1px solid #ff5b1033;
+}
+.eyebrow {
+    color: #ff8244;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 11px;
+}
+h1 {
+    font-size: clamp(32px, 7vw, 50px);
+    line-height: 1.08;
+    letter-spacing: -0.045em;
+    max-width: 520px;
+    margin: 16px 0 22px;
+}
+p {
+    line-height: 1.65;
+    color: #b3ada4;
+}
+h2 {
+    font-size: 17px;
+    letter-spacing: -0.02em;
+}
+section {
+    border-top: 1px solid #ffffff15;
+    padding-top: 20px;
+    margin-top: 32px;
+}
+section p {
+    font-size: 14px;
+}
+.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 12px 24px;
+    border-radius: 10px;
+    background: #ff641c;
+    color: #17100c;
+    font-weight: 750;
+    text-decoration: none;
+    margin-top: 16px;
+}
+.button:hover {
+    background: #ff854f;
+}
+.button:focus-visible,
+a:focus-visible {
+    outline: 2px solid #ffc5a1;
+    outline-offset: 5px;
+}
+.note,
+#status {
+    font-size: 12px;
+}
+#status:empty {
+    display: none;
+}
+#status {
+    color: #ffb591;
+}
+[hidden] {
+    display: none !important;
+}
+@media (max-width: 380px) {
+    body {
+        padding: 24px 18px;
+    }
+    .symbol {
+        margin-top: 32px;
+    }
+    .button {
+        width: 100%;
+    }
+}

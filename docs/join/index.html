@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <meta name="referrer" content="no-referrer" />
+        <meta name="robots" content="noindex,nofollow" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+        />
+        <title>Listen together · SoundCloud Desktop</title>
+        <link rel="stylesheet" href="join.css" />
+        <script type="module" src="join.js"></script>
+    </head>
+    <body>
+        <main>
+            <a class="brand" href="../">SOUNDCLOUD <span>DESKTOP</span></a>
+            <div class="symbol" aria-hidden="true">♫</div>
+            <p class="eyebrow" id="eyebrow">A shared listening session</p>
+            <h1 id="heading">Music sounds better together.</h1>
+            <p id="description">Open SoundCloud Desktop to follow your friend's music, pauses and track changes.</p>
+            <a id="open" class="button" href="#">Open SoundCloud</a>
+            <p id="status" role="status" aria-live="polite"></p>
+            <section>
+                <h2 id="install-heading">Don't have the app yet?</h2>
+                <p id="install-description">
+                    Install the free Windows app, sign in to SoundCloud, then return to this invitation.
+                </p>
+                <a id="download" href="https://github.com/rvelabs/soundcloud-rpc/releases/latest"
+                    >Download for Windows ↗</a
+                >
+            </section>
+            <p class="note" id="note">
+                Your browser may ask permission to open the app. Only playback state is shared; music plays through each
+                listener's own SoundCloud account.
+            </p>
+        </main>
+    </body>
+</html>
