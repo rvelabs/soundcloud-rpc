@@ -5,6 +5,9 @@ package io.rvelabs.soundcloud.android
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.audio.AudioProcessor.AudioFormat
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.AudioProcessingPipeline
+import com.google.common.collect.ImmutableList
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -21,6 +24,33 @@ import kotlin.math.sin
 
 @RunWith(AndroidJUnit4::class)
 class AndroidCoreTest {
+    @Test fun pcmPipelineHandlesEmptyInputAndDrainsWithoutChangingAudio() {
+        val analysis = AudioAnalysis()
+        val pipeline = AudioProcessingPipeline(ImmutableList.of<AudioProcessor>(analysis))
+        pipeline.configure(AudioFormat(8000, 1, C.ENCODING_PCM_16BIT))
+        pipeline.flush()
+        try {
+            assertTrue(pipeline.isOperational)
+            repeat(3) {
+                pipeline.queueInput(AudioProcessor.EMPTY_BUFFER)
+                assertFalse(pipeline.output.hasRemaining())
+            }
+            val bytes = byteArrayOf(1, 0, 2, 0, 3, 0, 4, 0)
+            val input = ByteBuffer.allocateDirect(bytes.size).put(bytes)
+            input.flip()
+            pipeline.queueInput(input)
+            val output = pipeline.output
+            val actual = ByteArray(output.remaining())
+            output.get(actual)
+            assertArrayEquals(bytes, actual)
+            assertFalse(pipeline.output.hasRemaining())
+            pipeline.queueEndOfStream()
+            assertFalse(pipeline.output.hasRemaining())
+            assertTrue(pipeline.isEnded)
+            assertNull(analysis.take())
+        } finally { pipeline.reset() }
+    }
+
     @Test fun cancelledAndStaleQueueRequestsDoNotChangePlayback() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {

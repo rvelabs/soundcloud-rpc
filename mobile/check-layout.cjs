@@ -58,6 +58,8 @@ fs.mkdirSync(output, { recursive: true });
         await page.addScriptTag({ path: path.join(assets, 'android-inject.js') });
         await page.waitForSelector('#android-open-settings');
         await page.waitForFunction(() => !!window.waveInline);
+        // The fixed playback harness is not part of the product's layout or dialogs.
+        await page.locator('#fixture-play').evaluate((button) => button.remove());
         for (const [width, height] of [
             [320, 568],
             [360, 640],

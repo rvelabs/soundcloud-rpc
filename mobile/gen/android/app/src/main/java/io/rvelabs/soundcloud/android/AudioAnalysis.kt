@@ -30,6 +30,9 @@ class AudioAnalysis : BaseAudioProcessor() {
     }
 
     override fun queueInput(input: ByteBuffer) {
+        // Media3 drains processors with EMPTY_BUFFER, also before the first PCM frame.
+        // Allocating a zero-sized output would reuse that singleton as both source and target.
+        if (!input.hasRemaining()) return
         val output = replaceOutputBuffer(input.remaining())
         if (resetRequested) {
             samples = 0; total = 0.0; bass = 0.0; treble = 0.0; low = 0.0
