@@ -428,6 +428,11 @@ export class Wave {
         this.queued.clear();
     }
 
+    async suspendForTogether(): Promise<void> {
+        this.stop();
+        await this.queueTail;
+    }
+
     private queue(
         operation: QueueRequest['operation'],
         urls: string[],

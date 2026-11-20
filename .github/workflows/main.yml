@@ -28,6 +28,7 @@ jobs:
             - run: npm run lint
             - run: npm test
             - run: npm run test:worker
+            - run: npm run test:together
             - run: npm run test:import
             - if: inputs.runtime_scope != 'recommendations'
               run: npm run test:runtime

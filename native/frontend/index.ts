@@ -16,6 +16,7 @@ import { TaskbarBridge } from './taskbar';
 import type { UpdateState } from './updateSettings';
 import { installTrackWaveMenu } from './trackWaveMenu';
 import { TrackPlaylist } from './trackPlaylist';
+import { TogetherBridge } from './together';
 
 async function boot() {
     if (window !== window.top || location.origin !== 'https://soundcloud.com') return;
@@ -40,6 +41,18 @@ async function boot() {
         settings = new Profile('settings');
     const presence = new PresenceBridge();
     const listening = new ListeningBridge();
+    const together = new TogetherBridge(
+        () => wave.suspendForTogether(),
+        () => {
+            const language = settings.get('language', 'auto');
+            return language === 'ru' || (language === 'auto' && /^ru\b/i.test(navigator.language));
+        },
+    );
+    wave.events.on('track', (track) => together.observe(track));
+    wave.events.on('active', (active) => {
+        if (active) together.manual();
+    });
+    window.addEventListener('pagehide', () => together.dispose(), { once: true });
     const taskbar = new TaskbarBridge(undefined, () => {
         const language = settings.get('language', 'auto');
         return language === 'auto' ? navigator.language : String(language);
@@ -110,6 +123,7 @@ async function boot() {
             ticking = true;
             try {
                 await wave.tick();
+                await together.tick();
                 if (wave.monitorReady && !monitorReported) {
                     await invoke('monitor_ready', { ready: true });
                     monitorReported = true;
@@ -170,7 +184,11 @@ async function boot() {
                 ticking = false;
             }
         },
-        control: (command: string) => wave.control(command),
+        control: (command: string) => {
+            if (command !== 'like') together.manual();
+            wave.control(command);
+        },
+        togetherChanged: () => together.tick(),
         diagnostics: () => wave.diagnostics(),
     };
     installEqualizerEngine();
@@ -192,7 +210,10 @@ async function boot() {
         on: (channel: string, callback: (...args: unknown[]) => void) => wave.events.on(channel, callback),
         start: () => wave.start(),
         controls: (controls: any) => void wave.settings(controls).catch(console.error),
-        control: (command: string) => wave.control(command),
+        control: (command: string) => {
+            if (command !== 'like') together.manual();
+            wave.control(command);
+        },
         excludeArtist: (artist: string, excluded: boolean) => wave.exclude(artist, excluded),
         dislike: (url: string) => wave.dislike(url),
         setLanguage: async (language: string) => {

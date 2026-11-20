@@ -21,6 +21,7 @@ mod source;
 mod spotify;
 mod storage;
 mod taskbar;
+mod together;
 mod updates;
 mod webview;
 mod worker_setup;
@@ -41,6 +42,7 @@ use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 use tokio::sync::Notify;
 
 struct State {
@@ -64,6 +66,7 @@ struct State {
     source_requests: requests::Requests,
     spotify: spotify::Imports,
     presence: Arc<presence::Presence>,
+    together: Arc<together::Together>,
     listening: Arc<listening::Listening>,
     extensions: Arc<extensions::Extensions>,
     updates: Arc<updates::Updates>,
@@ -139,6 +142,58 @@ async fn presence_update(
         state.extensions.track(track);
     }
     state.presence.set(track)
+}
+
+#[tauri::command]
+async fn together_status(
+    window: Webview,
+    state: tauri::State<'_, Arc<State>>,
+) -> Result<Value, String> {
+    guard(&window, &state).or_else(|_| settings_guard(&window))?;
+    Ok(state.together.status())
+}
+#[tauri::command]
+async fn together_observe(
+    window: Webview,
+    state: tauri::State<'_, Arc<State>>,
+    playback: together::Playback,
+) -> Result<(), String> {
+    guard(&window, &state)?;
+    state.together.observe(playback)
+}
+#[tauri::command]
+async fn together_action(
+    window: Webview,
+    state: tauri::State<'_, Arc<State>>,
+    action: String,
+    invite: Option<String>,
+) -> Result<Value, String> {
+    guard(&window, &state).or_else(|_| settings_guard(&window))?;
+    match action.as_str() {
+        "host" => {
+            let me = state
+                .catalog
+                .execute_scoped(Operation::Me, false, None)
+                .await?;
+            if me["id"].as_u64().unwrap_or(0) == 0 {
+                return Err("sign-in-required".into());
+            }
+            state.together.start(None).await
+        }
+        "join" => {
+            state
+                .together
+                .start(Some(together::Invite::parse(
+                    invite.as_deref().unwrap_or(""),
+                )?))
+                .await
+        }
+        "leave" => {
+            state.together.leave().await;
+            Ok(state.together.status())
+        }
+        _ => Err("unknown-action".into()),
+    }
 }
 
 #[tauri::command]
@@ -886,9 +941,17 @@ async fn smoke_result(
             let fixture = json!({"trackPlaylistExpiryV1":[{"id":7,"title":"Smoke expiry","tracks":[1,2],"deleteAt":1800000000000_u64}]});
             state.store.set(key.into(), fixture.clone())?;
             state.store.flush()?;
-            let disk: Value = serde_json::from_slice(&std::fs::read(state.profile.join("native-state.json")).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
-            if disk[key] != fixture { return Err("Playlist expiry was not persisted to disk".into()); }
-            state.store.set(key.into(), json!({"trackPlaylistExpiryV1":[]}))?;
+            let disk: Value = serde_json::from_slice(
+                &std::fs::read(state.profile.join("native-state.json"))
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            if disk[key] != fixture {
+                return Err("Playlist expiry was not persisted to disk".into());
+            }
+            state
+                .store
+                .set(key.into(), json!({"trackPlaylistExpiryV1":[]}))?;
             state.store.flush()?;
             Ok(())
         })();
@@ -988,7 +1051,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .windows(2)
         .find(|args| args[0] == "--profile")
         .map(|args| PathBuf::from(&args[1]));
-    let builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    if profile_override.is_none() && !smoke && !probe && !account_check {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(state) = app.try_state::<Arc<State>>() {
+                for arg in args.iter().filter(|value| value.starts_with("scwave:")) {
+                    let _ = state.together.open(arg);
+                }
+            }
+            if let Some(window) = app.get_webview("main") {
+                let _ = window.window().show();
+                let _ = window.window().unminimize();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+    let builder = builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             catalog_request,
@@ -1018,6 +1097,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             taskbar_update,
             taskbar_exercise,
             presence_update,
+            together_status,
+            together_observe,
+            together_action,
             presence_options,
             listening_update,
             listening_status,
@@ -1058,14 +1140,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let settings_panel = settings_panel::Panel::new(webview_directory.clone(), browser_args.clone());
         let catalog = Arc::new(Catalog::new(proxy.as_deref())?);
         let presence = presence::Presence::new(serde_json::from_value(store.get("settings-discord")).unwrap_or_default(), !smoke);
+        let together_test = if smoke && profile_override.is_some() { args.windows(2).find(|args|args[0]=="--together-test-endpoint").map(|args|args[1].clone()) } else { None };
+        let together = together::Together::new(presence.clone(),together_test)?;
         let listening = listening::Listening::new(account_report.as_deref().unwrap_or(&profile), store.clone())?;
         if !smoke && !probe && !account_check { listening.start(); }
         let extensions = extensions::Extensions::new(account_report.as_deref().unwrap_or(&profile), store.clone())?;
         let updates = updates::Updates::new(store.clone());
         let client_preferences:preferences::Preferences=serde_json::from_value(store.get("settings-client")).unwrap_or_default();
         let adblock = adblock::AdBlock::new(account_report.as_deref().unwrap_or(&profile), client_preferences.ad_blocker)?;
-        let state = Arc::new(State { adblock:adblock.clone(),taskbar:Arc::new(taskbar::Taskbar::default()),settings_panel,accounts, catalog: catalog.clone(), store: store.clone(), active: AtomicBool::new(false), monitor: AtomicBool::new(false), discovery_deadline: AtomicU64::new(120000), wake: Notify::new(), started: Instant::now(), smoke, probe, profile: profile.clone(), connection: std::sync::Mutex::new(connection), relay_port, source_client: source::client()?, source_requests: requests::Requests::default(), spotify: spotify::Imports::default(), presence, listening, extensions: extensions.clone(), updates: updates.clone(), network: network.clone(), worker_setup: worker_setup::Setup::new(account_report.as_deref().unwrap_or(&profile))?, account_report: account_report.clone() });
+        let state = Arc::new(State { adblock:adblock.clone(),taskbar:Arc::new(taskbar::Taskbar::default()),settings_panel,accounts, catalog: catalog.clone(), store: store.clone(), active: AtomicBool::new(false), monitor: AtomicBool::new(false), discovery_deadline: AtomicU64::new(120000), wake: Notify::new(), started: Instant::now(), smoke, probe, profile: profile.clone(), connection: std::sync::Mutex::new(connection), relay_port, source_client: source::client()?, source_requests: requests::Requests::default(), spotify: spotify::Imports::default(), presence, together, listening, extensions: extensions.clone(), updates: updates.clone(), network: network.clone(), worker_setup: worker_setup::Setup::new(account_report.as_deref().unwrap_or(&profile))?, account_report: account_report.clone() });
         app.manage(state.clone());
+        let room_app=app.handle().clone();
+        state.together.callback(Arc::new(move || {
+            if let Some(window)=room_app.get_webview("main") {let _=window.eval("void window.__soundcloudNative?.togetherChanged?.()");}
+            if let Some(window)=room_app.get_webview("settings") {let _=window.eval("window.__togetherSettingsRefresh?.()");}
+        }));
+        if !smoke && !probe && !account_check {
+            if profile_override.is_none() { app.deep_link().register_all()?; }
+            if let Some(urls)=app.deep_link().get_current()? { for url in urls {let _=state.together.open(url.as_str());} }
+            app.deep_link().on_open_url({let state=state.clone();move |event|{for url in event.urls(){let _=state.together.open(url.as_str());}}});
+        }
         if !smoke && !probe && !account_check { updates.start(app.handle().clone()); }
         let url = if smoke { WebviewUrl::App("smoke.html".into()) } else { WebviewUrl::External("about:blank".parse()?) };
         let mut window_builder = WebviewWindowBuilder::new(app, if smoke { "smoke" } else { "main" }, url)
@@ -1102,7 +1196,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 let active = state_loop.active.load(Ordering::Acquire);
                 let initializing = (!state_loop.monitor.load(Ordering::Acquire) || state_loop.probe) && state_loop.started.elapsed().as_millis() < state_loop.discovery_deadline.load(Ordering::Acquire) as u128;
-                let interval = Duration::from_secs(if active || initializing { 3 } else { 15 });
+                let interval = Duration::from_secs(if active || initializing || state_loop.together.active() { 3 } else { 15 });
                 tokio::select! { _ = tokio::time::sleep(interval) => {}, _ = state_loop.wake.notified() => {} }
                 if let Some(window) = host.get_webview("main") { if window.url().ok().is_some_and(|url|url.host_str()==Some("soundcloud.com")) && state_loop.network.recover().unwrap_or(false) {host.restart();} let _ = window.eval("void window.__soundcloudNative?.tick()"); }
             }
@@ -1163,6 +1257,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 preferences::remember(&window.window(), &state.store);
             }
             let _ = state.accounts.flush();
+            tauri::async_runtime::block_on(state.together.leave());
+            state.together.shutdown();
             state.extensions.stop();
             if let Err(error) = state.listening.checkpoint(true) {
                 eprintln!("Listening checkpoint failed: {error}");

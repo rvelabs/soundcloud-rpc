@@ -28,6 +28,23 @@ export async function checkSettings(): Promise<void> {
             );
         }
         checks.push('settings-sections-layout');
+        const together = await invoke<{ mode: string; inviteUrl?: string }>('together_status');
+        assert(together.mode === 'idle' && !together.inviteUrl, 'listen together stays opt-in');
+        assert(
+            document.getElementById('together-host') && document.getElementById('together-join'),
+            'listen together controls are available',
+        );
+        let invalidInvite = false;
+        try {
+            await invoke('together_action', { action: 'join', invite: 'https://example.com/not-an-invitation' });
+        } catch {
+            invalidInvite = true;
+        }
+        assert(
+            invalidInvite && (await invoke<{ mode: string }>('together_status')).mode === 'idle',
+            'invalid invite never starts a connection',
+        );
+        checks.push('together-settings-opt-in-and-invalid-invite');
         const preferences = await invoke<Preferences>('client_options');
         const saved = await invoke<Preferences>('client_options', {
             options: { ...preferences, zoom: 1.05, minimizeToTray: false },

@@ -5,6 +5,7 @@ export function installEqualizerEngine(): void {
         __soundcloudEqualizer?: {
             set: (value: EqualizerSettings) => void;
             snapshot: () => object;
+            media: () => HTMLMediaElement[];
             analysisTap: (media: HTMLMediaElement) => { analyser: AnalyserNode; release: () => void } | undefined;
         };
     };
@@ -463,6 +464,7 @@ export function installEqualizerEngine(): void {
             notify();
         },
         snapshot,
+        media: live,
         analysisTap(media) {
             const node = nativeMedia.get(media)?.node || sources.get(media)?.node;
             if (!node || media.mediaKeys) return;

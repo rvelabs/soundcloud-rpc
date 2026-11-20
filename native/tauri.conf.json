@@ -37,6 +37,7 @@
         "createUpdaterArtifacts": true
     },
     "plugins": {
+        "deep-link": { "desktop": { "schemes": ["scwave"] } },
         "updater": {
             "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZCNEY4QkU0MjhFNkQ2QUIKUldTcjF1WW81SXRQKzhHY1F0NjFDYjZ1TFVkREdlN1dyd2VKVjBYbkNJS1QvZVQ0Y0duN3JRbDIK",
             "endpoints": ["https://rvelabs.github.io/soundcloud-rpc/native-update.json"],

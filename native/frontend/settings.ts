@@ -6,11 +6,13 @@ import { installExtensionSettings } from './extensionSettings';
 import { installUpdateSettings } from './updateSettings';
 import { installWorkerSettings } from './workerSettings';
 import { installAnalysisSettings } from './analysisSettings';
+import { installTogetherSettings } from './together';
 
 async function mountSettings() {
     const language = await invoke<string>('interface_language');
     const ru = language === 'ru' || (language === 'auto' && navigator.language.toLowerCase().startsWith('ru'));
     const text = (russian: string, english: string) => (ru ? russian : english);
+    installTogetherSettings(ru);
     const element = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
     const close = element<HTMLButtonElement>('settings-close');
     close.title = text('Закрыть настройки (Esc)', 'Close settings (Esc)');

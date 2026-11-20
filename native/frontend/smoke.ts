@@ -17,6 +17,7 @@ import { checkAdblock } from './adblockCheck';
 import { SoundCloudRecommender } from '../../src/wave/recommendation/soundcloudAdapter';
 import { installTrackWaveMenu } from './trackWaveMenu';
 import { checkTrackPlaylist } from './playlistCheck';
+import { nativeTogetherBackend, TogetherPlayer } from './togetherPlayer';
 
 const assert = (value: unknown, message: string) => {
     if (!value) throw new Error(message);
@@ -156,6 +157,7 @@ async function test() {
         playCurrent: () => {
             void media.play();
         },
+        pauseCurrent: () => media.pause(),
         toggleCurrent: () => (media.paused ? void media.play() : media.pause()),
         playPrev: () => {},
         playNext: () => {
@@ -256,6 +258,37 @@ async function test() {
     await wait(150);
     assert(media.paused && latest?.isPlaying === false, 'manual pause updates native monitor');
     checks.push('manual-pause');
+    const togetherBackend = nativeTogetherBackend(() => exports);
+    assert(togetherBackend.current()?.url === trackUrl(6), 'together uses the existing SoundCloud player');
+    assert(togetherBackend.seek(350), 'together seeks the existing HTML media element');
+    assert(Math.abs(media.currentTime - 0.35) < 0.08, 'together converts milliseconds to HTML seconds');
+    const together = new TogetherPlayer(
+        togetherBackend,
+        async () => {},
+        () => 1000,
+    );
+    await together.update({
+        trackUrl: trackUrl(6),
+        title: 'Track 6',
+        author: 'Test',
+        positionMs: 350,
+        durationMs: 1000,
+        playing: false,
+    });
+    assert(media.paused, 'together applies a remote pause without toggling');
+    await together.update({
+        trackUrl: trackUrl(6),
+        title: 'Track 6',
+        author: 'Test',
+        positionMs: 350,
+        durationMs: 1000,
+        playing: true,
+    });
+    await wait(50);
+    assert(!media.paused, 'together resumes the same media player');
+    together.leave(true);
+    assert(media.paused, 'together end pauses playback');
+    checks.push('together-existing-player-seek-pause-resume');
     nativePlayerCommand('like', () => exports);
     await wait(100);
     assert(latest?.isLiked === true, 'like update');

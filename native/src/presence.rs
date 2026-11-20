@@ -81,6 +81,7 @@ pub struct Presence {
     update: watch::Sender<Update>,
     diagnostics: Arc<Mutex<Diagnostics>>,
     track: Mutex<(Option<Track>, u64)>,
+    invite: Mutex<Option<String>>,
 }
 impl Presence {
     pub fn new(options: Options, run: bool) -> Arc<Self> {
@@ -92,6 +93,7 @@ impl Presence {
             update,
             diagnostics: Arc::new(Mutex::new(Diagnostics::default())),
             track: Mutex::new((None, 0)),
+            invite: Mutex::new(None),
         });
         if run {
             tauri::async_runtime::spawn(worker(receiver, service.diagnostics.clone()));
@@ -118,8 +120,21 @@ impl Presence {
         let current = self.track.lock().unwrap();
         self.publish(current.0.as_ref(), options, current.1);
     }
+    pub fn set_invite(&self, invite: Option<String>) {
+        *self.invite.lock().unwrap() = invite;
+        let current = self.track.lock().unwrap();
+        let options = self.update.borrow().options.clone();
+        self.publish(current.0.as_ref(), options, current.1);
+    }
     fn publish(&self, track: Option<&Track>, options: Options, observed_at: u64) {
-        let activity = activity(track, &options, observed_at);
+        let mut activity = activity(track, &options, observed_at);
+        if !activity.is_null()
+            && let Some(invite) = self.invite.lock().unwrap().as_ref()
+        {
+            let mut buttons = activity["buttons"].as_array().cloned().unwrap_or_default();
+            buttons.push(json!({"label":"🎧 Listen together", "url":invite}));
+            activity["buttons"] = json!(buttons);
+        }
         self.update.send_replace(Update { options, activity });
     }
     pub fn diagnostics(&self) -> Value {
@@ -336,6 +351,26 @@ mod tests {
         track = self::track();
         track.url = "https://evil.test/a/b".into();
         assert!(track.validate().is_err());
+    }
+    #[tokio::test]
+    async fn invitation_button_preserves_timestamps_and_obeys_discord_button_limit() {
+        let service = Presence::new(Options::default(), false);
+        *service.track.lock().unwrap() = (Some(track()), 500000);
+        service.set_invite(Some(
+            "https://rvelabs.github.io/soundcloud-rpc/join/#room=fixture&invite=fixture".into(),
+        ));
+        let activity = service.update.borrow().activity.clone();
+        assert_eq!(activity["timestamps"]["start"], 490000);
+        assert_eq!(activity["buttons"].as_array().unwrap().len(), 2);
+        assert_eq!(activity["buttons"][1]["label"], "🎧 Listen together");
+        service.set_invite(None);
+        assert_eq!(
+            service.update.borrow().activity["buttons"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
     }
     #[tokio::test]
     async fn fragmented_frames_ping_and_nonce_matching() {

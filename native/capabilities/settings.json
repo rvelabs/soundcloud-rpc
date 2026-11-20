@@ -3,6 +3,8 @@
     "description": "Private local connection panel",
     "local": true,
     "permissions": [
+        "allow-together-status",
+        "allow-together-action",
         "allow-connection-load",
         "allow-connection-save",
         "allow-restart-native",

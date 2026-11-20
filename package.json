@@ -12,6 +12,7 @@
         "lint": "eslint -c eslint.config.mjs --ext .ts,.js ./src",
         "test": "vitest run",
         "test:worker": "node scripts/check-worker-runtime.cjs",
+        "test:together": "vitest run --config cloudflare/listen-together/vitest.config.ts",
         "test:import": "tsc && node scripts/check-playlist-worker.cjs --electron",
         "test:watch": "vitest",
         "test:placement": "electron scripts/check-wave-placement.cjs",
