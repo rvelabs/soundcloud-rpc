@@ -80,6 +80,7 @@ class AndroidCoreTest {
         val analysis = AudioAnalysis()
         analysis.configure(AudioFormat(8000, 1, C.ENCODING_PCM_16BIT))
         analysis.flush()
+        analysis.resetTrack("first-recording")
         repeat(30) { second ->
             val bytes = ByteArray(16000)
             val samples = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -94,10 +95,17 @@ class AndroidCoreTest {
         }
         val features = analysis.take()!!
         assertEquals("android-pcm-v1", features.getString("source"))
+        assertEquals("first-recording", features.getString("mediaId"))
         assertEquals(30, features.getInt("sampleSeconds"))
         assertTrue(features.getDouble("energy") in 0.1..0.5)
         assertTrue(features.getDouble("bass") > features.getDouble("brightness"))
         assertNull(analysis.take())
+        analysis.resetTrack("second-recording")
+        val fragment = ByteBuffer.allocateDirect(16000)
+        while (fragment.hasRemaining()) fragment.putShort(1000)
+        fragment.flip()
+        analysis.queueInput(fragment)
+        assertNull("A new track must not inherit the previous track's measured duration", analysis.take())
     }
 
     @Test fun rustHostAndAndroidKeystoreRoundTrip() {

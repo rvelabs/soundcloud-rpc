@@ -41,7 +41,8 @@ class PlaybackService : MediaSessionService() {
                 browser.evaluate("void window.__soundcloudNative?.tick()")
                 browser.pushPlayback()
                 analysis.take()?.let { value ->
-                    val path = runCatching { android.net.Uri.parse(player.currentMediaItem?.mediaId).path }.getOrNull()
+                    if (value.optString("mediaId") != player.currentMediaItem?.mediaId) return@let
+                    val path = runCatching { android.net.Uri.parse(value.getString("mediaId")).path }.getOrNull()
                     value.put("path", path)
                     value.put("treble", value.optDouble("brightness"))
                     browser.evaluate("window.soundcloudAPI?.sendAudioFeatures($value)")
@@ -80,7 +81,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) { browser.pushPlayback() }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                analysis.resetTrack()
+                analysis.resetTrack(item?.mediaId.orEmpty())
                 // Keep only a short playback history in memory.
                 if (player.currentMediaItemIndex > 8) player.removeMediaItems(0, player.currentMediaItemIndex - 8)
             }
