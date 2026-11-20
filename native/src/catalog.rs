@@ -424,9 +424,9 @@ impl Catalog {
         }
         let context = self.context.lock().unwrap();
         context.owner > 0
-            && (key == format!("wave-{}", context.owner)
-                || key == format!("import-{}", context.owner)
-                || key == format!("playlists-{}", context.owner))
+            && crate::storage::ACCOUNT_PROFILE_PREFIXES
+                .iter()
+                .any(|prefix| key == format!("{prefix}{}", context.owner))
     }
 
     pub async fn validate_profile(&self, key: &str) -> Result<(), String> {
@@ -764,6 +764,51 @@ mod tests {
         catalog.reset();
         assert!(!catalog.permits_profile("import-42"));
         assert!(!catalog.permits_profile("playlists-42"));
+    }
+
+    #[test]
+    fn account_profile_namespaces_roundtrip_to_disk_without_crossing_accounts() {
+        let directory =
+            std::env::temp_dir().join(format!("sc-expiry-store-{}", uuid::Uuid::new_v4()));
+        let catalog = Catalog::new(None).unwrap();
+        catalog.context.lock().unwrap().owner = 42;
+        let store = crate::storage::Store::open(&directory).unwrap();
+        let expiry = json!({"trackPlaylistExpiryV1": [{"id":7,"title":"Mix","tracks":[1,2],"deleteAt":1800000000000_u64}]});
+        for prefix in crate::storage::ACCOUNT_PROFILE_PREFIXES {
+            let key = format!("{prefix}42");
+            assert!(catalog.permits_profile(&key));
+            assert!(!catalog.permits_profile(&format!("{prefix}43")));
+            store
+                .set(
+                    key,
+                    if prefix == "playlists-" {
+                        expiry.clone()
+                    } else {
+                        json!({"keep":true})
+                    },
+                )
+                .unwrap();
+        }
+        assert!(store.set("playlists-../42".into(), json!({})).is_err());
+        assert!(!catalog.permits_profile("playlist-42"));
+        store.flush().unwrap();
+        drop(store);
+        let reopened = crate::storage::Store::open(&directory).unwrap();
+        assert_eq!(reopened.get("playlists-42"), expiry);
+        assert_eq!(reopened.get("wave-42"), json!({"keep":true}));
+        assert!(reopened.get("playlists-43").is_null());
+        reopened
+            .set("playlists-42".into(), json!({"trackPlaylistExpiryV1":[]}))
+            .unwrap();
+        reopened.flush().unwrap();
+        drop(reopened);
+        let kept = crate::storage::Store::open(&directory).unwrap();
+        assert_eq!(kept.get("playlists-42")["trackPlaylistExpiryV1"], json!([]));
+        assert_eq!(kept.get("wave-42"), json!({"keep":true}));
+        drop(kept);
+        std::fs::remove_file(directory.join("native-state.json")).unwrap();
+        std::fs::remove_file(directory.join("native.lock")).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     #[test]

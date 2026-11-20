@@ -878,6 +878,27 @@ async fn smoke_result(
         return Err("Integration report too large".into());
     }
     let mut report = report;
+    if state.smoke && report["success"] == true {
+        // Exercise the real storage gate and durable disk write, not the UI's fixture store.
+        // Smoke mode requires an isolated --profile and never uses the listener's live account.
+        let result = (|| -> Result<(), String> {
+            let key = "playlists-42";
+            let fixture = json!({"trackPlaylistExpiryV1":[{"id":7,"title":"Smoke expiry","tracks":[1,2],"deleteAt":1800000000000_u64}]});
+            state.store.set(key.into(), fixture.clone())?;
+            state.store.flush()?;
+            let disk: Value = serde_json::from_slice(&std::fs::read(state.profile.join("native-state.json")).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+            if disk[key] != fixture { return Err("Playlist expiry was not persisted to disk".into()); }
+            state.store.set(key.into(), json!({"trackPlaylistExpiryV1":[]}))?;
+            state.store.flush()?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            report["success"] = json!(false);
+            report["message"] = json!(format!("Playlist expiry storage: {error}"));
+        } else if let Some(checks) = report["checks"].as_array_mut() {
+            checks.push(json!("free-playlist-expiry-native-durable-storage"));
+        }
+    }
     report["adblock"] = state.adblock.snapshot();
     report["nativeWindowVisible"] = json!(window.window().is_visible().map_err(|e| e.to_string())?);
     report["nativeWindowMinimized"] =

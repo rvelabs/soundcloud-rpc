@@ -18,6 +18,8 @@ pub struct Store {
 
 const PROFILE_LIMIT: usize = 20_000_000;
 const ENTRY_LIMIT: usize = 8_000_000;
+// Account-scoped namespaces must agree between the IPC authorization gate and disk storage.
+pub const ACCOUNT_PROFILE_PREFIXES: [&str; 3] = ["wave-", "import-", "playlists-"];
 
 #[derive(Clone)]
 struct Entries {
@@ -90,9 +92,10 @@ impl Store {
             || !key
                 .bytes()
                 .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
-            || !["wave-", "import-", "eq-", "settings"]
+            || !ACCOUNT_PROFILE_PREFIXES
                 .iter()
-                .any(|prefix| key.starts_with(prefix))
+                .chain(["eq-", "settings"].iter())
+                .any(|prefix| key.starts_with(*prefix))
         {
             return Err("Invalid profile key".into());
         }
